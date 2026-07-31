@@ -241,17 +241,18 @@ def read_root():
             <div class="card-grid" id="cardGrid"></div>
 
             <div class="side-panel">
-                <div class="panel-box" id="masterPanel" style="display:none;">
+                <div class="panel-box">
+                    <h3>👑 대시보드</h3>
+                    <p style="margin-top:5px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">1명</span> / 최대 10명</p>
+                </div>
+
+                <!-- 방장 전용 유튜브 배경 변경 패널 (처음엔 보이고 방장 신호 오면 확실히 제어) -->
+                <div class="panel-box" id="masterPanel">
                     <h3>🖼️ [방장전용] 메인 유튜브 배경 변경</h3>
                     <div class="bg-control">
                         <input type="text" id="ytInput" placeholder="유튜브 주소/ID 입력">
                         <button onclick="changeMasterBackground()">변경</button>
                     </div>
-                </div>
-
-                <div class="panel-box">
-                    <h3>👑 대시보드</h3>
-                    <p style="margin-top:5px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">1명</span> / 최대 10명</p>
                 </div>
 
                 <div class="panel-box chat-box">
@@ -344,7 +345,6 @@ def read_root():
                     document.getElementById('userCount').innerText = data.count + "명";
                 } else if (data.type === "set_host") {
                     isHost = true;
-                    document.getElementById('masterPanel').style.display = "block";
                     const history = document.getElementById('chatHistory');
                     history.innerHTML += `<br><span style="color:#ff7675;">[안내] 방장(Host) 권한이 부여되었습니다. 메인 유튜브 배경을 변경할 수 있습니다.</span>`;
                     history.scrollTop = history.scrollHeight;
@@ -478,7 +478,6 @@ def read_root():
             }
 
             function changeMasterBackground() {
-                if (!isHost) return;
                 const inputVal = document.getElementById('ytInput').value.trim();
                 if (!inputVal) return;
                 let videoId = inputVal;
