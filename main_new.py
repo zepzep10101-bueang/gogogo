@@ -1,14 +1,14 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from typing import List, Dict
+from typing import List
 import json
 import uvicorn
+import os
 
 app = FastAPI()
 
 class ConnectionManager:
     def __init__(self):
-        # 연결된 웹소켓 객체 리스트
         self.active_connections: List[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
@@ -21,7 +21,6 @@ class ConnectionManager:
 
     async def broadcast(self, message: str, sender: WebSocket = None):
         for connection in self.active_connections:
-            # 보낸 본인을 제외하고 전송 (신호 전달용)
             if sender and connection == sender:
                 continue
             await connection.send_text(message)
@@ -272,7 +271,7 @@ def read_root():
             let isHost = false;
             let localStream = null;
             let activeSharingIndex = null;
-            const peerConnections = {}; // WebRTC 커넥션 관리
+            const peerConnections = {};
 
             const rtcConfig = {
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -331,7 +330,6 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
-            // 웹소켓 연결
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const ws = new WebSocket(wsProtocol + "//" + window.location.host + "/ws");
 
@@ -354,11 +352,9 @@ def read_root():
                     const iframe = document.getElementById('ytVideo');
                     iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0`;
                 } 
-                // --- WebRTC 시그널링 처리 ---
                 else if (data.type === "stream_start") {
                     const idx = data.cardIndex;
                     document.getElementById(`placeholder-${idx}`).style.display = 'none';
-                    // 시청자(Receiver) PeerConnection 생성
                     createPeerConnection(idx, false);
                 } else if (data.type === "stream_stop") {
                     const idx = data.cardIndex;
@@ -403,14 +399,12 @@ def read_root():
                 };
 
                 if (!isSender) {
-                    // 수신 측: 스트림 수신 시 video 태그 연결
                     pc.ontrack = (event) => {
                         const videoEl = document.getElementById(`video-${index}`);
                         videoEl.srcObject = event.streams[0];
                         document.getElementById(`placeholder-${index}`).style.display = 'none';
                     };
                 }
-
                 return pc;
             }
 
@@ -426,25 +420,21 @@ def read_root():
                     }
 
                     if (!localStream) {
-                        // 화면 공유 가져오기
                         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
                         videoEl.srcObject = localStream;
                         placeholderEl.style.display = 'none';
                         btnEl.innerText = "🛑 공유중단";
                         activeSharingIndex = index;
 
-                        // 송신자(Sender) PeerConnection 설정
                         const pc = createPeerConnection(index, true);
                         localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
                         const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
 
-                        // 다른 접속자들에게 화면 공유 시작 알림 및 Offer 송출
                         ws.send(JSON.stringify({ type: "stream_start", cardIndex: index }));
                         ws.send(JSON.stringify({ type: "offer", cardIndex: index, offer: offer }));
 
-                        // 공유 중단 클릭/창 닫기 시 이벤트
                         localStream.getVideoTracks()[0].onended = () => {
                             stopScreenShare(index);
                         };
@@ -531,7 +521,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps({"type": "chat", "msg": f"상대방: {packet.get('msg')}"}))
             elif p_type == "bg_change":
                 await manager.broadcast(json.dumps({"type": "bg_change", "videoId": packet.get("videoId")}))
-            # WebRTC 시그널링 메시지(offer, answer, candidate, stream_start, stream_stop)를 다른 사용자에게 중계
             elif p_type in ["offer", "answer", "candidate", "stream_start", "stream_stop"]:
                 await manager.broadcast(json.dumps(packet), sender=websocket)
 
@@ -541,4 +530,5 @@ async def websocket_endpoint(websocket: WebSocket):
         await manager.broadcast(json.dumps({"type": "chat", "msg": "[안내] 누군가 나갔습니다."}))
 
 if __name__ == "__main__":
-    uvicorn.run("main_new:app", host="0.0.0.0", port=8080, reload=True)
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("main_new:app", host="0.0.0.0", port=port)
