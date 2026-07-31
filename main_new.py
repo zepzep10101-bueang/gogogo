@@ -246,11 +246,10 @@ def read_root():
                     <p style="margin-top:5px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">1명</span> / 최대 10명</p>
                 </div>
 
-                <!-- 방장 전용 유튜브 배경 변경 패널 (처음엔 보이고 방장 신호 오면 확실히 제어) -->
                 <div class="panel-box" id="masterPanel">
-                    <h3>🖼️ [방장전용] 메인 유튜브 배경 변경</h3>
+                    <h3>🖼️ 메인 유튜브 배경 변경</h3>
                     <div class="bg-control">
-                        <input type="text" id="ytInput" placeholder="유튜브 주소/ID 입력">
+                        <input type="text" id="ytInput" placeholder="유튜브 주소 또는 ID 입력" onkeypress="if(event.key==='Enter') changeMasterBackground()">
                         <button onclick="changeMasterBackground()">변경</button>
                     </div>
                 </div>
@@ -345,9 +344,6 @@ def read_root():
                     document.getElementById('userCount').innerText = data.count + "명";
                 } else if (data.type === "set_host") {
                     isHost = true;
-                    const history = document.getElementById('chatHistory');
-                    history.innerHTML += `<br><span style="color:#ff7675;">[안내] 방장(Host) 권한이 부여되었습니다. 메인 유튜브 배경을 변경할 수 있습니다.</span>`;
-                    history.scrollTop = history.scrollHeight;
                 } else if (data.type === "bg_change") {
                     const iframe = document.getElementById('ytVideo');
                     iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0`;
@@ -478,15 +474,30 @@ def read_root():
             }
 
             function changeMasterBackground() {
-                const inputVal = document.getElementById('ytInput').value.trim();
-                if (!inputVal) return;
+                const inputEl = document.getElementById('ytInput');
+                if (!inputEl) return;
+                
+                const inputVal = inputEl.value.trim();
+                if (!inputVal) {
+                    alert("유튜브 주소나 ID를 입력해주세요!");
+                    return;
+                }
+
                 let videoId = inputVal;
+                
+                // 불필요한 파라미터(&t=50s 등)가 포함되어 있어도 정확히 ID만 추출하도록 수정
                 if (inputVal.includes('youtu.be/')) {
-                    videoId = inputVal.split('youtu.be/')[1].split('?')[0];
+                    videoId = inputVal.split('youtu.be/')[1].split('?')[0].split('&')[0];
                 } else if (inputVal.includes('watch?v=')) {
                     videoId = inputVal.split('watch?v=').pop().split('&')[0];
+                } else if (inputVal.includes('embed/')) {
+                    videoId = inputVal.split('embed/')[1].split('?')[0].split('&')[0];
                 }
+
+                videoId = videoId.trim();
+
                 ws.send(JSON.stringify({ type: "bg_change", videoId: videoId }));
+                inputEl.value = '';
             }
         </script>
     </body>
