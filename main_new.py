@@ -46,15 +46,14 @@ def read_root():
                 overflow: hidden;
                 pointer-events: none;
             }
-            /* 유튜브 및 이미지가 화면을 완벽히 커버하도록 수정 */
             .video-background iframe, .video-background img, .video-background div {
                 position: absolute;
                 top: 50%; left: 50%;
                 transform: translate(-50%, -50%);
                 width: 100vw;
-                height: 56.25vw; /* 16:9 비율 유지 */
+                height: 56.25vw;
                 min-height: 100vh;
-                min-width: 177.77vh; /* 16:9 비율 유지 */
+                min-width: 177.77vh;
                 pointer-events: none;
                 border: none;
             }
@@ -298,15 +297,20 @@ def read_root():
             </div>
         </div>
 
-        <!-- 유튜브 IFrame API 로드 -->
         <script src="https://www.youtube.com/iframe_api"></script>
         <script>
             let player;
             let currentVideoId = 'jfKfPfyJRdk';
 
             function onYouTubeIframeAPIReady() {
+                initYouTubePlayer(currentVideoId);
+            }
+
+            function initYouTubePlayer(videoId) {
+                const bgContainer = document.getElementById('bgContainer');
+                bgContainer.innerHTML = '<div id="player"></div>';
                 player = new YT.Player('player', {
-                    videoId: currentVideoId,
+                    videoId: videoId,
                     playerVars: {
                         'autoplay': 1,
                         'mute': 1,
@@ -315,7 +319,7 @@ def read_root():
                         'autohide': 1,
                         'modestbranding': 1,
                         'loop': 1,
-                        'playlist': currentVideoId,
+                        'playlist': videoId,
                         'fs': 0,
                         'cc_load_policy': 0,
                         'iv_load_policy': 3,
@@ -410,32 +414,26 @@ def read_root():
                     isHost = true;
                 } else if (data.type === "bg_change") {
                     const bgContainer = document.getElementById('bgContainer');
+                    const scaleVal = data.scale || 100;
                     if (data.isImage) {
-                        bgContainer.innerHTML = `<img id="bgMedia" src="${data.mediaSrc}" style="width: ${data.scale || 100}vw; height: auto;">`;
+                        bgContainer.innerHTML = `<img id="bgMedia" src="${data.mediaSrc}" style="width: ${scaleVal}vw; height: auto;">`;
                     } else {
-                        bgContainer.innerHTML = `<div id="player"></div>`;
                         currentVideoId = data.videoId;
                         if (typeof YT !== 'undefined' && YT.Player) {
-                            player = new YT.Player('player', {
-                                videoId: currentVideoId,
-                                playerVars: {
-                                    'autoplay': 1, 'mute': 1, 'controls': 0, 'showinfo': 0,
-                                    'loop': 1, 'playlist': currentVideoId, 'rel': 0
-                                },
-                                events: { 'onReady': (e) => e.target.playVideo() }
-                            });
+                            initYouTubePlayer(currentVideoId);
                         }
                     }
-                    document.getElementById('bgScaleSlider').value = data.scale || 100;
-                    document.getElementById('scaleValue').innerText = (data.scale || 100) + "%";
+                    document.getElementById('bgScaleSlider').value = scaleVal;
+                    document.getElementById('scaleValue').innerText = scaleVal + "%";
                 } else if (data.type === "bg_resize") {
+                    const scaleVal = data.scale;
                     const media = document.getElementById('bgMedia') || document.querySelector('#bgContainer iframe') || document.querySelector('#bgContainer div');
                     if (media) {
-                        media.style.transform = `translate(-50%, -50%) scale(${data.scale / 100})`;
+                        media.style.transform = `translate(-50%, -50%) scale(${scaleVal / 100})`;
                     }
-                    document.getElementById('bgScaleSlider').value = data.scale;
-                    document.getElementById('scaleValue').innerText = data.scale + "%";
-                } 
+                    document.getElementById('bgScaleSlider').value = scaleVal;
+                    document.getElementById('scaleValue').innerText = scaleVal + "%";
+                }
                 else if (data.type === "stream_start") {
                     const idx = data.cardIndex;
                     document.getElementById(`placeholder-${idx}`).style.display = 'none';
@@ -556,7 +554,7 @@ def read_root():
 
             function sendChat() {
                 const input = document.getElementById('chatInput');
-                if (!input.value) return;
+                if (!input.value.trim()) return;
                 ws.send(JSON.stringify({ type: "chat", msg: input.value }));
                 input.value = '';
             }
@@ -631,9 +629,12 @@ async def websocket_endpoint(websocket: WebSocket):
             p_type = packet.get("type")
 
             if p_type == "chat":
-                await manager.broadcast(json.dumps({"type": "chat", "msg": f"상대방: {packet.get('msg')}"}))
+                msg_text = packet.get('msg')
+                await manager.broadcast(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
+                await websocket.send_text(json.dumps({"type": "chat", "msg": f"나: {msg_text}"}))
             elif p_type in ["bg_change", "bg_resize"]:
                 await manager.broadcast(json.dumps(packet))
+                await websocket.send_text(json.dumps(packet))
             elif p_type in ["offer", "answer", "candidate", "stream_start", "stream_stop"]:
                 await manager.broadcast(json.dumps(packet), sender=websocket)
 
