@@ -248,8 +248,16 @@ def read_root():
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, memo: '' }));
             let localStream = null;
             let mySharingIndex = null;
-            const peerConnections = {};
-            const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+            const peerConnections = {}; 
+            
+            const rtcConfig = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun.stunprotocol.org:3478' }
+                ]
+            };
 
             function logChat(msg) {
                 const history = document.getElementById('chatHistory');
@@ -265,7 +273,7 @@ def read_root():
                         <div class="timer-card">
                             <div class="card-media-bg" id="card-media-${index}"></div>
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:4px; position:relative; z-index:2;">
-                                <input type="text" value="${card.user}" style="width:75px; padding:2px; font-size:11px; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;">
+                                <input type="text" id="username-${index}" value="${card.user}" style="width:75px; padding:2px; font-size:11px; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
                                 <input type="file" accept="image/*" style="width:75px; font-size:9px; padding:1px;" onchange="loadCardImage(event, ${index})">
                             </div>
                             
@@ -275,11 +283,25 @@ def read_root():
                             </div>
 
                             <div style="position:relative; z-index:2;">
-                                <textarea class="card-memo" placeholder="메모 입력란..."></textarea>
+                                <textarea class="card-memo" placeholder="메모 입력란..." oninput="updateMemo(${index}, this.value)">${card.memo}</textarea>
                             </div>
                         </div>
                     `;
                 });
+            }
+
+            function updateUsername(index, val) {
+                cardData[index].user = val;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
+                }
+            }
+
+            function updateMemo(index, val) {
+                cardData[index].memo = val;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "memo_change", index: index, memo: val }));
+                }
             }
 
             async function toggleScreenShare(index) {
@@ -295,7 +317,10 @@ def read_root():
                 }
 
                 try {
-                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                        video: { cursor: "always", frameRate: 30 }, 
+                        audio: false 
+                    });
                     localStream = stream;
                     mySharingIndex = index;
 
@@ -332,6 +357,11 @@ def read_root():
                         <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
                         <button class="share-btn" onclick="toggleScreenShare(${idx})">🖥️ 화면 공유</button>
                     `;
+                }
+
+                for (let key in peerConnections) {
+                    peerConnections[key].close();
+                    delete peerConnections[key];
                 }
             }
 
@@ -416,7 +446,7 @@ def read_root():
                         try {
                             const data = JSON.parse(event.data);
                             if (data.type === "chat") {
-                                logChat(data.msg);
+                                logChat(`<b>${data.senderName}</b>: ${data.msg}`);
                             } else if (data.type === "count") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                             } else if (data.type === "card_bg_change") {
@@ -424,22 +454,41 @@ def read_root():
                                 if (targetBg) {
                                     targetBg.innerHTML = `<img src="${data.imgUrl}" alt="BG">`;
                                 }
+                            } else if (data.type === "username_change") {
+                                cardData[data.index].user = data.user;
+                                const inputEl = document.getElementById(`username-${data.index}`);
+                                if (inputEl) {
+                                    inputEl.value = data.user;
+                                }
+                            } else if (data.type === "memo_change") {
+                                cardData[data.index].memo = data.memo;
+                                const textareas = document.querySelectorAll('.card-memo');
+                                if (textareas[data.index]) {
+                                    textareas[data.index].value = data.memo;
+                                }
                             } else if (data.type === "global_bg_image") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             } 
-                            else if (data.type === "request_peer_offer") {
+                            else if (data.type === "start_share") {
                                 const targetIndex = data.index;
+                                const senderId = data.sender;
+
                                 if (mySharingIndex === targetIndex && localStream) {
+                                    const pcKey = `${targetIndex}_${senderId}`;
+                                    if (peerConnections[pcKey]) {
+                                        peerConnections[pcKey].close();
+                                    }
+
                                     const pc = new RTCPeerConnection(rtcConfig);
-                                    peerConnections[targetIndex] = pc;
+                                    peerConnections[pcKey] = pc;
 
                                     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
                                     pc.onicecandidate = (e) => {
                                         if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                            ws.send(JSON.stringify({ type: "ice", index: targetIndex, candidate: e.candidate }));
+                                            ws.send(JSON.stringify({ type: "ice", index: targetIndex, target: senderId, candidate: e.candidate }));
                                         }
                                     };
 
@@ -447,14 +496,21 @@ def read_root():
                                     await pc.setLocalDescription(offer);
 
                                     if (ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "offer", index: targetIndex, sdp: pc.localDescription }));
+                                        ws.send(JSON.stringify({ type: "offer", index: targetIndex, target: senderId, sdp: pc.localDescription }));
                                     }
                                 }
                             }
-                            else if (data.type === "offer") {
+                            else if (data.type === "offer" && data.target === ws.clientId) {
                                 const index = data.index;
+                                const senderId = data.sender;
+                                const pcKey = `${index}_${senderId}`;
+
+                                if (peerConnections[pcKey]) {
+                                    peerConnections[pcKey].close();
+                                }
+
                                 const pc = new RTCPeerConnection(rtcConfig);
-                                peerConnections[index] = pc;
+                                peerConnections[pcKey] = pc;
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
@@ -464,7 +520,7 @@ def read_root():
 
                                 pc.onicecandidate = (e) => {
                                     if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "ice", index: index, candidate: e.candidate }));
+                                        ws.send(JSON.stringify({ type: "ice", index: index, target: senderId, candidate: e.candidate }));
                                     }
                                 };
 
@@ -473,29 +529,47 @@ def read_root():
                                 await pc.setLocalDescription(answer);
 
                                 if (ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "answer", index: index, sdp: pc.localDescription }));
+                                    ws.send(JSON.stringify({ type: "answer", index: index, target: senderId, sdp: pc.localDescription }));
                                 }
-                            } else if (data.type === "answer") {
-                                const pc = peerConnections[data.index];
+                            } 
+                            else if (data.type === "answer" && data.target === ws.clientId) {
+                                const pcKey = `${data.index}_${data.sender}`;
+                                const pc = peerConnections[pcKey];
                                 if (pc) {
                                     await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                                 }
-                            } else if (data.type === "ice") {
-                                const pc = peerConnections[data.index];
+                            } 
+                            else if (data.type === "ice" && data.target === ws.clientId) {
+                                const pcKey = `${data.index}_${data.sender}`;
+                                const pc = peerConnections[pcKey];
                                 if (pc && data.candidate) {
                                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                                 }
-                            } else if (data.type === "stop_share") {
+                            } 
+                            else if (data.type === "stop_share") {
                                 const index = data.index;
-                                if (peerConnections[index]) {
-                                    peerConnections[index].close();
-                                    delete peerConnections[index];
+                                for (let key in peerConnections) {
+                                    if (key.startsWith(`${index}_`)) {
+                                        peerConnections[key].close();
+                                        delete peerConnections[key];
+                                    }
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
                                 box.innerHTML = `
                                     <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
                                     <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
                                 `;
+                            }
+                            else if (data.type === "welcome") {
+                                ws.clientId = data.clientId;
+                                if (ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: "request_existing_shares" }));
+                                }
+                            }
+                            else if (data.type === "request_existing_shares") {
+                                if (mySharingIndex !== null && ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: "start_share", index: mySharingIndex, sender: ws.clientId }));
+                                }
                             }
                         } catch(e) {
                             console.error("데이터 처리 에러:", e);
@@ -515,9 +589,13 @@ def read_root():
 
             function sendChat() {
                 const input = document.getElementById('chatInput');
-                if (!input.value.trim()) return;
+                const msgText = input.value.trim();
+                if (!msgText) return;
+
+                const myName = document.getElementById('username-0') ? document.getElementById('username-0').value : "누나1";
+
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "chat", msg: input.value }));
+                    ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText }));
                     input.value = '';
                 }
             }
@@ -532,6 +610,9 @@ def read_root():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    client_id = str(id(websocket))
+    
+    await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
     try:
@@ -541,17 +622,10 @@ async def websocket_endpoint(websocket: WebSocket):
             p_type = packet.get("type")
 
             if p_type == "chat":
-                msg_text = packet.get('msg')
-                for conn in manager.active_connections:
-                    if conn == websocket:
-                        await conn.send_text(json.dumps({"type": "chat", "msg": f"나: {msg_text}"}))
-                    else:
-                        await conn.send_text(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
-            elif p_type == "start_share":
-                idx = packet.get("index")
-                await manager.broadcast(json.dumps({"type": "request_peer_offer", "index": idx}), exclude=websocket)
-            elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube", "offer", "answer", "ice", "stop_share"]:
-                await manager.broadcast(json.dumps(packet), exclude=websocket)
+                await manager.broadcast(json.dumps(packet))
+            else:
+                packet["sender"] = client_id
+                await manager.broadcast(json.dumps(packet), exclude=websocket if p_type in ["offer", "answer", "ice"] else None)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
