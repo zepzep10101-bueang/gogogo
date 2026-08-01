@@ -633,13 +633,23 @@ def read_root():
                     }
                     .card-grid {
                         grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-                        grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
-                        height: calc(100vh - 40px);
+                        
+                        /* 【 수정된 부분 시작 】 */
+                        /* 억지로 화면에 꽉 차게 만드는 row 높이 지정 제거, 비율에 맞게 줄어들도록 height: auto로 변경 */
+                        height: auto !important;
+                        align-content: center !important; 
+                        /* 【 수정된 부분 끝 】 */
+                        
                         gap: 10px !important;
                     }
                     .timer-card {
+                        /* 【 수정된 부분 시작 】 */
+                        /* 박스가 세로로 찌그러지지 않고 일정한 원래의 가로세로 비율(3:4)을 유지하도록 추가 */
+                        aspect-ratio: 3 / 4 !important; 
+                        height: auto !important; /* 기존 height: 100% 강제설정 해제 */
+                        /* 【 수정된 부분 끝 】 */
+                        
                         min-height: 0 !important;
-                        height: 100% !important;
                         display: flex !important;
                         flex-direction: column !important;
                         justify-content: space-between !important;
