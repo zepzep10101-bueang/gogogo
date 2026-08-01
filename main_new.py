@@ -248,7 +248,7 @@ def read_root():
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, memo: '' }));
             let localStream = null;
             let mySharingIndex = null;
-            const peerConnections = {}; // index별로 관리
+            const peerConnections = {};
             const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
             function logChat(msg) {
@@ -285,13 +285,11 @@ def read_root():
             async function toggleScreenShare(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 
-                // 이미 내가 공유 중인데 또 누르면 종료
                 if (mySharingIndex === index) {
                     stopMyShare();
                     return;
                 }
 
-                // 다른 사람이 공유 중이거나 내가 이미 다른 곳에서 공유 중이면 먼저 정리
                 if (mySharingIndex !== null) {
                     stopMyShare();
                 }
@@ -304,7 +302,6 @@ def read_root():
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
 
-                    // 서버에 내가 이 index 번호로 화면을 공유 시작한다고 알림
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
@@ -432,7 +429,6 @@ def read_root():
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             } 
-                            // 누군가 화면 공유를 시작했을 때, 내가 공유자라면 상대로부터 PeerConnection을 맺어 내 화면 스트림을 보내줌
                             else if (data.type === "request_peer_offer") {
                                 const targetIndex = data.index;
                                 if (mySharingIndex === targetIndex && localStream) {
@@ -478,7 +474,7 @@ def read_root():
 
                                 if (ws && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "answer", index: index, sdp: pc.localDescription }));
-                                }));
+                                }
                             } else if (data.type === "answer") {
                                 const pc = peerConnections[data.index];
                                 if (pc) {
@@ -552,7 +548,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     else:
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
             elif p_type == "start_share":
-                # 누군가 공유를 시작하면, 기존에 접속해 있는 다른 사용자들에게 해당 칸으로 연결을 요청하라고 방송
                 idx = packet.get("index")
                 await manager.broadcast(json.dumps({"type": "request_peer_offer", "index": idx}), exclude=websocket)
             elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube", "offer", "answer", "ice", "stop_share"]:
