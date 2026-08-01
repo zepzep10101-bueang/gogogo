@@ -4,7 +4,7 @@ import json
 import uvicorn
 import os
 
-# <u>【 수정된 부분 시작: 데이터를 영구적으로 파일에 저장하고 불러오는 기능 추가 】</u>
+# 【 수정된 부분 시작: 데이터를 영구적으로 파일에 저장하고 불러오는 기능 추가 】
 DATA_FILE = "dashboard_data.json"
 
 def load_data():
@@ -25,7 +25,7 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 server_state = load_data()
-# <u>【 수정된 부분 끝 】</u>
+# 【 수정된 부분 끝 】
 
 app = FastAPI()
 
@@ -473,7 +473,7 @@ def read_root():
                             if (data.type === "chat") {
                                 logChat(`<b>${data.senderName}</b>: ${data.msg}`);
                             } 
-                            // <u>【 수정된 부분 시작: 처음 접속 시 서버에서 저장된 데이터를 받아와서 화면에 복구하는 기능 】</u>
+                            // 【 수정된 부분 시작: 처음 접속 시 서버에서 저장된 데이터를 받아와서 화면에 복구하는 기능 】
                             else if (data.type === "init_state") {
                                 const state = data.state;
                                 state.cards.forEach((card, i) => {
@@ -498,7 +498,7 @@ def read_root():
                                     document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                                 }
                             }
-                            // <u>【 수정된 부분 끝 】</u>
+                            // 【 수정된 부분 끝 】
                             else if (data.type === "count") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                             } else if (data.type === "card_bg_change") {
@@ -704,9 +704,9 @@ async def websocket_endpoint(websocket: WebSocket):
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     
-    # <u>【 수정된 부분 시작: 새로 접속한 사람에게 현재 저장된 상태(server_state) 보내주기 】</u>
+    # 【 수정된 부분 시작: 새로 접속한 사람에게 현재 저장된 상태(server_state) 보내주기 】
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
-    # <u>【 수정된 부분 끝 】</u>
+    # 【 수정된 부분 끝 】
     
     await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
@@ -721,7 +721,7 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 packet["sender"] = client_id
                 
-                # <u>【 수정된 부분 시작: 메모, 이름, 배경이 바뀔 때마다 server_state에 업데이트하고 파일로 저장하기 】</u>
+                # 【 수정된 부분 시작: 메모, 이름, 배경이 바뀔 때마다 server_state에 업데이트하고 파일로 저장하기 】
                 if p_type == "username_change":
                     server_state["cards"][packet["index"]]["user"] = packet["user"]
                     save_data(server_state)
@@ -739,7 +739,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
                     save_data(server_state)
-                # <u>【 수정된 부분 끝 】</u>
+                # 【 수정된 부분 끝 】
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
