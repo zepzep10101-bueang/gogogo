@@ -246,8 +246,9 @@ def read_root():
         <script>
             let ws = null;
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, memo: '' }));
-            const localStreams = {};
-            const peerConnections = {};
+            let localStream = null;
+            let mySharingIndex = null;
+            const peerConnections = {}; // index별로 관리
             const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
             function logChat(msg) {
@@ -283,55 +284,57 @@ def read_root():
 
             async function toggleScreenShare(index) {
                 const box = document.getElementById(`stream-box-${index}`);
-                if (localStreams[index]) {
-                    localStreams[index].getTracks().forEach(track => track.stop());
-                    delete localStreams[index];
-                    
-                    if (peerConnections[index]) {
-                        peerConnections[index].close();
-                        delete peerConnections[index];
+                
+                // 이미 내가 공유 중인데 또 누르면 종료
+                if (mySharingIndex === index) {
+                    stopMyShare();
+                    return;
+                }
+
+                // 다른 사람이 공유 중이거나 내가 이미 다른 곳에서 공유 중이면 먼저 정리
+                if (mySharingIndex !== null) {
+                    stopMyShare();
+                }
+
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    localStream = stream;
+                    mySharingIndex = index;
+
+                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
+                    document.getElementById(`video-${index}`).srcObject = stream;
+
+                    // 서버에 내가 이 index 번호로 화면을 공유 시작한다고 알림
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
+
+                    stream.getVideoTracks()[0].onended = () => {
+                        stopMyShare();
+                    };
+                } catch (err) {
+                    console.error("화면 공유 에러:", err);
+                }
+            }
+
+            function stopMyShare() {
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                    localStream = null;
+                }
+                if (mySharingIndex !== null) {
+                    const idx = mySharingIndex;
+                    mySharingIndex = null;
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "stop_share", index: index }));
+                        ws.send(JSON.stringify({ type: "stop_share", index: idx }));
                     }
 
+                    const box = document.getElementById(`stream-box-${idx}`);
                     box.innerHTML = `
                         <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
-                        <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
+                        <button class="share-btn" onclick="toggleScreenShare(${idx})">🖥️ 화면 공유</button>
                     `;
-                } else {
-                    try {
-                        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                        localStreams[index] = stream;
-
-                        box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
-                        document.getElementById(`video-${index}`).srcObject = stream;
-
-                        const pc = new RTCPeerConnection(rtcConfig);
-                        peerConnections[index] = pc;
-
-                        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-                        pc.onicecandidate = (event) => {
-                            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: "ice", index: index, candidate: event.candidate }));
-                            }
-                        };
-
-                        const offer = await pc.createOffer();
-                        await pc.setLocalDescription(offer);
-
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: "offer", index: index, sdp: pc.localDescription }));
-                        }
-
-                        stream.getVideoTracks()[0].onended = () => {
-                            toggleScreenShare(index);
-                        };
-                    } catch (err) {
-                        console.error("화면 공유 에러:", err);
-                    }
                 }
             }
 
@@ -428,20 +431,44 @@ def read_root():
                                 document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                            } else if (data.type === "offer") {
+                            } 
+                            // 누군가 화면 공유를 시작했을 때, 내가 공유자라면 상대로부터 PeerConnection을 맺어 내 화면 스트림을 보내줌
+                            else if (data.type === "request_peer_offer") {
+                                const targetIndex = data.index;
+                                if (mySharingIndex === targetIndex && localStream) {
+                                    const pc = new RTCPeerConnection(rtcConfig);
+                                    peerConnections[targetIndex] = pc;
+
+                                    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                                    pc.onicecandidate = (e) => {
+                                        if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                                            ws.send(JSON.stringify({ type: "ice", index: targetIndex, candidate: e.candidate }));
+                                        }
+                                    };
+
+                                    const offer = await pc.createOffer();
+                                    await pc.setLocalDescription(offer);
+
+                                    if (ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: "offer", index: targetIndex, sdp: pc.localDescription }));
+                                    }
+                                }
+                            }
+                            else if (data.type === "offer") {
                                 const index = data.index;
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[index] = pc;
 
-                                pc.ontrack = (event) => {
+                                pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline></video>`;
-                                    document.getElementById(`remote-video-${index}`).srcObject = event.streams[0];
+                                    document.getElementById(`remote-video-${index}`).srcObject = e.streams[0];
                                 };
 
-                                pc.onicecandidate = (event) => {
-                                    if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "ice", index: index, candidate: event.candidate }));
+                                pc.onicecandidate = (e) => {
+                                    if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: "ice", index: index, candidate: e.candidate }));
                                     }
                                 };
 
@@ -449,7 +476,9 @@ def read_root():
                                 const answer = await pc.createAnswer();
                                 await pc.setLocalDescription(answer);
 
-                                ws.send(JSON.stringify({ type: "answer", index: index, sdp: pc.localDescription }));
+                                if (ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: "answer", index: index, sdp: pc.localDescription }));
+                                }));
                             } else if (data.type === "answer") {
                                 const pc = peerConnections[data.index];
                                 if (pc) {
@@ -522,6 +551,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"나: {msg_text}"}))
                     else:
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
+            elif p_type == "start_share":
+                # 누군가 공유를 시작하면, 기존에 접속해 있는 다른 사용자들에게 해당 칸으로 연결을 요청하라고 방송
+                idx = packet.get("index")
+                await manager.broadcast(json.dumps({"type": "request_peer_offer", "index": idx}), exclude=websocket)
             elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube", "offer", "answer", "ice", "stop_share"]:
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
