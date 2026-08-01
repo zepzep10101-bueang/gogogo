@@ -357,11 +357,13 @@ def read_root():
                         <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
                         <button class="share-btn" onclick="toggleScreenShare(${idx})">🖥️ 화면 공유</button>
                     `;
-                }
 
-                for (let key in peerConnections) {
-                    peerConnections[key].close();
-                    delete peerConnections[key];
+                    for (let key in peerConnections) {
+                        if (key.startsWith(`${idx}_`)) {
+                            peerConnections[key].close();
+                            delete peerConnections[key];
+                        }
+                    }
                 }
             }
 
@@ -473,31 +475,22 @@ def read_root():
                             } 
                             else if (data.type === "start_share") {
                                 const targetIndex = data.index;
-                                const senderId = data.sender;
+                                const sharerId = data.sender;
+
+                                if (data.target && data.target !== ws.clientId) {
+                                    return;
+                                }
+
+                                if (sharerId !== ws.clientId && ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
+                                }
+                            }
+                            else if (data.type === "request_offer" && data.target === ws.clientId) {
+                                const targetIndex = data.index;
+                                const viewerId = data.sender;
 
                                 if (mySharingIndex === targetIndex && localStream) {
-                                    const pcKey = `${targetIndex}_${senderId}`;
-                                    if (peerConnections[pcKey]) {
-                                        peerConnections[pcKey].close();
-                                    }
-
-                                    const pc = new RTCPeerConnection(rtcConfig);
-                                    peerConnections[pcKey] = pc;
-
-                                    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-                                    pc.onicecandidate = (e) => {
-                                        if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                            ws.send(JSON.stringify({ type: "ice", index: targetIndex, target: senderId, candidate: e.candidate }));
-                                        }
-                                    };
-
-                                    const offer = await pc.createOffer();
-                                    await pc.setLocalDescription(offer);
-
-                                    if (ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "offer", index: targetIndex, target: senderId, sdp: pc.localDescription }));
-                                    }
+                                    await createOfferForViewer(targetIndex, viewerId);
                                 }
                             }
                             else if (data.type === "offer" && data.target === ws.clientId) {
@@ -568,7 +561,7 @@ def read_root():
                             }
                             else if (data.type === "request_existing_shares") {
                                 if (mySharingIndex !== null && ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "start_share", index: mySharingIndex, sender: ws.clientId }));
+                                    ws.send(JSON.stringify({ type: "start_share", index: mySharingIndex, target: data.sender }));
                                 }
                             }
                         } catch(e) {
@@ -584,6 +577,31 @@ def read_root():
                     };
                 } catch(e) {
                     setTimeout(connectWebSocket, 2000);
+                }
+            }
+
+            async function createOfferForViewer(index, viewerId) {
+                const pcKey = `${index}_${viewerId}`;
+                if (peerConnections[pcKey]) {
+                    peerConnections[pcKey].close();
+                }
+
+                const pc = new RTCPeerConnection(rtcConfig);
+                peerConnections[pcKey] = pc;
+
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                pc.onicecandidate = (e) => {
+                    if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "ice", index: index, target: viewerId, candidate: e.candidate }));
+                    }
+                };
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "offer", index: index, target: viewerId, sdp: pc.localDescription }));
                 }
             }
 
