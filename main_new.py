@@ -18,12 +18,13 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, message: str, exclude: WebSocket = None):
         for connection in list(self.active_connections):
-            try:
-                await connection.send_text(message)
-            except Exception:
-                self.disconnect(connection)
+            if connection != exclude:
+                try:
+                    await connection.send_text(message)
+                except Exception:
+                    self.disconnect(connection)
 
 manager = ConnectionManager()
 
@@ -246,6 +247,8 @@ def read_root():
             let ws = null;
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, memo: '' }));
             const localStreams = {};
+            const peerConnections = {};
+            const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
             function logChat(msg) {
                 const history = document.getElementById('chatHistory');
@@ -283,6 +286,16 @@ def read_root():
                 if (localStreams[index]) {
                     localStreams[index].getTracks().forEach(track => track.stop());
                     delete localStreams[index];
+                    
+                    if (peerConnections[index]) {
+                        peerConnections[index].close();
+                        delete peerConnections[index];
+                    }
+
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "stop_share", index: index }));
+                    }
+
                     box.innerHTML = `
                         <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
                         <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
@@ -293,15 +306,28 @@ def read_root():
                         localStreams[index] = stream;
 
                         box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
-                        const videoEl = document.getElementById(`video-${index}`);
-                        videoEl.srcObject = stream;
+                        document.getElementById(`video-${index}`).srcObject = stream;
+
+                        const pc = new RTCPeerConnection(rtcConfig);
+                        peerConnections[index] = pc;
+
+                        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+                        pc.onicecandidate = (event) => {
+                            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: "ice", index: index, candidate: event.candidate }));
+                            }
+                        };
+
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: "offer", index: index, sdp: pc.localDescription }));
+                        }
 
                         stream.getVideoTracks()[0].onended = () => {
-                            delete localStreams[index];
-                            box.innerHTML = `
-                                <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
-                                <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
-                            `;
+                            toggleScreenShare(index);
                         };
                     } catch (err) {
                         console.error("화면 공유 에러:", err);
@@ -386,7 +412,7 @@ def read_root():
                         statusEl.className = "status-indicator status-online";
                     };
 
-                    ws.onmessage = function(event) {
+                    ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
                             if (data.type === "chat") {
@@ -402,6 +428,49 @@ def read_root():
                                 document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                            } else if (data.type === "offer") {
+                                const index = data.index;
+                                const pc = new RTCPeerConnection(rtcConfig);
+                                peerConnections[index] = pc;
+
+                                pc.ontrack = (event) => {
+                                    const box = document.getElementById(`stream-box-${index}`);
+                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline></video>`;
+                                    document.getElementById(`remote-video-${index}`).srcObject = event.streams[0];
+                                };
+
+                                pc.onicecandidate = (event) => {
+                                    if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: "ice", index: index, candidate: event.candidate }));
+                                    }
+                                };
+
+                                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+
+                                ws.send(JSON.stringify({ type: "answer", index: index, sdp: pc.localDescription }));
+                            } else if (data.type === "answer") {
+                                const pc = peerConnections[data.index];
+                                if (pc) {
+                                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                }
+                            } else if (data.type === "ice") {
+                                const pc = peerConnections[data.index];
+                                if (pc && data.candidate) {
+                                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                                }
+                            } else if (data.type === "stop_share") {
+                                const index = data.index;
+                                if (peerConnections[index]) {
+                                    peerConnections[index].close();
+                                    delete peerConnections[index];
+                                }
+                                const box = document.getElementById(`stream-box-${index}`);
+                                box.innerHTML = `
+                                    <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
+                                    <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
+                                `;
                             }
                         } catch(e) {
                             console.error("데이터 처리 에러:", e);
@@ -453,8 +522,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"나: {msg_text}"}))
                     else:
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
-            elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube"]:
-                await manager.broadcast(json.dumps(packet))
+            elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube", "offer", "answer", "ice", "stop_share"]:
+                await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
