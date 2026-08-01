@@ -4,6 +4,29 @@ import json
 import uvicorn
 import os
 
+# <u>【 수정된 부분 시작: 데이터를 영구적으로 파일에 저장하고 불러오는 기능 추가 】</u>
+DATA_FILE = "dashboard_data.json"
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "cards": [{"id": i, "user": f"누나{i+1}", "memo": "", "bg": None} for i in range(8)],
+        "global_bg": None,
+        "global_bg_type": None
+    }
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+server_state = load_data()
+# <u>【 수정된 부분 끝 】</u>
+
 app = FastAPI()
 
 class ConnectionManager:
@@ -449,7 +472,34 @@ def read_root():
                             const data = JSON.parse(event.data);
                             if (data.type === "chat") {
                                 logChat(`<b>${data.senderName}</b>: ${data.msg}`);
-                            } else if (data.type === "count") {
+                            } 
+                            // <u>【 수정된 부분 시작: 처음 접속 시 서버에서 저장된 데이터를 받아와서 화면에 복구하는 기능 】</u>
+                            else if (data.type === "init_state") {
+                                const state = data.state;
+                                state.cards.forEach((card, i) => {
+                                    cardData[i].user = card.user;
+                                    cardData[i].memo = card.memo;
+                                    
+                                    const userEl = document.getElementById(`username-${i}`);
+                                    if (userEl) userEl.value = card.user;
+                                    
+                                    const memoEls = document.querySelectorAll('.card-memo');
+                                    if (memoEls[i]) memoEls[i].value = card.memo;
+                                    
+                                    if (card.bg) {
+                                        const bgEl = document.getElementById(`card-media-${i}`);
+                                        if (bgEl) bgEl.innerHTML = `<img src="${card.bg}" alt="BG">`;
+                                    }
+                                });
+                                
+                                if (state.global_bg_type === "image" && state.global_bg) {
+                                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${state.global_bg}" alt="Full Background">`;
+                                } else if (state.global_bg_type === "youtube" && state.global_bg) {
+                                    document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                                }
+                            }
+                            // <u>【 수정된 부분 끝 】</u>
+                            else if (data.type === "count") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                             } else if (data.type === "card_bg_change") {
                                 const targetBg = document.getElementById(`card-media-${data.index}`);
@@ -477,9 +527,7 @@ def read_root():
                                 const targetIndex = data.index;
                                 const sharerId = data.sender;
 
-                                if (data.target && data.target !== ws.clientId) {
-                                    return;
-                                }
+                                if (data.target && data.target !== ws.clientId) return;
 
                                 if (sharerId !== ws.clientId && ws && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
@@ -498,9 +546,7 @@ def read_root():
                                 const senderId = data.sender;
                                 const pcKey = `${index}_${senderId}`;
 
-                                if (peerConnections[pcKey]) {
-                                    peerConnections[pcKey].close();
-                                }
+                                if (peerConnections[pcKey]) peerConnections[pcKey].close();
 
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[pcKey] = pc;
@@ -528,16 +574,12 @@ def read_root():
                             else if (data.type === "answer" && data.target === ws.clientId) {
                                 const pcKey = `${data.index}_${data.sender}`;
                                 const pc = peerConnections[pcKey];
-                                if (pc) {
-                                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                                }
+                                if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                             } 
                             else if (data.type === "ice" && data.target === ws.clientId) {
                                 const pcKey = `${data.index}_${data.sender}`;
                                 const pc = peerConnections[pcKey];
-                                if (pc && data.candidate) {
-                                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                                }
+                                if (pc && data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                             } 
                             else if (data.type === "stop_share") {
                                 const index = data.index;
@@ -582,9 +624,7 @@ def read_root():
 
             async function createOfferForViewer(index, viewerId) {
                 const pcKey = `${index}_${viewerId}`;
-                if (peerConnections[pcKey]) {
-                    peerConnections[pcKey].close();
-                }
+                if (peerConnections[pcKey]) peerConnections[pcKey].close();
 
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
@@ -621,7 +661,6 @@ def read_root():
             initCards();
             connectWebSocket();
 
-            // 반응형 크기 조절 기능 추가
             window.addEventListener('DOMContentLoaded', () => {
                 const styleTag = document.createElement('style');
                 styleTag.innerHTML = `
@@ -633,22 +672,13 @@ def read_root():
                     }
                     .card-grid {
                         grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-                        
-                        /* 【 수정된 부분 시작 】 */
-                        /* 억지로 화면에 꽉 차게 만드는 row 높이 지정 제거, 비율에 맞게 줄어들도록 height: auto로 변경 */
                         height: auto !important;
                         align-content: center !important; 
-                        /* 【 수정된 부분 끝 】 */
-                        
                         gap: 10px !important;
                     }
                     .timer-card {
-                        /* 【 수정된 부분 시작 】 */
-                        /* 박스가 세로로 찌그러지지 않고 일정한 원래의 가로세로 비율(3:4)을 유지하도록 추가 */
                         aspect-ratio: 3 / 4 !important; 
-                        height: auto !important; /* 기존 height: 100% 강제설정 해제 */
-                        /* 【 수정된 부분 끝 】 */
-                        
+                        height: auto !important;
                         min-height: 0 !important;
                         display: flex !important;
                         flex-direction: column !important;
@@ -673,6 +703,11 @@ async def websocket_endpoint(websocket: WebSocket):
     client_id = str(id(websocket))
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
+    
+    # <u>【 수정된 부분 시작: 새로 접속한 사람에게 현재 저장된 상태(server_state) 보내주기 】</u>
+    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+    # <u>【 수정된 부분 끝 】</u>
+    
     await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
     try:
@@ -685,7 +720,28 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet))
             else:
                 packet["sender"] = client_id
-                await manager.broadcast(json.dumps(packet), exclude=websocket if p_type in ["offer", "answer", "ice"] else None)
+                
+                # <u>【 수정된 부분 시작: 메모, 이름, 배경이 바뀔 때마다 server_state에 업데이트하고 파일로 저장하기 】</u>
+                if p_type == "username_change":
+                    server_state["cards"][packet["index"]]["user"] = packet["user"]
+                    save_data(server_state)
+                elif p_type == "memo_change":
+                    server_state["cards"][packet["index"]]["memo"] = packet["memo"]
+                    save_data(server_state)
+                elif p_type == "card_bg_change":
+                    server_state["cards"][packet["index"]]["bg"] = packet.get("imgUrl")
+                    save_data(server_state)
+                elif p_type == "global_bg_image":
+                    server_state["global_bg"] = packet.get("dataUrl")
+                    server_state["global_bg_type"] = "image"
+                    save_data(server_state)
+                elif p_type == "global_bg_youtube":
+                    server_state["global_bg"] = packet.get("videoId")
+                    server_state["global_bg_type"] = "youtube"
+                    save_data(server_state)
+                # <u>【 수정된 부분 끝 】</u>
+                
+                await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
