@@ -334,8 +334,17 @@ def read_root():
             function setLocalBackground(event) {
                 const file = event.target.files[0];
                 if (!file) return;
-                const blobUrl = URL.createObjectURL(file);
-                document.getElementById('bgMediaWrapper').innerHTML = `<img src="${blobUrl}" alt="Full Background">`;
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
+                    
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: dataUrl }));
+                    }
+                };
+                reader.readAsDataURL(file);
             }
 
             function extractYoutubeId(url) {
@@ -357,6 +366,10 @@ def read_root():
                 }
 
                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "global_bg_youtube", videoId: videoId }));
+                }
             }
 
             function connectWebSocket() {
@@ -385,6 +398,10 @@ def read_root():
                                 if (targetBg) {
                                     targetBg.innerHTML = `<img src="${data.imgUrl}" alt="BG">`;
                                 }
+                            } else if (data.type === "global_bg_image") {
+                                document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
+                            } else if (data.type === "global_bg_youtube") {
+                                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             }
                         } catch(e) {
                             console.error("데이터 처리 에러:", e);
@@ -436,7 +453,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"나: {msg_text}"}))
                     else:
                         await conn.send_text(json.dumps({"type": "chat", "msg": f"상대방: {msg_text}"}))
-            elif p_type == "card_bg_change":
+            elif p_type in ["card_bg_change", "global_bg_image", "global_bg_youtube"]:
                 await manager.broadcast(json.dumps(packet))
 
     except WebSocketDisconnect:
