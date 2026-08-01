@@ -620,6 +620,38 @@ def read_root():
 
             initCards();
             connectWebSocket();
+
+            // 반응형 크기 조절 기능 추가
+            window.addEventListener('DOMContentLoaded', () => {
+                const styleTag = document.createElement('style');
+                styleTag.innerHTML = `
+                    .main-container {
+                        width: 100vw;
+                        height: 100vh;
+                        box-sizing: border-box;
+                        overflow: hidden;
+                    }
+                    .card-grid {
+                        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+                        grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+                        height: calc(100vh - 40px);
+                        gap: 10px !important;
+                    }
+                    .timer-card {
+                        min-height: 0 !important;
+                        height: 100% !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
+                    }
+                    .card-stream-box {
+                        flex-grow: 1 !important;
+                        height: auto !important;
+                        min-height: 80px;
+                    }
+                `;
+                document.head.appendChild(styleTag);
+            });
         </script>
     </body>
     </html>
