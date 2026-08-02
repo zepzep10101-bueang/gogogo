@@ -70,10 +70,25 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
-        <title>행운방 대시보드</title>
+        <title>통합</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
+
+            /* [수정된 부분 시작: 비밀번호 창 스타일] */
+            .login-overlay {
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                background: #111; z-index: 9999; display: flex;
+                align-items: center; justify-content: center; flex-direction: column;
+            }
+            .login-box {
+                background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            }
+            .login-box input { padding: 10px; margin-top: 15px; border-radius: 5px; border: none; width: 200px; text-align: center;}
+            .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold;}
+            /* [수정된 부분 끝] */
 
             .video-background {
                 position: fixed;
@@ -224,6 +239,18 @@ def read_root():
     </head>
     <body>
 
+        <!-- [수정된 부분 시작: 비밀번호 입력 창 HTML] -->
+        <div class="login-overlay" id="loginOverlay">
+            <div class="login-box">
+                <h2>🔒 행운방 입장</h2>
+                <p style="font-size: 13px; color: #aaa; margin-top: 5px;">비밀번호를 입력해야 들어갈 수 있어!</p>
+                <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
+                <br>
+                <button onclick="login()">입장하기</button>
+            </div>
+        </div>
+        <!-- [수정된 부분 끝] -->
+
         <div class="video-background" id="bgContainer">
             <div id="bgMediaWrapper"></div>
         </div>
@@ -264,6 +291,32 @@ def read_root():
         </div>
 
         <script>
+            // [수정된 부분 시작: 비밀번호 확인 및 자동 로그인 로직]
+            const ROOM_PASSWORD = "1122"; // ★ 누나가 원하는 비밀번호로 여기서 바꿔! ★
+
+            function checkLogin() {
+                if (localStorage.getItem('dashboard_logged_in') === 'true') {
+                    document.getElementById('loginOverlay').style.display = 'none';
+                    initCards();
+                    connectWebSocket();
+                } else {
+                    document.getElementById('loginOverlay').style.display = 'flex';
+                }
+            }
+
+            function login() {
+                const inputPw = document.getElementById('pwInput').value;
+                if (inputPw === ROOM_PASSWORD) {
+                    localStorage.setItem('dashboard_logged_in', 'true'); // 한 번 통과하면 브라우저에 저장!
+                    document.getElementById('loginOverlay').style.display = 'none';
+                    initCards();
+                    connectWebSocket();
+                } else {
+                    alert("비밀번호가 틀렸어! 다시 확인해봐.");
+                }
+            }
+            // [수정된 부분 끝]
+
             let ws = null;
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
             let localStream = null;
@@ -655,8 +708,9 @@ def read_root():
                 }
             }
 
-            initCards();
-            connectWebSocket();
+            // [수정된 부분 시작: 바로 실행하지 않고 로그인 체크 먼저 실행]
+            checkLogin();
+            // [수정된 부분 끝]
         </script>
     </body>
     </html>
