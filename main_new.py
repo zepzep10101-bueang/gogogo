@@ -14,7 +14,7 @@ def load_data():
         except:
             pass
     return {
-        "cards": [{"id": i, "user": f"누나{i+1}"} for i in range(8)],
+        "cards": [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
@@ -132,12 +132,23 @@ def read_root():
                 aspect-ratio: 4 / 5;
                 position: relative;
                 overflow: hidden;
+                background-size: cover;
+                background-position: center;
+            }
+
+            .card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 5px;
+                position: relative;
+                z-index: 3;
             }
 
             .card-stream-box {
                 width: 100%;
                 flex-grow: 1;
-                background: rgba(0, 0, 0, 0.85);
+                background: rgba(0, 0, 0, 0.65);
                 border-radius: 8px;
                 overflow: hidden;
                 position: relative;
@@ -153,7 +164,7 @@ def read_root():
             .card-stream-box video {
                 width: 100%;
                 height: 100%;
-                object-fit: cover;
+                object-fit: contain;
                 background: #000;
                 position: absolute;
                 top: 0;
@@ -241,7 +252,7 @@ def read_root():
 
         <script>
             let ws = null;
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나{i+1}` }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
             let localStream = null;
             let mySharingIndex = null;
             const peerConnections = {}; 
@@ -265,13 +276,18 @@ def read_root():
                 const grid = document.getElementById('cardGrid');
                 grid.innerHTML = '';
                 cardData.forEach((card, index) => {
+                    let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     grid.innerHTML += `
-                        <div class="timer-card">
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:5px; position:relative; z-index:3;">
+                        <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
+                            <div class="card-header">
                                 <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
                                 <button class="share-btn" id="share-btn-${index}" onclick="toggleScreenShare(${index})">화면 공유</button>
                             </div>
                             
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
+                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            </div>
+
                             <div class="card-stream-box" id="stream-box-${index}">
                                 <span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
                             </div>
@@ -285,6 +301,26 @@ def read_root():
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 }
+            }
+
+            function setCardBackground(index, event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    cardData[index].card_bg = dataUrl;
+                    const cardEl = document.getElementById(`card-card-${index}`);
+                    if (cardEl) {
+                        cardEl.style.backgroundImage = `url('${dataUrl}')`;
+                    }
+
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
+                    }
+                };
+                reader.readAsDataURL(file);
             }
 
             async function toggleScreenShare(index) {
@@ -420,8 +456,13 @@ def read_root():
                                 const state = data.state;
                                 state.cards.forEach((card, i) => {
                                     cardData[i].user = card.user;
+                                    cardData[i].card_bg = card.card_bg;
                                     const userEl = document.getElementById(`username-${i}`);
                                     if (userEl) userEl.value = card.user;
+                                    const cardEl = document.getElementById(`card-card-${i}`);
+                                    if (cardEl && card.card_bg) {
+                                        cardEl.style.backgroundImage = `url('${card.card_bg}')`;
+                                    }
                                 });
                                 
                                 if (state.global_bg_type === "image" && state.global_bg) {
@@ -446,6 +487,12 @@ def read_root():
                                 const inputEl = document.getElementById(`username-${data.index}`);
                                 if (inputEl) {
                                     inputEl.value = data.user;
+                                }
+                            } else if (data.type === "card_bg_change") {
+                                cardData[data.index].card_bg = data.dataUrl;
+                                const cardEl = document.getElementById(`card-card-${data.index}`);
+                                if (cardEl) {
+                                    cardEl.style.backgroundImage = `url('${data.dataUrl}')`;
                                 }
                             } else if (data.type === "global_bg_image") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
@@ -624,6 +671,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if p_type == "username_change":
                     server_state["cards"][packet["index"]]["user"] = packet["user"]
+                    save_data(server_state)
+                elif p_type == "card_bg_change":
+                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
                     save_data(server_state)
                 elif p_type == "global_bg_image":
                     server_state["global_bg"] = packet.get("dataUrl")
