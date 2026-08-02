@@ -1,8 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-import json
-import uvicorn
-import os
+json = __import__('json')
+os = __import__('os')
+uvicorn = __import__('uvicorn')
 
 DATA_FILE = "dashboard_data.json"
 
@@ -11,13 +11,12 @@ def load_data():
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # 기존 데이터 구조가 깨지지 않았는지 확인하고 기본값 보장
                 if "cards" not in data:
                     data["cards"] = [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)]
                 if "chat_history" not in data:
                     data["chat_history"] = []
                 return data
-        except:
+        except Exception:
             pass
     return {
         "cards": [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)],
@@ -27,8 +26,11 @@ def load_data():
     }
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 server_state = load_data()
 
@@ -465,16 +467,20 @@ def read_root():
                             } 
                             else if (data.type === "init_state") {
                                 const state = data.state;
-                                state.cards.forEach((card, i) => {
-                                    cardData[i].user = card.user;
-                                    cardData[i].card_bg = card.card_bg;
-                                    const userEl = document.getElementById(`username-${i}`);
-                                    if (userEl) userEl.value = card.user;
-                                    const cardEl = document.getElementById(`card-card-${i}`);
-                                    if (cardEl && card.card_bg) {
-                                        cardEl.style.backgroundImage = `url('${card.card_bg}')`;
-                                    }
-                                });
+                                if (state.cards) {
+                                    state.cards.forEach((card, i) => {
+                                        if (cardData[i]) {
+                                            cardData[i].user = card.user;
+                                            cardData[i].card_bg = card.card_bg;
+                                            const userEl = document.getElementById(`username-${i}`);
+                                            if (userEl) userEl.value = card.user;
+                                            const cardEl = document.getElementById(`card-card-${i}`);
+                                            if (cardEl && card.card_bg) {
+                                                cardEl.style.backgroundImage = `url('${card.card_bg}')`;
+                                            }
+                                        }
+                                    });
+                                }
                                 
                                 if (state.global_bg_type === "image" && state.global_bg) {
                                     document.getElementById('bgMediaWrapper').innerHTML = `<img src="${state.global_bg}" alt="Full Background">`;
