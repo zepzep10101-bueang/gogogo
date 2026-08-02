@@ -751,8 +751,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 server_state["chat_history"].append(chat_obj)
                 if len(server_state["chat_history"]) > 100:
                     server_state["chat_history"].pop(0)
-                save_data(server_state)
+                
+                # [수정된 부분: 화면에 채팅 먼저 즉시 뿌려주기]
                 await manager.broadcast(json.dumps(packet))
+                # [수정된 부분: DB 저장은 나중에 딜레이 없이 처리]
+                save_data(server_state)
             else:
                 packet["sender"] = client_id
                 
