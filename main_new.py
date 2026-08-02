@@ -3,29 +3,32 @@ from fastapi.responses import HTMLResponse
 json = __import__('json')
 os = __import__('os')
 uvicorn = __import__('uvicorn')
-pymongo = __import__('pymongo')
 
-# MongoDB 연결 설정 (Render 환경 변수에서 가져오고, 없으면 기본 주소 사용)
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0")
-client = pymongo.MongoClient(MONGO_URI)
-db = client["gogogo_db"]
-settings_collection = db["settings"]
+# [수정된 부분: 파일 저장 대신 망고로드(MongoDB) 연결]
+from pymongo import MongoClient
+
+# Render 환경변수에서 주소를 가져오거나, 없으면 기본값(누나의 실제 주소)을 사용해
+MONGO_URI = os.environ.get("MONGO_URI", "여기에_누나의_망고로드_주소를_넣어주면_돼")
+
+try:
+    client = MongoClient(MONGO_URI)
+    db = client["dashboard_db"] # 데이터베이스 이름 생성
+    collection = db["dashboard_data"] # 데이터가 들어갈 방(컬렉션) 이름
+except Exception as e:
+    print("망고로드 연결 실패:", e)
 
 def load_data():
     try:
-        doc = settings_collection.find_one({"_id": "dashboard_state"})
-        if doc and "data" in doc:
-            data = doc["data"]
-            if "cards" not in data:
-                data["cards"] = [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)]
-            if "chat_history" not in data:
-                data["chat_history"] = []
+        # 망고로드에서 기존 데이터 불러오기
+        data = collection.find_one({"_id": "main_state"})
+        if data:
             return data
     except Exception:
         pass
     
-    # 기본 데이터 구조
+    # 데이터가 없으면 초기 상태 만들어주기
     return {
+        "_id": "main_state",
         "cards": [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)],
         "global_bg": None,
         "global_bg_type": None,
@@ -34,13 +37,11 @@ def load_data():
 
 def save_data(data):
     try:
-        settings_collection.update_one(
-            {"_id": "dashboard_state"},
-            {"$set": {"data": data}},
-            upsert=True
-        )
-    except Exception:
-        pass
+        # 망고로드에 데이터 덮어쓰기 (없으면 새로 생성)
+        collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
+    except Exception as e:
+        print("망고로드 저장 에러:", e)
+# [수정된 부분 끝]
 
 server_state = load_data()
 
@@ -85,6 +86,7 @@ def read_root():
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
 
+            /* [수정된 부분 시작: 비밀번호 창 스타일] */
             .login-overlay {
                 position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                 background: #111; z-index: 9999; display: flex;
@@ -97,6 +99,7 @@ def read_root():
             }
             .login-box input { padding: 10px; margin-top: 15px; border-radius: 5px; border: none; width: 200px; text-align: center;}
             .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold;}
+            /* [수정된 부분 끝] */
 
             .video-background {
                 position: fixed;
@@ -247,6 +250,7 @@ def read_root():
     </head>
     <body>
 
+        <!-- [수정된 부분 시작: 비밀번호 입력 창 HTML] -->
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -256,6 +260,7 @@ def read_root():
                 <button onclick="login()">입장하기</button>
             </div>
         </div>
+        <!-- [수정된 부분 끝] -->
 
         <div class="video-background" id="bgContainer">
             <div id="bgMediaWrapper"></div>
@@ -297,7 +302,8 @@ def read_root():
         </div>
 
         <script>
-            const ROOM_PASSWORD = "1122";
+            // [수정된 부분 시작: 비밀번호 확인 및 자동 로그인 로직]
+            const ROOM_PASSWORD = "1122"; // ★ 누나가 원하는 비밀번호로 여기서 바꿔! ★
 
             function checkLogin() {
                 if (localStorage.getItem('dashboard_logged_in') === 'true') {
@@ -312,7 +318,7 @@ def read_root():
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 if (inputPw === ROOM_PASSWORD) {
-                    localStorage.setItem('dashboard_logged_in', 'true');
+                    localStorage.setItem('dashboard_logged_in', 'true'); // 한 번 통과하면 브라우저에 저장!
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
@@ -320,6 +326,7 @@ def read_root():
                     alert("비밀번호가 틀렸어! 다시 확인해봐.");
                 }
             }
+            // [수정된 부분 끝]
 
             let ws = null;
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
@@ -712,7 +719,9 @@ def read_root():
                 }
             }
 
+            // [수정된 부분 시작: 바로 실행하지 않고 로그인 체크 먼저 실행]
             checkLogin();
+            // [수정된 부분 끝]
         </script>
     </body>
     </html>
