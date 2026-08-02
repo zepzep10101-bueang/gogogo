@@ -31,6 +31,8 @@ app = FastAPI()
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
+        # 누가 어느 인덱스에서 화면 공유 중인지 서버에서 기억 (index -> client_id)
+        self.active_shares: dict[int, str] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -39,6 +41,11 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        # 나간 사람이 공유 중이던 화면이 있다면 정리
+        disconnected_client = str(id(websocket))
+        to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
+        for idx in to_remove:
+            del self.active_shares[idx]
 
     async def broadcast(self, message: str, exclude: WebSocket = None):
         for connection in list(self.active_connections):
@@ -575,9 +582,12 @@ def read_root():
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
-                                if (ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "request_existing_shares" }));
-                                }
+                                // 약간의 딜레이를 주어 소켓이 완전히 안정된 후 기존 공유 요청
+                                setTimeout(() => {
+                                    if (ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: "request_existing_shares" }));
+                                    }
+                                }, 300);
                             }
                             else if (data.type === "request_existing_shares") {
                                 if (mySharingIndex !== null && ws && ws.readyState === WebSocket.OPEN) {
@@ -651,6 +661,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
     
+    # 새로 들어온 사람에게 현재 진행 중인 화면 공유 상태들을 곧바로 전달
+    for idx, sharer_id in manager.active_shares.items():
+        await websocket.send_text(json.dumps({"type": "start_share", "index": idx, "sender": sharer_id}))
+
     await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
     try:
@@ -683,6 +697,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
                     save_data(server_state)
+                elif p_type == "start_share":
+                    manager.active_shares[packet["index"]] = client_id
+                elif p_type == "stop_share":
+                    idx = packet.get("index")
+                    if idx in manager.active_shares:
+                        del manager.active_shares[idx]
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
