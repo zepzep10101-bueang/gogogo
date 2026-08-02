@@ -4,7 +4,7 @@ import json
 import uvicorn
 import os
 
-# 【 수정된 부분 시작: 데이터를 영구적으로 파일에 저장하고 불러오는 기능 추가 】
+# <u>【 수정된 부분 시작: 데이터를 영구적으로 파일에 저장하고 불러오는 기능 추가 】</u>
 DATA_FILE = "dashboard_data.json"
 
 def load_data():
@@ -25,7 +25,7 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 server_state = load_data()
-# 【 수정된 부분 끝 】
+# <u>【 수정된 부분 끝 】</u>
 
 app = FastAPI()
 
@@ -116,7 +116,7 @@ def read_root():
 
             .card-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 15px;
                 align-content: start;
             }
@@ -130,7 +130,7 @@ def read_root():
                 justify-content: space-between;
                 border: 1px solid rgba(255, 255, 255, 0.25);
                 backdrop-filter: blur(5px);
-                min-height: 350px;
+                aspect-ratio: 3 / 4;
                 position: relative;
                 overflow: hidden;
             }
@@ -151,12 +151,13 @@ def read_root():
 
             .card-stream-box {
                 width: 100%;
-                height: 170px;
+                flex-grow: 1;
                 background: rgba(0, 0, 0, 0.7);
                 border-radius: 6px;
                 overflow: hidden;
                 position: relative;
                 margin-top: 6px;
+                margin-bottom: 6px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -165,12 +166,17 @@ def read_root():
                 z-index: 2;
             }
 
+            /* <u>【 수정된 부분 시작: 화면 공유 영상이 카드 영역을 뚫고 나가거나 찌그러지지 않게 안전하게 고정 】</u> */
             .card-stream-box video {
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
                 background: #000;
+                position: absolute;
+                top: 0;
+                left: 0;
             }
+            /* <u>【 수정된 부분 끝 】</u> */
 
             .share-btn {
                 padding: 5px 10px;
@@ -181,6 +187,8 @@ def read_root():
                 border-radius: 4px;
                 cursor: pointer;
                 margin-top: 5px;
+                position: relative;
+                z-index: 3;
             }
 
             .card-memo {
@@ -192,7 +200,6 @@ def read_root():
                 font-size: 11px;
                 resize: none;
                 height: 50px;
-                margin-top: 6px;
                 position: relative;
                 z-index: 2;
                 width: 100%;
@@ -297,11 +304,11 @@ def read_root():
                             <div class="card-media-bg" id="card-media-${index}"></div>
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:4px; position:relative; z-index:2;">
                                 <input type="text" id="username-${index}" value="${card.user}" style="width:75px; padding:2px; font-size:11px; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
-                                <input type="file" accept="image/*" style="width:75px; font-size:9px; padding:1px;" onchange="loadCardImage(event, ${index})">
+                                <input type="file" accept="image/*" style="width:75px; font-size:9px; padding:1px; position:relative; z-index:3;" onchange="loadCardImage(event, ${index})">
                             </div>
                             
                             <div class="card-stream-box" id="stream-box-${index}">
-                                <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
+                                <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
                                 <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
                             </div>
 
@@ -347,7 +354,10 @@ def read_root():
                     localStream = stream;
                     mySharingIndex = index;
 
-                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
+                    box.innerHTML = `
+                        <video id="video-${index}" autoplay playsinline muted></video>
+                        <button class="share-btn" style="position:absolute; bottom:5px; z-index:5;" onclick="toggleScreenShare(${index})">🛑 공유 중지</button>
+                    `;
                     document.getElementById(`video-${index}`).srcObject = stream;
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -377,7 +387,7 @@ def read_root():
 
                     const box = document.getElementById(`stream-box-${idx}`);
                     box.innerHTML = `
-                        <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
+                        <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
                         <button class="share-btn" onclick="toggleScreenShare(${idx})">🖥️ 화면 공유</button>
                     `;
 
@@ -473,7 +483,7 @@ def read_root():
                             if (data.type === "chat") {
                                 logChat(`<b>${data.senderName}</b>: ${data.msg}`);
                             } 
-                            // 【 수정된 부분 시작: 처음 접속 시 서버에서 저장된 데이터를 받아와서 화면에 복구하는 기능 】
+                            // <u>【 수정된 부분 시작: 처음 접속 시 서버에서 저장된 데이터를 받아와서 화면에 복구하는 기능 】</u>
                             else if (data.type === "init_state") {
                                 const state = data.state;
                                 state.cards.forEach((card, i) => {
@@ -498,7 +508,7 @@ def read_root():
                                     document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                                 }
                             }
-                            // 【 수정된 부분 끝 】
+                            // <u>【 수정된 부분 끝 】</u>
                             else if (data.type === "count") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                             } else if (data.type === "card_bg_change") {
@@ -591,7 +601,7 @@ def read_root():
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
                                 box.innerHTML = `
-                                    <span style="font-size:11px; color:#aaa; margin-bottom: 5px;">화면 미공유 중</span>
+                                    <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
                                     <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
                                 `;
                             }
@@ -660,38 +670,6 @@ def read_root():
 
             initCards();
             connectWebSocket();
-
-            window.addEventListener('DOMContentLoaded', () => {
-                const styleTag = document.createElement('style');
-                styleTag.innerHTML = `
-                    .main-container {
-                        width: 100vw;
-                        height: 100vh;
-                        box-sizing: border-box;
-                        overflow: hidden;
-                    }
-                    .card-grid {
-                        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-                        height: auto !important;
-                        align-content: center !important; 
-                        gap: 10px !important;
-                    }
-                    .timer-card {
-                        aspect-ratio: 3 / 4 !important; 
-                        height: auto !important;
-                        min-height: 0 !important;
-                        display: flex !important;
-                        flex-direction: column !important;
-                        justify-content: space-between !important;
-                    }
-                    .card-stream-box {
-                        flex-grow: 1 !important;
-                        height: auto !important;
-                        min-height: 80px;
-                    }
-                `;
-                document.head.appendChild(styleTag);
-            });
         </script>
     </body>
     </html>
@@ -704,9 +682,9 @@ async def websocket_endpoint(websocket: WebSocket):
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     
-    # 【 수정된 부분 시작: 새로 접속한 사람에게 현재 저장된 상태(server_state) 보내주기 】
+    # <u>【 수정된 부분 시작: 새로 접속한 사람에게 현재 저장된 상태(server_state) 보내주기 】</u>
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
-    # 【 수정된 부분 끝 】
+    # <u>【 수정된 부분 끝 】</u>
     
     await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
@@ -721,7 +699,7 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 packet["sender"] = client_id
                 
-                # 【 수정된 부분 시작: 메모, 이름, 배경이 바뀔 때마다 server_state에 업데이트하고 파일로 저장하기 】
+                # <u>【 수정된 부분 시작: 메모, 이름, 배경이 바뀔 때마다 server_state에 업데이트하고 파일로 저장하기 】</u>
                 if p_type == "username_change":
                     server_state["cards"][packet["index"]]["user"] = packet["user"]
                     save_data(server_state)
@@ -739,7 +717,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
                     save_data(server_state)
-                # 【 수정된 부분 끝 】
+                # <u>【 수정된 부분 끝 】</u>
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
