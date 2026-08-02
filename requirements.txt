@@ -1,3 +1,4 @@
 fastapi
-uvicorn[standard]
-websockets
+uvicorn
+pymongo
+dnspython
