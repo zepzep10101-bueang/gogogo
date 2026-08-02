@@ -31,7 +31,6 @@ app = FastAPI()
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
-        # 누가 어느 인덱스에서 화면 공유 중인지 서버에서 기억 (index -> client_id)
         self.active_shares: dict[int, str] = {}
 
     async def connect(self, websocket: WebSocket):
@@ -41,7 +40,6 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-        # 나간 사람이 공유 중이던 화면이 있다면 정리
         disconnected_client = str(id(websocket))
         to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
         for idx in to_remove:
@@ -351,7 +349,7 @@ def read_root():
                     localStream = stream;
                     mySharingIndex = index;
 
-                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
+                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
                     
                     btn.innerText = "공유 중지";
@@ -536,7 +534,7 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline></video>`;
+                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture></video>`;
                                     document.getElementById(`remote-video-${index}`).srcObject = e.streams[0];
                                 };
 
@@ -582,7 +580,6 @@ def read_root():
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
-                                // 약간의 딜레이를 주어 소켓이 완전히 안정된 후 기존 공유 요청
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
@@ -661,7 +658,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
     
-    # 새로 들어온 사람에게 현재 진행 중인 화면 공유 상태들을 곧바로 전달
     for idx, sharer_id in manager.active_shares.items():
         await websocket.send_text(json.dumps({"type": "start_share", "index": idx, "sender": sharer_id}))
 
