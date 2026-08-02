@@ -10,7 +10,13 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # 기존 데이터 구조가 깨지지 않았는지 확인하고 기본값 보장
+                if "cards" not in data:
+                    data["cards"] = [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)]
+                if "chat_history" not in data:
+                    data["chat_history"] = []
+                return data
         except:
             pass
     return {
