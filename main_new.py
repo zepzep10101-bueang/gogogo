@@ -123,7 +123,7 @@ def read_root():
             .timer-card {
                 background: rgba(20, 20, 30, 0.85);
                 border-radius: 12px;
-                padding: 12px;
+                padding: 10px;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
@@ -137,8 +137,8 @@ def read_root():
             .card-stream-box {
                 width: 100%;
                 flex-grow: 1;
-                background: rgba(0, 0, 0, 0.7);
-                border-radius: 6px;
+                background: rgba(0, 0, 0, 0.85);
+                border-radius: 8px;
                 overflow: hidden;
                 position: relative;
                 margin-top: 8px;
@@ -153,7 +153,7 @@ def read_root():
             .card-stream-box video {
                 width: 100%;
                 height: 100%;
-                object-fit: contain;
+                object-fit: cover;
                 background: #000;
                 position: absolute;
                 top: 0;
@@ -161,15 +161,14 @@ def read_root():
             }
 
             .share-btn {
-                padding: 6px 12px;
+                padding: 4px 8px;
                 font-size: 11px;
                 background: #ff7675;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
-                position: relative;
-                z-index: 3;
+                white-space: nowrap;
             }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
@@ -242,7 +241,7 @@ def read_root():
 
         <script>
             let ws = null;
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}` }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나{i+1}` }));
             let localStream = null;
             let mySharingIndex = null;
             const peerConnections = {}; 
@@ -268,13 +267,13 @@ def read_root():
                 cardData.forEach((card, index) => {
                     grid.innerHTML += `
                         <div class="timer-card">
-                            <div style="display:flex; justify-content:center; align-items:center; position:relative; z-index:2;">
-                                <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:5px; position:relative; z-index:3;">
+                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                                <button class="share-btn" id="share-btn-${index}" onclick="toggleScreenShare(${index})">화면 공유</button>
                             </div>
                             
                             <div class="card-stream-box" id="stream-box-${index}">
-                                <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
-                                <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
+                                <span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
                             </div>
                         </div>
                     `;
@@ -290,6 +289,7 @@ def read_root():
 
             async function toggleScreenShare(index) {
                 const box = document.getElementById(`stream-box-${index}`);
+                const btn = document.getElementById(`share-btn-${index}`);
                 
                 if (mySharingIndex === index) {
                     stopMyShare();
@@ -308,11 +308,11 @@ def read_root():
                     localStream = stream;
                     mySharingIndex = index;
 
-                    box.innerHTML = `
-                        <video id="video-${index}" autoplay playsinline muted></video>
-                        <button class="share-btn" style="position:absolute; bottom:5px; z-index:5;" onclick="toggleScreenShare(${index})">🛑 공유 중지</button>
-                    `;
+                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
+                    
+                    btn.innerText = "공유 중지";
+                    btn.style.background = "#d63031";
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
@@ -340,10 +340,11 @@ def read_root():
                     }
 
                     const box = document.getElementById(`stream-box-${idx}`);
-                    box.innerHTML = `
-                        <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
-                        <button class="share-btn" onclick="toggleScreenShare(${idx})">🖥️ 화면 공유</button>
-                    `;
+                    const btn = document.getElementById(`share-btn-${idx}`);
+                    
+                    box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                    btn.innerText = "화면 공유";
+                    btn.style.background = "#ff7675";
 
                     for (let key in peerConnections) {
                         if (key.startsWith(`${idx}_`)) {
@@ -518,10 +519,12 @@ def read_root():
                                     }
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
-                                box.innerHTML = `
-                                    <span style="font-size:11px; color:#aaa; margin-bottom: 5px; position:relative; z-index:2;">화면 미공유 중</span>
-                                    <button class="share-btn" onclick="toggleScreenShare(${index})">🖥️ 화면 공유</button>
-                                `;
+                                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                                const btn = document.getElementById(`share-btn-${index}`);
+                                if (btn) {
+                                    btn.innerText = "화면 공유";
+                                    btn.style.background = "#ff7675";
+                                }
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
@@ -541,7 +544,7 @@ def read_root():
 
                     ws.onclose = function() {
                         const statusEl = document.getElementById('connStatus');
-                        statusEl.innerText = "연결 연결 끊김";
+                        statusEl.innerText = "연결 끊김";
                         statusEl.className = "status-indicator status-offline";
                         setTimeout(connectWebSocket, 2000);
                     };
