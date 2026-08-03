@@ -229,10 +229,10 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
-            const candidateBuffers = {}; // [개선: 연결 확정 전 주소 조각을 임시 보관하는 버퍼]
+            const candidateBuffers = {}; 
             
             const rtcConfig = {
                 iceServers: [
@@ -516,7 +516,6 @@ def read_root():
 
                                 if (data.target && data.target !== ws.clientId) return;
 
-                                // 내 ID가 확정된 상태에서만 offer 요청 발송
                                 if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
                                 }
@@ -544,8 +543,7 @@ def read_root():
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
-                                    // [개선: 자동재생 정책 차단 방지 강제 재생]
-                                    remoteVideo.play().catch(err => console.log("자동재생 차단 해제 시도:", err));
+                                    remoteVideo.play().catch(err => console.log(err));
                                 };
 
                                 pc.onicecandidate = (e) => {
@@ -556,7 +554,6 @@ def read_root():
 
                                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
-                                // [개선: 대기 중이던 ICE Candidate 병합 적용]
                                 if (candidateBuffers[pcKey]) {
                                     for (const cand of candidateBuffers[pcKey]) {
                                         await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.log(e));
@@ -580,7 +577,6 @@ def read_root():
                                 const pcKey = `${data.index}_${data.sender}`;
                                 const pc = peerConnections[pcKey];
                                 
-                                // [개선: remoteDescription 준비 전 도착 시 버퍼링 처리]
                                 if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
                                 } else {
@@ -605,14 +601,14 @@ def read_root():
                                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
                             }
                             else if (data.type === "welcome") {
-                                ws.clientId = data.clientId; // 내 Client ID 최초 수신
+                                ws.clientId = data.clientId;
                                 
-                                // [개선: ID 확정 후 0.3초 뒤 안전하게 기존 화공 세션 재요청]
+                                // [개선: 화면(DOM)이 완전히 그려질 때까지 0.8초 여유를 두고 기존 화공 요청]
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
                                     }
-                                }, 300);
+                                }, 800);
                             }
                             else if (data.type === "request_existing_shares") {
                                 for (let idx in myStreams) {
