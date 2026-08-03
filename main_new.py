@@ -7,7 +7,6 @@ asyncio = __import__('asyncio')
 
 from pymongo import MongoClient
 
-# Render 환경변수에서 주소를 가져오거나, 없으면 기본값 사용
 MONGO_URI = os.environ.get("MONGO_URI", "여기에_누나의_망고로드_주소를_넣어주면_돼")
 
 try:
@@ -40,7 +39,6 @@ def save_data(data):
         print("망고로드 저장 에러:", e)
 
 server_state = load_data()
-
 app = FastAPI()
 
 class ConnectionManager:
@@ -52,21 +50,41 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.append(websocket)
 
+    # [수정된 부분: 끊어진 사람의 자리(인덱스)를 찾아서 반환해 줌]
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        
         disconnected_client = str(id(websocket))
+        freed_indexes = []
+        
         to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
         for idx in to_remove:
             del self.active_shares[idx]
+            freed_indexes.append(idx)
+            
+        return freed_indexes
 
     async def broadcast(self, message: str, exclude: WebSocket = None):
+        dead_connections = []
         for connection in list(self.active_connections):
             if connection != exclude:
                 try:
                     await connection.send_text(message)
                 except Exception:
-                    self.disconnect(connection)
+                    dead_connections.append(connection)
+        
+        # [수정된 부분: 튕긴 사람을 발견하면, 남은 사람들에게 인원수와 화공 꺼짐을 즉시 알림!]
+        for dead in dead_connections:
+            freed_indexes = self.disconnect(dead)
+            count_msg = json.dumps({"type": "count", "count": len(self.active_connections)})
+            for conn in self.active_connections:
+                try:
+                    await conn.send_text(count_msg)
+                    for idx in freed_indexes:
+                        await conn.send_text(json.dumps({"type": "stop_share", "index": idx}))
+                except Exception:
+                    pass
 
 manager = ConnectionManager()
 
@@ -95,148 +113,30 @@ def read_root():
             .login-box input { padding: 10px; margin-top: 15px; border-radius: 5px; border: none; width: 200px; text-align: center;}
             .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold;}
 
-            .video-background {
-                position: fixed;
-                top: 0; left: 0; 
-                width: 100vw; height: 100vh;
-                z-index: 0;
-                overflow: hidden;
-                pointer-events: none;
-                background: #000;
-            }
+            .video-background { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; overflow: hidden; pointer-events: none; background: #000; }
+            #bgMediaWrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+            #bgMediaWrapper img { width: 100vw; height: 100vh; object-fit: cover; display: block; }
+            #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
+            .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
+
+            .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; }
+            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
+            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
             
-            #bgMediaWrapper {
-                width: 100%;
-                height: 100%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            #bgMediaWrapper img {
-                width: 100vw;
-                height: 100vh;
-                object-fit: cover;
-                display: block;
-            }
-
-            #bgMediaWrapper iframe {
-                width: 100vw;
-                height: 100vh;
-                pointer-events: none;
-                border: none;
-            }
-
-            .overlay {
-                position: fixed;
-                top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.35);
-                z-index: 1;
-                pointer-events: none;
-            }
-
-            .main-container {
-                display: grid;
-                grid-template-columns: 3fr 1fr;
-                gap: 20px;
-                padding: 20px;
-                min-height: 100vh;
-                color: white;
-                position: relative;
-                z-index: 2;
-            }
-
-            .card-grid {
-                display: grid;
-                grid-template-columns: repeat(4, minmax(0, 1fr));
-                gap: 15px;
-                align-content: start;
-            }
-
-            .timer-card {
-                background: rgba(20, 20, 30, 0.85);
-                border-radius: 12px;
-                padding: 10px;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
-                border: 1px solid rgba(255, 255, 255, 0.25);
-                backdrop-filter: blur(5px);
-                aspect-ratio: 4 / 5;
-                position: relative;
-                overflow: hidden;
-                background-size: cover;
-                background-position: center;
-            }
-
-            .card-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 5px;
-                position: relative;
-                z-index: 3;
-            }
-
-            .card-stream-box {
-                width: 100%;
-                flex-grow: 1;
-                background: rgba(0, 0, 0, 0.65);
-                border-radius: 8px;
-                overflow: hidden;
-                position: relative;
-                margin-top: 8px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                border: 1px solid rgba(255,255,255,0.2);
-                z-index: 2;
-            }
-
-            .card-stream-box video {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                background: #000;
-                position: absolute;
-                top: 0;
-                left: 0;
-            }
-
-            .share-btn {
-                padding: 4px 6px;
-                font-size: 11px;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                white-space: nowrap;
-            }
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; }
+            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
-            .panel-box {
-                background: rgba(30, 30, 40, 0.85);
-                border-radius: 12px;
-                padding: 15px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                backdrop-filter: blur(5px);
-            }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             .chat-box { flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-end; }
             .chat-input { display: flex; margin-top: 10px; }
-            .chat-input input {
-                flex-grow: 1; padding: 8px; border-radius: 4px; border: none;
-                background: rgba(255, 255, 255, 0.9); color: black;
-            }
-            .chat-input button {
-                padding: 8px 15px; background: #ff7675; border: none;
-                color: white; border-radius: 4px; cursor: pointer; margin-left: 5px;
-            }
+            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; }
+            .chat-input button { padding: 8px 15px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; }
             
             .bg-control { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-            .status-indicator {
-                font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px;
-            }
+            .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
         </style>
@@ -282,7 +182,6 @@ def read_root():
                 </div>
 
                 <div class="panel-box chat-box">
-                    <!-- 전체 지우기 버튼을 빼고 원래대로 복구했어! -->
                     <h3>💬 실시간 채팅</h3>
                     <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
                     <div class="chat-input">
@@ -319,18 +218,16 @@ def read_root():
             }
 
             let ws = null;
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
+            let pingInterval = null; // [수정된 부분: 하트비트 타이머 변수]
             
-            // [수정된 부분: 각 방마다 스트림(화면/캠)을 여러 개 가질 수 있게 배열로 바꿈]
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
             
             const rtcConfig = {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun.stunprotocol.org:3478' }
+                    { urls: 'stun:stun1.l.google.com:19302' }
                 ]
             };
 
@@ -350,7 +247,6 @@ def read_root():
                             <div class="card-header">
                                 <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
                                 
-                                <!-- [수정된 부분: 화공 버튼과 캠 버튼을 각각 분리] -->
                                 <div style="display:flex; gap:3px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -385,9 +281,7 @@ def read_root():
                     const dataUrl = e.target.result;
                     cardData[index].card_bg = dataUrl;
                     const cardEl = document.getElementById(`card-card-${index}`);
-                    if (cardEl) {
-                        cardEl.style.backgroundImage = `url('${dataUrl}')`;
-                    }
+                    if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; }
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
@@ -396,13 +290,11 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
-            // [수정된 부분: 캠과 화면공유를 선택해서 켤 수 있는 통합 함수]
             async function toggleShare(index, type) {
                 const box = document.getElementById(`stream-box-${index}`);
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 
-                // 만약 이 방에 이미 내가 뭔가 켜뒀다면 끄기
                 if (myStreams[index]) {
                     stopShare(index);
                     return;
@@ -411,20 +303,18 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
-                        // 화공 켜기
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: false });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
-                        btnCam.style.display = "none"; // 캠 버튼 숨기기
+                        btnCam.style.display = "none"; 
                     } else {
-                        // 웹캠 켜기
                         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
                         btnCam.innerText = "중지";
                         btnCam.style.background = "#d63031";
-                        btnScreen.style.display = "none"; // 화공 버튼 숨기기
+                        btnScreen.style.display = "none"; 
                     }
                     
-                    myStreams[index] = stream; // 방 번호에 맞춰서 스트림 저장
+                    myStreams[index] = stream;
 
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
@@ -433,9 +323,7 @@ def read_root():
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
 
-                    stream.getVideoTracks()[0].onended = () => {
-                        stopShare(index);
-                    };
+                    stream.getVideoTracks()[0].onended = () => { stopShare(index); };
                 } catch (err) {
                     console.error("미디어 캡처 에러:", err);
                 }
@@ -457,17 +345,8 @@ def read_root():
                 
                 box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
                 
-                // 버튼 다시 원래대로 돌려놓기
-                if(btnScreen) {
-                    btnScreen.innerText = "화공";
-                    btnScreen.style.background = "#ff7675";
-                    btnScreen.style.display = "inline-block";
-                }
-                if(btnCam) {
-                    btnCam.innerText = "캠";
-                    btnCam.style.background = "#0984e3";
-                    btnCam.style.display = "inline-block";
-                }
+                if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
+                if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
 
                 for (let key in peerConnections) {
                     if (key.startsWith(`${index}_`)) {
@@ -505,11 +384,7 @@ def read_root():
             function setYoutubeBackground() {
                 const inputVal = document.getElementById('bgYoutubeInput').value;
                 const videoId = extractYoutubeId(inputVal);
-
-                if (!videoId) {
-                    alert("유튜브 링크가 올바르지 않습니다.");
-                    return;
-                }
+                if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; }
 
                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                 
@@ -530,12 +405,25 @@ def read_root():
                         const statusEl = document.getElementById('connStatus');
                         statusEl.innerText = "연결됨";
                         statusEl.className = "status-indicator status-online";
+
+                        // [수정된 부분: 20초마다 심장 박동(하트비트)을 보내서 렌더가 안 끊게 방어]
+                        if (pingInterval) clearInterval(pingInterval);
+                        pingInterval = setInterval(() => {
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: "ping" }));
+                            }
+                        }, 20000); 
                     };
 
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
-                            if (data.type === "chat") {
+                            
+                            // [수정된 부분: 서버에서 퐁(pong)이 오면 그냥 넘김]
+                            if (data.type === "pong") {
+                                return;
+                            }
+                            else if (data.type === "chat") {
                                 logChat(`<b>${data.senderName}</b>: ${data.msg}`);
                             } 
                             else if (data.type === "init_state") {
@@ -548,9 +436,7 @@ def read_root():
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
-                                            if (cardEl && card.card_bg) {
-                                                cardEl.style.backgroundImage = `url('${card.card_bg}')`;
-                                            }
+                                            if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
                                         }
                                     });
                                 }
@@ -575,15 +461,11 @@ def read_root():
                             } else if (data.type === "username_change") {
                                 cardData[data.index].user = data.user;
                                 const inputEl = document.getElementById(`username-${data.index}`);
-                                if (inputEl) {
-                                    inputEl.value = data.user;
-                                }
+                                if (inputEl) { inputEl.value = data.user; }
                             } else if (data.type === "card_bg_change") {
                                 cardData[data.index].card_bg = data.dataUrl;
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
-                                if (cardEl) {
-                                    cardEl.style.backgroundImage = `url('${data.dataUrl}')`;
-                                }
+                                if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; }
                             } else if (data.type === "global_bg_image") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
                             } else if (data.type === "global_bg_youtube") {
@@ -603,7 +485,6 @@ def read_root():
                                 const targetIndex = data.index;
                                 const viewerId = data.sender;
 
-                                // [수정된 부분: 내가 송출 중인 해당 번호 방의 스트림이 있으면 연결해주기]
                                 if (myStreams[targetIndex]) {
                                     await createOfferForViewer(targetIndex, viewerId);
                                 }
@@ -620,8 +501,6 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    
-                                    // [🚨 핵심 수정 부분: muted 추가해서 브라우저가 화면 차단하는 버그 고침!]
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                                     document.getElementById(`remote-video-${index}`).srcObject = e.streams[0];
                                 };
@@ -675,7 +554,6 @@ def read_root():
                                 }, 300);
                             }
                             else if (data.type === "request_existing_shares") {
-                                // [수정된 부분: 내가 송출 중인 모든 방의 스트림을 다 알려주기]
                                 for (let idx in myStreams) {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender }));
@@ -688,6 +566,7 @@ def read_root():
                     };
 
                     ws.onclose = function() {
+                        if (pingInterval) clearInterval(pingInterval);
                         const statusEl = document.getElementById('connStatus');
                         statusEl.innerText = "연결 끊김";
                         statusEl.className = "status-indicator status-offline";
@@ -762,6 +641,11 @@ async def websocket_endpoint(websocket: WebSocket):
             packet = json.loads(data)
             p_type = packet.get("type")
 
+            # [수정된 부분: 하트비트 ping이 오면 렌더 서버가 연결을 안 끊도록 응답(pong) 발송]
+            if p_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
             if p_type == "chat":
                 chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg")}
                 server_state["chat_history"].append(chat_obj)
@@ -797,9 +681,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+    except (WebSocketDisconnect, Exception):
+        # [수정된 부분: 누군가 튕기거나 나가면 즉시 인원수 빼고 남은 사람들에게 화면/캠 끄라고 신호 쏨]
+        freed_indexes = manager.disconnect(websocket)
         await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
