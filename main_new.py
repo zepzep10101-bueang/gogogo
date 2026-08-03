@@ -209,7 +209,7 @@ def read_root():
                 const inputNick = document.getElementById('nickInput').value.trim();
                 
                 if (!inputNick) {
-                    alert("눈팅 금지! 누군지 알 수 있게 닉네임을 적어줘 누나!");
+                    alert("누군지 알 수 있게 닉네임을 적어줘 누나!");
                     return;
                 }
 
@@ -322,7 +322,6 @@ def read_root():
                     
                     myStreams[index] = stream;
 
-                    // [추가된 부분: 화면 켤 때 카드 이름을 내 닉네임으로 자동 변경하고 동네방네 방송하기!]
                     const myName = window.myNickname || "익명";
                     const userEl = document.getElementById(`username-${index}`);
                     if (userEl) userEl.value = myName;
@@ -404,14 +403,6 @@ def read_root():
                     ws.send(JSON.stringify({ type: "global_bg_youtube", videoId: videoId }));
                 }
             }
-            
-            function kickUser(targetName) {
-                if (confirm(`진짜로 눈팅족 '${targetName}' 님을 방에서 쫓아낼까?`)) {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "kick_user", target: targetName }));
-                    }
-                }
-            }
 
             function connectWebSocket() {
                 const loc = window.location;
@@ -445,19 +436,13 @@ def read_root():
                                 return;
                             }
                             
-                            else if (data.type === "kicked") {
-                                alert("방장에 의해 방에서 강퇴당했습니다. (눈팅 금지!)");
-                                window.location.reload(); 
-                                return;
-                            }
-                            
+                            // [수정된 부분: 강퇴 버튼을 없애고 순수하게 닉네임만 예쁘게 보여줌]
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
                                 let listHtml = data.users.map(u => 
-                                    `<span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;">
-                                        <b style="color:white;">${u}</b> 
-                                        <button onclick="kickUser('${u}')" style="background:#d63031; color:white; border:none; border-radius:3px; font-size:10px; cursor:pointer; padding:2px 4px;">강퇴</button>
+                                    `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-block;">
+                                        <b style="color:white;">${u}</b>
                                     </span>`
                                 ).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
@@ -645,7 +630,6 @@ def read_root():
                 const msgText = input.value.trim();
                 if (!msgText) return;
 
-                // 채팅 보낼 때도 로그인할 때 쓴 내 닉네임으로 전송!
                 const myName = window.myNickname || "익명";
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -684,18 +668,6 @@ async def websocket_endpoint(websocket: WebSocket):
             if p_type == "set_nickname":
                 manager.active_users[websocket] = packet.get("nickname", "익명")
                 await manager.broadcast_user_list()
-                continue
-
-            if p_type == "kick_user":
-                target_nick = packet.get("target")
-                for conn, nick in list(manager.active_users.items()):
-                    if nick == target_nick:
-                        try:
-                            await conn.send_text(json.dumps({"type": "kicked"}))
-                            await asyncio.sleep(0.1) 
-                            await conn.close(code=1008) 
-                        except Exception:
-                            pass
                 continue
 
             if p_type == "chat":
