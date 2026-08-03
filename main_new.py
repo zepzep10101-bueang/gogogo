@@ -234,6 +234,9 @@ def read_root():
             const peerConnections = {}; 
             const candidateBuffers = {}; 
             
+            // [강력해진 부분: 현재 켜져 있어야 할 화공 목록을 추적]
+            const expectedShares = {}; 
+            
             const rtcConfig = {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
@@ -379,7 +382,41 @@ def read_root():
                         delete peerConnections[key];
                     }
                 }
+                
+                // 내 화공 추적 목록에서 삭제
+                delete expectedShares[index];
             }
+
+            // [강력해진 부분: 5초마다 죽은 화면(좀비) 감지해서 알아서 다시 살려내는 심장 박동(Heartbeat) 로직]
+            setInterval(() => {
+                if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
+                
+                for (let idx in expectedShares) {
+                    const sharerId = expectedShares[idx];
+                    if (sharerId === ws.clientId) continue; // 내 화공은 내가 패스
+                    
+                    const pcKey = `${idx}_${sharerId}`;
+                    const pc = peerConnections[pcKey];
+                    
+                    // 연결선이 없거나, 끊어졌거나(failed/disconnected) 확인
+                    let isConnectionDead = false;
+                    if (!pc) {
+                        isConnectionDead = true;
+                    } else {
+                        const state = pc.iceConnectionState;
+                        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+                            isConnectionDead = true;
+                        }
+                    }
+
+                    if (isConnectionDead) {
+                        // 기존의 썩은 선을 잘라버리고 새 선을 서버에 강제로 요청!
+                        if (pc) pc.close();
+                        delete peerConnections[pcKey];
+                        ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
+                    }
+                }
+            }, 5000); // 5초 주기 검사
 
             function setLocalBackground(event) {
                 const file = event.target.files[0];
@@ -516,6 +553,9 @@ def read_root():
 
                                 if (data.target && data.target !== ws.clientId) return;
 
+                                // 화공이 켜졌다는 사실을 목록에 추적 저장!
+                                expectedShares[targetIndex] = sharerId;
+
                                 if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
                                 }
@@ -537,6 +577,14 @@ def read_root():
 
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[pcKey] = pc;
+
+                                // [방어: 연결 끊김 즉시 감지 후 청소]
+                                pc.oniceconnectionstatechange = () => {
+                                    const state = pc.iceConnectionState;
+                                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+                                        pc.close();
+                                    }
+                                };
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
@@ -586,6 +634,8 @@ def read_root():
                             } 
                             else if (data.type === "stop_share") {
                                 const index = data.index;
+                                delete expectedShares[index]; // 더 이상 추적 안 함
+
                                 for (let key in peerConnections) {
                                     if (key.startsWith(`${index}_`)) {
                                         peerConnections[key].close();
@@ -639,6 +689,15 @@ def read_root():
 
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
+
+                // [방어: 송출자 쪽에서도 끊긴 선 바로바로 치워버리기]
+                pc.oniceconnectionstatechange = () => {
+                    const state = pc.iceConnectionState;
+                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+                        pc.close();
+                        delete peerConnections[pcKey];
+                    }
+                };
 
                 const stream = myStreams[index];
                 if (stream) {
