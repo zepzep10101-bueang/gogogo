@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 json = __import__('json')
 os = __import__('os')
 uvicorn = __import__('uvicorn')
-asyncio = __import__('asyncio')  # [수정된 부분: 뒤에서 조용히 일하게 해주는 도구 추가]
+asyncio = __import__('asyncio')
 
 from pymongo import MongoClient
 
@@ -205,9 +205,8 @@ def read_root():
             }
 
             .share-btn {
-                padding: 4px 8px;
+                padding: 4px 6px;
                 font-size: 11px;
-                background: #ff7675;
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -283,6 +282,7 @@ def read_root():
                 </div>
 
                 <div class="panel-box chat-box">
+                    <!-- 전체 지우기 버튼을 빼고 원래대로 복구했어! -->
                     <h3>💬 실시간 채팅</h3>
                     <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
                     <div class="chat-input">
@@ -320,8 +320,9 @@ def read_root():
 
             let ws = null;
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
-            let localStream = null;
-            let mySharingIndex = null;
+            
+            // [수정된 부분: 각 방마다 스트림(화면/캠)을 여러 개 가질 수 있게 배열로 바꿈]
+            const myStreams = {}; 
             const peerConnections = {}; 
             
             const rtcConfig = {
@@ -348,7 +349,12 @@ def read_root():
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
                                 <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
-                                <button class="share-btn" id="share-btn-${index}" onclick="toggleScreenShare(${index})">화면 공유</button>
+                                
+                                <!-- [수정된 부분: 화공 버튼과 캠 버튼을 각각 분리] -->
+                                <div style="display:flex; gap:3px;">
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                </div>
                             </div>
                             
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
@@ -390,70 +396,83 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
-            async function toggleScreenShare(index) {
+            // [수정된 부분: 캠과 화면공유를 선택해서 켤 수 있는 통합 함수]
+            async function toggleShare(index, type) {
                 const box = document.getElementById(`stream-box-${index}`);
-                const btn = document.getElementById(`share-btn-${index}`);
+                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
+                const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 
-                if (mySharingIndex === index) {
-                    stopMyShare();
+                // 만약 이 방에 이미 내가 뭔가 켜뒀다면 끄기
+                if (myStreams[index]) {
+                    stopShare(index);
                     return;
                 }
 
-                if (mySharingIndex !== null) {
-                    stopMyShare();
-                }
-
                 try {
-                    const stream = await navigator.mediaDevices.getDisplayMedia({ 
-                        video: { cursor: "always", frameRate: 30 }, 
-                        audio: false 
-                    });
-                    localStream = stream;
-                    mySharingIndex = index;
+                    let stream;
+                    if (type === 'screen') {
+                        // 화공 켜기
+                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: false });
+                        btnScreen.innerText = "중지";
+                        btnScreen.style.background = "#d63031";
+                        btnCam.style.display = "none"; // 캠 버튼 숨기기
+                    } else {
+                        // 웹캠 켜기
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        btnCam.innerText = "중지";
+                        btnCam.style.background = "#d63031";
+                        btnScreen.style.display = "none"; // 화공 버튼 숨기기
+                    }
+                    
+                    myStreams[index] = stream; // 방 번호에 맞춰서 스트림 저장
 
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
-                    
-                    btn.innerText = "공유 중지";
-                    btn.style.background = "#d63031";
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
 
                     stream.getVideoTracks()[0].onended = () => {
-                        stopMyShare();
+                        stopShare(index);
                     };
                 } catch (err) {
-                    console.error("화면 공유 에러:", err);
+                    console.error("미디어 캡처 에러:", err);
                 }
             }
 
-            function stopMyShare() {
-                if (localStream) {
-                    localStream.getTracks().forEach(track => track.stop());
-                    localStream = null;
+            function stopShare(index) {
+                if (myStreams[index]) {
+                    myStreams[index].getTracks().forEach(track => track.stop());
+                    delete myStreams[index];
                 }
-                if (mySharingIndex !== null) {
-                    const idx = mySharingIndex;
-                    mySharingIndex = null;
 
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "stop_share", index: idx }));
-                    }
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "stop_share", index: index }));
+                }
 
-                    const box = document.getElementById(`stream-box-${idx}`);
-                    const btn = document.getElementById(`share-btn-${idx}`);
-                    
-                    box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
-                    btn.innerText = "화면 공유";
-                    btn.style.background = "#ff7675";
+                const box = document.getElementById(`stream-box-${index}`);
+                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
+                const btnCam = document.getElementById(`share-btn-cam-${index}`);
+                
+                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                
+                // 버튼 다시 원래대로 돌려놓기
+                if(btnScreen) {
+                    btnScreen.innerText = "화공";
+                    btnScreen.style.background = "#ff7675";
+                    btnScreen.style.display = "inline-block";
+                }
+                if(btnCam) {
+                    btnCam.innerText = "캠";
+                    btnCam.style.background = "#0984e3";
+                    btnCam.style.display = "inline-block";
+                }
 
-                    for (let key in peerConnections) {
-                        if (key.startsWith(`${idx}_`)) {
-                            peerConnections[key].close();
-                            delete peerConnections[key];
-                        }
+                for (let key in peerConnections) {
+                    if (key.startsWith(`${index}_`)) {
+                        peerConnections[key].close();
+                        delete peerConnections[key];
                     }
                 }
             }
@@ -584,7 +603,8 @@ def read_root():
                                 const targetIndex = data.index;
                                 const viewerId = data.sender;
 
-                                if (mySharingIndex === targetIndex && localStream) {
+                                // [수정된 부분: 내가 송출 중인 해당 번호 방의 스트림이 있으면 연결해주기]
+                                if (myStreams[targetIndex]) {
                                     await createOfferForViewer(targetIndex, viewerId);
                                 }
                             }
@@ -600,7 +620,9 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture></video>`;
+                                    
+                                    // [🚨 핵심 수정 부분: muted 추가해서 브라우저가 화면 차단하는 버그 고침!]
+                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                                     document.getElementById(`remote-video-${index}`).srcObject = e.streams[0];
                                 };
 
@@ -638,11 +660,11 @@ def read_root():
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
                                 box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
-                                const btn = document.getElementById(`share-btn-${index}`);
-                                if (btn) {
-                                    btn.innerText = "화면 공유";
-                                    btn.style.background = "#ff7675";
-                                }
+                                
+                                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
+                                const btnCam = document.getElementById(`share-btn-cam-${index}`);
+                                if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
+                                if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
@@ -653,8 +675,11 @@ def read_root():
                                 }, 300);
                             }
                             else if (data.type === "request_existing_shares") {
-                                if (mySharingIndex !== null && ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "start_share", index: mySharingIndex, target: data.sender }));
+                                // [수정된 부분: 내가 송출 중인 모든 방의 스트림을 다 알려주기]
+                                for (let idx in myStreams) {
+                                    if (ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender }));
+                                    }
                                 }
                             }
                         } catch(e) {
@@ -680,7 +705,10 @@ def read_root():
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
 
-                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                const stream = myStreams[index];
+                if (stream) {
+                    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+                }
 
                 pc.onicecandidate = (e) => {
                     if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
@@ -741,28 +769,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["chat_history"].pop(0)
                 
                 await manager.broadcast(json.dumps(packet))
-                # [수정된 부분: DB 저장을 뒷단으로 밀어서 실시간 채팅이 멈추지 않게 함]
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
             else:
                 packet["sender"] = client_id
                 
                 if p_type == "username_change":
                     server_state["cards"][packet["index"]]["user"] = packet["user"]
-                    # [수정된 부분: 이름 변경도 뒷단 저장]
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "card_bg_change":
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    # [수정된 부분: 카드 배경도 뒷단 저장]
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "global_bg_image":
                     server_state["global_bg"] = packet.get("dataUrl")
                     server_state["global_bg_type"] = "image"
-                    # [수정된 부분: 전체 이미지 배경도 뒷단 저장]
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "global_bg_youtube":
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
-                    # [수정된 부분: 전체 유튜브 배경도 뒷단 저장]
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
