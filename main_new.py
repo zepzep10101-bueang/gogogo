@@ -26,7 +26,7 @@ def load_data():
     
     return {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"누나{i+1}", "card_bg": None} for i in range(8)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None} for i in range(8)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
@@ -45,15 +45,18 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self.active_shares: dict[int, str] = {}
+        self.active_users: dict[WebSocket, str] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.active_users[websocket] = "연결중..."
 
-    # [수정된 부분: 끊어진 사람의 자리(인덱스)를 찾아서 반환해 줌]
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        if websocket in self.active_users:
+            del self.active_users[websocket]
         
         disconnected_client = str(id(websocket))
         freed_indexes = []
@@ -74,17 +77,24 @@ class ConnectionManager:
                 except Exception:
                     dead_connections.append(connection)
         
-        # [수정된 부분: 튕긴 사람을 발견하면, 남은 사람들에게 인원수와 화공 꺼짐을 즉시 알림!]
         for dead in dead_connections:
             freed_indexes = self.disconnect(dead)
-            count_msg = json.dumps({"type": "count", "count": len(self.active_connections)})
+            await self.broadcast_user_list()
             for conn in self.active_connections:
                 try:
-                    await conn.send_text(count_msg)
                     for idx in freed_indexes:
                         await conn.send_text(json.dumps({"type": "stop_share", "index": idx}))
                 except Exception:
                     pass
+
+    async def broadcast_user_list(self):
+        users = [name for name in self.active_users.values() if name != "연결중..."]
+        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users})
+        for conn in self.active_connections:
+            try:
+                await conn.send_text(msg)
+            except Exception:
+                pass
 
 manager = ConnectionManager()
 
@@ -100,18 +110,10 @@ def read_root():
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
 
-            .login-overlay {
-                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                background: #111; z-index: 9999; display: flex;
-                align-items: center; justify-content: center; flex-direction: column;
-            }
-            .login-box {
-                background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px;
-                border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            }
-            .login-box input { padding: 10px; margin-top: 15px; border-radius: 5px; border: none; width: 200px; text-align: center;}
-            .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold;}
+            .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+            .login-box { background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+            .login-box input { padding: 10px; margin-top: 10px; border-radius: 5px; border: none; width: 220px; text-align: center; }
+            .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold; width: 100%; }
 
             .video-background { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; overflow: hidden; pointer-events: none; background: #000; }
             #bgMediaWrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
@@ -146,7 +148,8 @@ def read_root():
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
-                <p style="font-size: 13px; color: #aaa; margin-top: 5px;">비밀번호를 입력해야 들어갈 수 있어!</p>
+                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 15px;">매번 접속할 때마다 닉네임과 비밀번호를 적어줘!</p>
+                <input type="text" id="nickInput" placeholder="내 닉네임 (예: 디오)" onkeypress="if(event.key==='Enter') login()"><br>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
                 <br>
                 <button onclick="login()">입장하기</button>
@@ -164,7 +167,9 @@ def read_root():
             <div class="side-panel">
                 <div class="panel-box">
                     <h3>👑 대시보드 <span id="connStatus" class="status-indicator status-offline">연결 중...</span></h3>
-                    <p style="margin-top:5px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    
+                    <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
                 </div>
 
                 <div class="panel-box">
@@ -196,19 +201,20 @@ def read_root():
             const ROOM_PASSWORD = "1122";
 
             function checkLogin() {
-                if (localStorage.getItem('dashboard_logged_in') === 'true') {
-                    document.getElementById('loginOverlay').style.display = 'none';
-                    initCards();
-                    connectWebSocket();
-                } else {
-                    document.getElementById('loginOverlay').style.display = 'flex';
-                }
+                document.getElementById('loginOverlay').style.display = 'flex';
             }
 
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
+                const inputNick = document.getElementById('nickInput').value.trim();
+                
+                if (!inputNick) {
+                    alert("눈팅 금지! 누군지 알 수 있게 닉네임을 적어줘 누나!");
+                    return;
+                }
+
                 if (inputPw === ROOM_PASSWORD) {
-                    localStorage.setItem('dashboard_logged_in', 'true');
+                    window.myNickname = inputNick; 
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
@@ -218,9 +224,9 @@ def read_root():
             }
 
             let ws = null;
-            let pingInterval = null; // [수정된 부분: 하트비트 타이머 변수]
+            let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `누나${i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
             
@@ -316,6 +322,12 @@ def read_root():
                     
                     myStreams[index] = stream;
 
+                    // [추가된 부분: 화면 켤 때 카드 이름을 내 닉네임으로 자동 변경하고 동네방네 방송하기!]
+                    const myName = window.myNickname || "익명";
+                    const userEl = document.getElementById(`username-${index}`);
+                    if (userEl) userEl.value = myName;
+                    updateUsername(index, myName);
+
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
                     document.getElementById(`video-${index}`).srcObject = stream;
 
@@ -392,6 +404,14 @@ def read_root():
                     ws.send(JSON.stringify({ type: "global_bg_youtube", videoId: videoId }));
                 }
             }
+            
+            function kickUser(targetName) {
+                if (confirm(`진짜로 눈팅족 '${targetName}' 님을 방에서 쫓아낼까?`)) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "kick_user", target: targetName }));
+                    }
+                }
+            }
 
             function connectWebSocket() {
                 const loc = window.location;
@@ -406,7 +426,9 @@ def read_root():
                         statusEl.innerText = "연결됨";
                         statusEl.className = "status-indicator status-online";
 
-                        // [수정된 부분: 20초마다 심장 박동(하트비트)을 보내서 렌더가 안 끊게 방어]
+                        const myNick = window.myNickname || "익명";
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick }));
+
                         if (pingInterval) clearInterval(pingInterval);
                         pingInterval = setInterval(() => {
                             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -419,9 +441,26 @@ def read_root():
                         try {
                             const data = JSON.parse(event.data);
                             
-                            // [수정된 부분: 서버에서 퐁(pong)이 오면 그냥 넘김]
                             if (data.type === "pong") {
                                 return;
+                            }
+                            
+                            else if (data.type === "kicked") {
+                                alert("방장에 의해 방에서 강퇴당했습니다. (눈팅 금지!)");
+                                window.location.reload(); 
+                                return;
+                            }
+                            
+                            else if (data.type === "user_list") {
+                                document.getElementById('userCount').innerText = data.count + "명";
+                                
+                                let listHtml = data.users.map(u => 
+                                    `<span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;">
+                                        <b style="color:white;">${u}</b> 
+                                        <button onclick="kickUser('${u}')" style="background:#d63031; color:white; border:none; border-radius:3px; font-size:10px; cursor:pointer; padding:2px 4px;">강퇴</button>
+                                    </span>`
+                                ).join("");
+                                document.getElementById('userListStr').innerHTML = listHtml;
                             }
                             else if (data.type === "chat") {
                                 logChat(`<b>${data.senderName}</b>: ${data.msg}`);
@@ -456,9 +495,7 @@ def read_root():
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
                             }
-                            else if (data.type === "count") {
-                                document.getElementById('userCount').innerText = data.count + "명";
-                            } else if (data.type === "username_change") {
+                            else if (data.type === "username_change") {
                                 cardData[data.index].user = data.user;
                                 const inputEl = document.getElementById(`username-${data.index}`);
                                 if (inputEl) { inputEl.value = data.user; }
@@ -608,7 +645,8 @@ def read_root():
                 const msgText = input.value.trim();
                 if (!msgText) return;
 
-                const myName = document.getElementById('username-0') ? document.getElementById('username-0').value : "누나1";
+                // 채팅 보낼 때도 로그인할 때 쓴 내 닉네임으로 전송!
+                const myName = window.myNickname || "익명";
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText }));
@@ -632,8 +670,6 @@ async def websocket_endpoint(websocket: WebSocket):
     
     for idx, sharer_id in manager.active_shares.items():
         await websocket.send_text(json.dumps({"type": "start_share", "index": idx, "sender": sharer_id}))
-
-    await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
     
     try:
         while True:
@@ -641,9 +677,25 @@ async def websocket_endpoint(websocket: WebSocket):
             packet = json.loads(data)
             p_type = packet.get("type")
 
-            # [수정된 부분: 하트비트 ping이 오면 렌더 서버가 연결을 안 끊도록 응답(pong) 발송]
             if p_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
+            if p_type == "set_nickname":
+                manager.active_users[websocket] = packet.get("nickname", "익명")
+                await manager.broadcast_user_list()
+                continue
+
+            if p_type == "kick_user":
+                target_nick = packet.get("target")
+                for conn, nick in list(manager.active_users.items()):
+                    if nick == target_nick:
+                        try:
+                            await conn.send_text(json.dumps({"type": "kicked"}))
+                            await asyncio.sleep(0.1) 
+                            await conn.close(code=1008) 
+                        except Exception:
+                            pass
                 continue
 
             if p_type == "chat":
@@ -682,9 +734,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
-        # [수정된 부분: 누군가 튕기거나 나가면 즉시 인원수 빼고 남은 사람들에게 화면/캠 끄라고 신호 쏨]
         freed_indexes = manager.disconnect(websocket)
-        await manager.broadcast(json.dumps({"type": "count", "count": len(manager.active_connections)}))
+        await manager.broadcast_user_list()
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
