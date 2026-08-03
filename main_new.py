@@ -229,7 +229,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -603,7 +603,6 @@ def read_root():
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
                                 
-                                // [개선: 화면(DOM)이 완전히 그려질 때까지 0.8초 여유를 두고 기존 화공 요청]
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
