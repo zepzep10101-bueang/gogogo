@@ -187,7 +187,11 @@ def read_root():
                 </div>
 
                 <div class="panel-box chat-box">
-                    <h3>💬 실시간 채팅</h3>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>💬 실시간 채팅</h3>
+                        <!-- [추가된 부분: 누구나 누를 수 있는 채팅 비우기 버튼] -->
+                        <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">채팅 청소</button>
+                    </div>
                     <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
                     <div class="chat-input">
                         <input type="text" id="chatInput" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendChat()">
@@ -226,7 +230,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
             
@@ -241,6 +245,15 @@ def read_root():
                 const history = document.getElementById('chatHistory');
                 history.innerHTML += `<div>${msg}</div>`;
                 history.scrollTop = history.scrollHeight;
+            }
+
+            // [추가된 부분: 채팅 청소 버튼 클릭 시 서버로 지우기 신호 발송]
+            function clearChat() {
+                if (confirm("채팅창을 전부 깨끗하게 지울까?")) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "clear_chat" }));
+                    }
+                }
             }
 
             function initCards() {
@@ -436,7 +449,11 @@ def read_root():
                                 return;
                             }
                             
-                            // [수정된 부분: 강퇴 버튼을 없애고 순수하게 닉네임만 예쁘게 보여줌]
+                            // [추가된 부분: 서버에서 채팅 비우기 명령이 오면 화면에서도 싹 지움]
+                            else if (data.type === "chat_cleared") {
+                                document.getElementById('chatHistory').innerHTML = "";
+                            }
+                            
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
@@ -668,6 +685,14 @@ async def websocket_endpoint(websocket: WebSocket):
             if p_type == "set_nickname":
                 manager.active_users[websocket] = packet.get("nickname", "익명")
                 await manager.broadcast_user_list()
+                continue
+
+            # [추가된 부분: 누군가 채팅 청소를 누르면 서버 기록을 비우고 모두에게 전파]
+            if p_type == "clear_chat":
+                server_state["chat_history"] = []
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "chat_cleared"}))
+                await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
             if p_type == "chat":
