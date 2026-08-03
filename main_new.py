@@ -26,7 +26,7 @@ def load_data():
     
     return {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None} for i in range(8)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(8)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
@@ -127,7 +127,7 @@ def read_root():
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
             
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.3s; }
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
@@ -229,12 +229,11 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
             
-            // [강력해진 부분: 현재 켜져 있어야 할 화공 목록을 추적]
             const expectedShares = {}; 
             
             const rtcConfig = {
@@ -263,6 +262,9 @@ def read_root():
                 grid.innerHTML = '';
                 cardData.forEach((card, index) => {
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
+                    let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
+                    let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
+
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
@@ -271,6 +273,7 @@ def read_root():
                                 <div style="display:flex; gap:3px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="toggleMosaic(${index})">${mosaicBtnText}</button>
                                 </div>
                             </div>
                             
@@ -284,6 +287,35 @@ def read_root():
                         </div>
                     `;
                 });
+            }
+
+            // 모자이크 버튼 토글 기능
+            function toggleMosaic(index) {
+                const newState = !cardData[index].is_mosaic;
+                cardData[index].is_mosaic = newState;
+                applyMosaicUI(index, newState);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
+                }
+            }
+
+            // 모자이크 화면단(UI) 실시간 적용
+            function applyMosaicUI(index, isMosaic) {
+                const btn = document.getElementById(`share-btn-mosaic-${index}`);
+                if (btn) {
+                    btn.innerText = isMosaic ? "모자이크 해제" : "모자이크";
+                    btn.style.background = isMosaic ? "#e17055" : "#636e72";
+                }
+
+                const remoteVideo = document.getElementById(`remote-video-${index}`);
+                const localVideo = document.getElementById(`video-${index}`);
+                if (remoteVideo) {
+                    remoteVideo.style.filter = isMosaic ? "blur(15px)" : "none";
+                }
+                if (localVideo) {
+                    localVideo.style.filter = isMosaic ? "blur(15px)" : "none";
+                }
             }
 
             function updateUsername(index, val) {
@@ -324,6 +356,7 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
+                        // [화질 복구] 다시 원본 고화질이 송출되도록 제한 코드를 뺐어! 
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: false });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
@@ -342,7 +375,9 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
+                    // 현재 모자이크 상태를 반영해서 비디오 렌더링
+                    let filterStyle = cardData[index].is_mosaic ? 'filter:blur(15px);' : '';
+                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
                     localVideo.play().catch(e => console.log(e));
@@ -383,22 +418,19 @@ def read_root():
                     }
                 }
                 
-                // 내 화공 추적 목록에서 삭제
                 delete expectedShares[index];
             }
 
-            // [강력해진 부분: 5초마다 죽은 화면(좀비) 감지해서 알아서 다시 살려내는 심장 박동(Heartbeat) 로직]
             setInterval(() => {
                 if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
                 
                 for (let idx in expectedShares) {
                     const sharerId = expectedShares[idx];
-                    if (sharerId === ws.clientId) continue; // 내 화공은 내가 패스
+                    if (sharerId === ws.clientId) continue; 
                     
                     const pcKey = `${idx}_${sharerId}`;
                     const pc = peerConnections[pcKey];
                     
-                    // 연결선이 없거나, 끊어졌거나(failed/disconnected) 확인
                     let isConnectionDead = false;
                     if (!pc) {
                         isConnectionDead = true;
@@ -410,13 +442,12 @@ def read_root():
                     }
 
                     if (isConnectionDead) {
-                        // 기존의 썩은 선을 잘라버리고 새 선을 서버에 강제로 요청!
                         if (pc) pc.close();
                         delete peerConnections[pcKey];
                         ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
                     }
                 }
-            }, 5000); // 5초 주기 검사
+            }, 5000);
 
             function setLocalBackground(event) {
                 const file = event.target.files[0];
@@ -511,6 +542,10 @@ def read_root():
                                         if (cardData[i]) {
                                             cardData[i].user = card.user;
                                             cardData[i].card_bg = card.card_bg;
+                                            // 서버에서 모자이크 상태 불러오기
+                                            cardData[i].is_mosaic = card.is_mosaic || false;
+                                            applyMosaicUI(i, cardData[i].is_mosaic);
+
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
@@ -547,13 +582,19 @@ def read_root():
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             } 
+                            // [수신] 다른 사람이 모자이크 버튼 눌렀을 때 처리
+                            else if (data.type === "toggle_mosaic") {
+                                if (cardData[data.index]) {
+                                    cardData[data.index].is_mosaic = data.is_mosaic;
+                                    applyMosaicUI(data.index, data.is_mosaic);
+                                }
+                            }
                             else if (data.type === "start_share") {
                                 const targetIndex = data.index;
                                 const sharerId = data.sender;
 
                                 if (data.target && data.target !== ws.clientId) return;
 
-                                // 화공이 켜졌다는 사실을 목록에 추적 저장!
                                 expectedShares[targetIndex] = sharerId;
 
                                 if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) {
@@ -578,7 +619,6 @@ def read_root():
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[pcKey] = pc;
 
-                                // [방어: 연결 끊김 즉시 감지 후 청소]
                                 pc.oniceconnectionstatechange = () => {
                                     const state = pc.iceConnectionState;
                                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
@@ -588,7 +628,8 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
+                                    let filterStyle = cardData[index].is_mosaic ? 'filter:blur(15px);' : '';
+                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
                                     remoteVideo.play().catch(err => console.log(err));
@@ -634,7 +675,7 @@ def read_root():
                             } 
                             else if (data.type === "stop_share") {
                                 const index = data.index;
-                                delete expectedShares[index]; // 더 이상 추적 안 함
+                                delete expectedShares[index]; 
 
                                 for (let key in peerConnections) {
                                     if (key.startsWith(`${index}_`)) {
@@ -690,7 +731,6 @@ def read_root():
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
 
-                // [방어: 송출자 쪽에서도 끊긴 선 바로바로 치워버리기]
                 pc.oniceconnectionstatechange = () => {
                     const state = pc.iceConnectionState;
                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
@@ -792,6 +832,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "global_bg_youtube":
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                # [서버] 모자이크 상태 업데이트 및 저장
+                elif p_type == "toggle_mosaic":
+                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
