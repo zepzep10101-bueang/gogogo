@@ -127,7 +127,8 @@ def read_root():
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
             
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.3s; }
+            /* 픽셀화 필터가 적용될 비디오에 대한 트랜지션 추가 */
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.1s; }
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
@@ -144,6 +145,20 @@ def read_root():
         </style>
     </head>
     <body>
+
+        <!-- [핵심 추가] 글자를 깍둑깍둑하게 깨뜨리는 네모 픽셀화 SVG 특수 필터 -->
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="0" height="0" style="position:absolute; display:none;">
+          <defs>
+            <filter id="pixelate" x="0" y="0">
+              <!-- 블록 크기 조절 (현재 8x8 픽셀 단위로 묶어서 깨지게 만듦) -->
+              <feFlood x="4" y="4" height="1" width="1"/>
+              <feComposite width="8" height="8"/>
+              <feTile result="a"/>
+              <feComposite in="SourceGraphic" in2="a" operator="in"/>
+              <feMorphology operator="dilate" radius="4"/>
+            </filter>
+          </defs>
+        </svg>
 
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
@@ -289,8 +304,14 @@ def read_root():
                 });
             }
 
-            // 모자이크 버튼 토글 기능
+            // 모자이크 버튼 토글 기능 (본인 인증 로직 포함)
             function toggleMosaic(index) {
+                // [방어 로직] 내 컴퓨터에서 송출 중인 원본(myStreams)이 이 자리에 없으면 조작 거부!
+                if (!myStreams[index]) {
+                    alert("본인이 화면을 공유 중일 때만 모자이크를 조작할 수 있어!");
+                    return;
+                }
+
                 const newState = !cardData[index].is_mosaic;
                 cardData[index].is_mosaic = newState;
                 applyMosaicUI(index, newState);
@@ -300,7 +321,7 @@ def read_root():
                 }
             }
 
-            // 모자이크 화면단(UI) 실시간 적용
+            // 모자이크 화면단(UI) 실시간 적용 (SVG 픽셀 필터 사용)
             function applyMosaicUI(index, isMosaic) {
                 const btn = document.getElementById(`share-btn-mosaic-${index}`);
                 if (btn) {
@@ -310,11 +331,13 @@ def read_root():
 
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
+                
+                // blur 대신 만들어둔 #pixelate 특수 SVG 필터를 적용
                 if (remoteVideo) {
-                    remoteVideo.style.filter = isMosaic ? "blur(15px)" : "none";
+                    remoteVideo.style.filter = isMosaic ? "url(#pixelate)" : "none";
                 }
                 if (localVideo) {
-                    localVideo.style.filter = isMosaic ? "blur(15px)" : "none";
+                    localVideo.style.filter = isMosaic ? "url(#pixelate)" : "none";
                 }
             }
 
@@ -356,7 +379,6 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
-                        // [화질 복구] 다시 원본 고화질이 송출되도록 제한 코드를 뺐어! 
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: false });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
@@ -375,8 +397,8 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    // 현재 모자이크 상태를 반영해서 비디오 렌더링
-                    let filterStyle = cardData[index].is_mosaic ? 'filter:blur(15px);' : '';
+                    // SVG 픽셀 필터 적용 상태 체크
+                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#pixelate);' : '';
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
@@ -396,6 +418,13 @@ def read_root():
                 if (myStreams[index]) {
                     myStreams[index].getTracks().forEach(track => track.stop());
                     delete myStreams[index];
+                }
+
+                // 화공 끌 때 모자이크 상태도 원래대로 끄기
+                cardData[index].is_mosaic = false;
+                applyMosaicUI(index, false);
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: false }));
                 }
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -542,7 +571,6 @@ def read_root():
                                         if (cardData[i]) {
                                             cardData[i].user = card.user;
                                             cardData[i].card_bg = card.card_bg;
-                                            // 서버에서 모자이크 상태 불러오기
                                             cardData[i].is_mosaic = card.is_mosaic || false;
                                             applyMosaicUI(i, cardData[i].is_mosaic);
 
@@ -582,7 +610,6 @@ def read_root():
                             } else if (data.type === "global_bg_youtube") {
                                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             } 
-                            // [수신] 다른 사람이 모자이크 버튼 눌렀을 때 처리
                             else if (data.type === "toggle_mosaic") {
                                 if (cardData[data.index]) {
                                     cardData[data.index].is_mosaic = data.is_mosaic;
@@ -628,7 +655,8 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    let filterStyle = cardData[index].is_mosaic ? 'filter:blur(15px);' : '';
+                                    // SVG 픽셀 필터 적용 상태 체크
+                                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#pixelate);' : '';
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
@@ -833,7 +861,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["global_bg"] = packet.get("videoId")
                     server_state["global_bg_type"] = "youtube"
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                # [서버] 모자이크 상태 업데이트 및 저장
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
