@@ -290,7 +290,6 @@ def read_root():
             }
 
             function toggleMosaic(index) {
-                // 본인 방어막: 화공 켠 사람만 조작 가능
                 if (!myStreams[index]) {
                     alert("본인이 화면을 공유 중일 때만 모자이크를 조작할 수 있어!");
                     return;
@@ -315,7 +314,6 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                // [핵심 변경] 문단 형태는 보이고 글자만 가리는 최적화 수치 4px 블러 적용
                 if (remoteVideo) {
                     remoteVideo.style.filter = isMosaic ? "blur(4px)" : "none";
                 }
@@ -380,7 +378,6 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    // 화면 송출 시 모자이크 상태 체크 및 4px 블러 적용
                     let filterStyle = cardData[index].is_mosaic ? 'filter: blur(4px);' : '';
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
@@ -424,7 +421,10 @@ def read_root():
 
                 for (let key in peerConnections) {
                     if (key.startsWith(`${index}_`)) {
-                        peerConnections[key].close();
+                        try {
+                            peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender));
+                            peerConnections[key].close();
+                        } catch(e) {}
                         delete peerConnections[key];
                     }
                 }
@@ -453,7 +453,9 @@ def read_root():
                     }
 
                     if (isConnectionDead) {
-                        if (pc) pc.close();
+                        if (pc) {
+                            try { pc.close(); } catch(e) {}
+                        }
                         delete peerConnections[pcKey];
                         ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
                     }
@@ -631,13 +633,13 @@ def read_root():
                                 pc.oniceconnectionstatechange = () => {
                                     const state = pc.iceConnectionState;
                                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                                        pc.close();
+                                        try { pc.close(); } catch(e) {}
+                                        delete peerConnections[pcKey];
                                     }
                                 };
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    // 타인 화면 수신 시 모자이크 상태 체크 및 4px 블러 적용
                                     let filterStyle = cardData[index].is_mosaic ? 'filter: blur(4px);' : '';
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
@@ -689,7 +691,10 @@ def read_root():
 
                                 for (let key in peerConnections) {
                                     if (key.startsWith(`${index}_`)) {
-                                        peerConnections[key].close();
+                                        try {
+                                            peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender));
+                                            peerConnections[key].close();
+                                        } catch(e) {}
                                         delete peerConnections[key];
                                     }
                                 }
@@ -707,6 +712,12 @@ def read_root():
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
+                                        
+                                        // [방어막 2: 자동 신고] 내 연결이 끊겼다가 돌아왔을 때, 
+                                        // 서버가 내 화면공유를 잊어버리지 않게 다시 강제로 쏴줌!
+                                        for (let idx in myStreams) {
+                                            ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
+                                        }
                                     }
                                 }, 800);
                             }
@@ -736,7 +747,9 @@ def read_root():
 
             async function createOfferForViewer(index, viewerId) {
                 const pcKey = `${index}_${viewerId}`;
-                if (peerConnections[pcKey]) peerConnections[pcKey].close();
+                if (peerConnections[pcKey]) {
+                    try { peerConnections[pcKey].close(); } catch(e) {}
+                }
 
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
@@ -744,7 +757,11 @@ def read_root():
                 pc.oniceconnectionstatechange = () => {
                     const state = pc.iceConnectionState;
                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                        pc.close();
+                        try {
+                            // [방어막 1: 안전 이별] 선 끊기 전에 트랙 분리
+                            pc.getSenders().forEach(sender => pc.removeTrack(sender));
+                            pc.close();
+                        } catch(e) {}
                         delete peerConnections[pcKey];
                     }
                 };
