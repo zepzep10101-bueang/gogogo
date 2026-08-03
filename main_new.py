@@ -189,7 +189,6 @@ def read_root():
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>💬 실시간 채팅</h3>
-                        <!-- [추가된 부분: 누구나 누를 수 있는 채팅 비우기 버튼] -->
                         <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">채팅 청소</button>
                     </div>
                     <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
@@ -230,7 +229,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null }));
+            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null }));
             const myStreams = {}; 
             const peerConnections = {}; 
             
@@ -247,7 +246,6 @@ def read_root():
                 history.scrollTop = history.scrollHeight;
             }
 
-            // [추가된 부분: 채팅 청소 버튼 클릭 시 서버로 지우기 신호 발송]
             function clearChat() {
                 if (confirm("채팅창을 전부 깨끗하게 지울까?")) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -449,7 +447,6 @@ def read_root():
                                 return;
                             }
                             
-                            // [추가된 부분: 서버에서 채팅 비우기 명령이 오면 화면에서도 싹 지움]
                             else if (data.type === "chat_cleared") {
                                 document.getElementById('chatHistory').innerHTML = "";
                             }
@@ -586,11 +583,12 @@ def read_root():
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
+                                // [수정된 부분: 새로고침하고 들어왔을 때 이미 켜져 있는 화공들을 서버가 강제로 다시 연결시켜 주도록 요청]
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
                                     }
-                                }, 300);
+                                }, 500);
                             }
                             else if (data.type === "request_existing_shares") {
                                 for (let idx in myStreams) {
@@ -669,6 +667,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
     
+    # [수정된 부분: 새로 들어온 사람에게 현재 켜져 있는 모든 화공 목록을 즉시 전달]
     for idx, sharer_id in manager.active_shares.items():
         await websocket.send_text(json.dumps({"type": "start_share", "index": idx, "sender": sharer_id}))
     
@@ -687,7 +686,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast_user_list()
                 continue
 
-            # [추가된 부분: 누군가 채팅 청소를 누르면 서버 기록을 비우고 모두에게 전파]
             if p_type == "clear_chat":
                 server_state["chat_history"] = []
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
