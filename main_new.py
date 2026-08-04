@@ -314,11 +314,12 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
+                // [핵심 변경] 두부처럼 보이던 4px을 2px로 깎아서 타자치는 글의 흐름이 보이게 수정
                 if (remoteVideo) {
-                    remoteVideo.style.filter = isMosaic ? "blur(4px)" : "none";
+                    remoteVideo.style.filter = isMosaic ? "blur(2px)" : "none";
                 }
                 if (localVideo) {
-                    localVideo.style.filter = isMosaic ? "blur(4px)" : "none";
+                    localVideo.style.filter = isMosaic ? "blur(2px)" : "none";
                 }
             }
 
@@ -378,7 +379,8 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(4px);' : '';
+                    // 2px 블러 적용
+                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(2px);' : '';
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
@@ -640,7 +642,8 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(4px);' : '';
+                                    // 타인 화면 수신 시 2px 블러 적용
+                                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(2px);' : '';
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
@@ -713,8 +716,6 @@ def read_root():
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
                                         
-                                        // [방어막 2: 자동 신고] 내 연결이 끊겼다가 돌아왔을 때, 
-                                        // 서버가 내 화면공유를 잊어버리지 않게 다시 강제로 쏴줌!
                                         for (let idx in myStreams) {
                                             ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
                                         }
@@ -758,7 +759,6 @@ def read_root():
                     const state = pc.iceConnectionState;
                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
                         try {
-                            // [방어막 1: 안전 이별] 선 끊기 전에 트랙 분리
                             pc.getSenders().forEach(sender => pc.removeTrack(sender));
                             pc.close();
                         } catch(e) {}
