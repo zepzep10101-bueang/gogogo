@@ -259,9 +259,12 @@ def read_root():
                 ]
             };
 
-            function logChat(msg) {
+            // [핵심 변경] 채팅창에 시간도 같이 띄워주는 기능 추가!
+            function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
-                history.innerHTML += `<div>${msg}</div>`;
+                // 시간이 있으면 예쁜 회색 폰트로 옆에 살짝 붙여줌
+                const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
+                history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
                 history.scrollTop = history.scrollHeight;
             }
 
@@ -291,7 +294,6 @@ def read_root():
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="toggleMosaic(${index})">${mosaicBtnText}</button>
                                     
-                                    <!-- [핵심 추가] 소리 듣기 싫은 사람을 위한 개별 음소거 버튼 -->
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
                             </div>
@@ -308,20 +310,19 @@ def read_root():
                 });
             }
 
-            // [핵심 추가] 시청자가 개별적으로 끄고 켤 수 있는 토글 함수
             function toggleViewerSound(index) {
                 const vid = document.getElementById(`remote-video-${index}`);
                 const btn = document.getElementById(`sound-toggle-btn-${index}`);
                 
                 if (!vid) return;
 
-                vid.muted = !vid.muted; // 소리 상태 뒤집기
+                vid.muted = !vid.muted;
                 if (vid.muted) {
                     btn.innerText = "소리켜기";
-                    btn.style.background = "#b2bec3"; // 껐을 땐 회색
+                    btn.style.background = "#b2bec3"; 
                 } else {
                     btn.innerText = "소리끄기";
-                    btn.style.background = "#00b894"; // 켜졌을 땐 초록색
+                    btn.style.background = "#00b894"; 
                 }
             }
 
@@ -460,18 +461,9 @@ def read_root():
                 
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
-
-                for (let key in peerConnections) {
-                    if (key.startsWith(`${index}_`)) {
-                        try {
-                            peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender));
-                            peerConnections[key].close();
-                        } catch(e) {}
-                        delete peerConnections[key];
-                    }
-                }
                 
-                delete expectedShares[index];
+                const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
+                if (soundBtn) { soundBtn.style.display = "none"; }
             }
 
             setInterval(() => {
@@ -587,8 +579,9 @@ def read_root():
                                 ).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                             }
+                            // [핵심 변경] 서버에서 받은 채팅 데이터 표시할 때 시간(time)도 같이 넘겨줌!
                             else if (data.type === "chat") {
-                                logChat(`<b>${data.senderName}</b>: ${data.msg}`);
+                                logChat(data.senderName, data.msg, data.time);
                             } 
                             else if (data.type === "init_state") {
                                 const state = data.state;
@@ -614,11 +607,13 @@ def read_root():
                                     document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                                 }
 
+                                // [핵심 변경] 초기 DB 기록 불러올 때도 저장된 시간을 예쁘게 붙여줌!
                                 if (state.chat_history) {
                                     const historyEl = document.getElementById('chatHistory');
                                     historyEl.innerHTML = "";
                                     state.chat_history.forEach(chat => {
-                                        historyEl.innerHTML += `<div><b>${chat.senderName}</b>: ${chat.msg}</div>`;
+                                        const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : '';
+                                        historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
                                     });
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
@@ -687,18 +682,16 @@ def read_root():
                                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
                                     
-                                    // 기본적으로 소리가 켜진 채로 재생 (Jitsi 스타일)
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
                                     remoteVideo.play().catch(err => console.log(err));
                                     
-                                    // [핵심 추가] 화공이 시작되면 해당 자리에 '소리끄기' 버튼을 보여줌!
                                     const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
                                     if (soundBtn) {
                                         soundBtn.style.display = "inline-block";
                                         soundBtn.innerText = "소리끄기";
-                                        soundBtn.style.background = "#00b894"; // 켜진 상태니까 초록색
+                                        soundBtn.style.background = "#00b894"; 
                                     }
                                 };
 
@@ -761,7 +754,6 @@ def read_root():
                                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
                                 
-                                // 화공이 끝나면 개별 소리끄기 버튼도 다시 숨김
                                 const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
                                 if (soundBtn) { soundBtn.style.display = "none"; }
                             }
@@ -841,15 +833,19 @@ def read_root():
                 }
             }
 
+            // [핵심 변경] 채팅을 전송할 때 브라우저의 현재 시간도 같이 묶어서 서버로 보냄!
             function sendChat() {
                 const input = document.getElementById('chatInput');
                 const msgText = input.value.trim();
                 if (!msgText) return;
 
                 const myName = window.myNickname || "익명";
+                
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText }));
+                    ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr }));
                     input.value = '';
                 }
             }
@@ -892,8 +888,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
+            # [핵심 변경] 서버가 메시지를 받을 때 시간(time) 데이터도 안전하게 뽑아서 DB에 저장!
             if p_type == "chat":
-                chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg")}
+                chat_obj = {
+                    "senderName": packet.get("senderName"), 
+                    "msg": packet.get("msg"),
+                    "time": packet.get("time", "")
+                }
                 fresh_state["chat_history"].append(chat_obj)
                 if len(fresh_state["chat_history"]) > 100:
                     fresh_state["chat_history"].pop(0)
