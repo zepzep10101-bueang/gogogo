@@ -20,7 +20,6 @@ def load_data():
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
-            # 아까 12개로 잘못 저장됐을 수 있는 DB 데이터를 다시 8개로 깔끔하게 자름!
             cards = data.get("cards", [])
             if len(cards) > 8:
                 data["cards"] = cards[:8]
@@ -152,7 +151,7 @@ def read_root():
     </head>
     <body>
 
-        <!-- 화면 줌(Zoom) 뚫림 방지용 상대 비율 필터 유지 -->
+        <!-- PC용 줌(Zoom) 뚫림 방지 특수 필터 -->
         <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="position:absolute; width:0; height:0; display:none;">
           <defs>
             <filter id="relative-blur" primitiveUnits="objectBoundingBox">
@@ -245,7 +244,6 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            // 다시 8명으로 롤백!
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
@@ -331,12 +329,17 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                // 줌 아웃 방어 필터 적용
+                // [핵심 추가] 폰인지 컴퓨터인지 알아내는 센서
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                
+                // 폰이면 기본 CSS 3px 블러, 컴퓨터면 줌 방어용 SVG 필터 적용!
+                const activeFilter = isMosaic ? (isMobile ? 'blur(3px)' : 'url(#relative-blur)') : 'none';
+
                 if (remoteVideo) {
-                    remoteVideo.style.filter = isMosaic ? "url(#relative-blur)" : "none";
+                    remoteVideo.style.filter = activeFilter;
                 }
                 if (localVideo) {
-                    localVideo.style.filter = isMosaic ? "url(#relative-blur)" : "none";
+                    localVideo.style.filter = activeFilter;
                 }
             }
 
@@ -396,7 +399,11 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#relative-blur);' : '';
+                    // 화면 송출 시에도 기기 감지해서 맞춤 필터 적용
+                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                    const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
+                    let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
+                    
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
@@ -658,7 +665,12 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#relative-blur);' : '';
+                                    
+                                    // 타인 화면 수신 시에도 기기 감지해서 맞춤 필터 씌우기
+                                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                                    const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
+                                    let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
+                                    
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
