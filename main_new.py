@@ -16,13 +16,11 @@ try:
 except Exception as e:
     print("망고로드 연결 실패:", e)
 
-# [핵심 변경] 데이터를 불러올 때, 없으면 빈 데이터를 DB에 저장해서 초기 상태를 확실히 박아둠!
 def load_data():
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # 8개로 원복 유지
             if len(cards) > 8:
                 data["cards"] = cards[:8]
             elif len(cards) < 8:
@@ -32,7 +30,6 @@ def load_data():
     except Exception:
         pass
     
-    # DB에 데이터가 아예 없을 때만 초기화
     initial_data = {
         "_id": "main_state",
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(8)],
@@ -156,7 +153,6 @@ def read_root():
     </head>
     <body>
 
-        <!-- PC용 줌(Zoom) 뚫림 방지 특수 필터 -->
         <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="position:absolute; width:0; height:0; display:none;">
           <defs>
             <filter id="relative-blur" primitiveUnits="objectBoundingBox">
@@ -294,6 +290,9 @@ def read_root():
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="toggleMosaic(${index})">${mosaicBtnText}</button>
+                                    
+                                    <!-- [핵심 추가] 소리 듣기 싫은 사람을 위한 개별 음소거 버튼 -->
+                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
                             </div>
                             
@@ -307,6 +306,23 @@ def read_root():
                         </div>
                     `;
                 });
+            }
+
+            // [핵심 추가] 시청자가 개별적으로 끄고 켤 수 있는 토글 함수
+            function toggleViewerSound(index) {
+                const vid = document.getElementById(`remote-video-${index}`);
+                const btn = document.getElementById(`sound-toggle-btn-${index}`);
+                
+                if (!vid) return;
+
+                vid.muted = !vid.muted; // 소리 상태 뒤집기
+                if (vid.muted) {
+                    btn.innerText = "소리켜기";
+                    btn.style.background = "#b2bec3"; // 껐을 땐 회색
+                } else {
+                    btn.innerText = "소리끄기";
+                    btn.style.background = "#00b894"; // 켜졌을 땐 초록색
+                }
             }
 
             function toggleMosaic(index) {
@@ -383,7 +399,7 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
-                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: false });
+                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: true });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
                         btnCam.style.display = "none"; 
@@ -671,10 +687,19 @@ def read_root():
                                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
                                     
-                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
+                                    // 기본적으로 소리가 켜진 채로 재생 (Jitsi 스타일)
+                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
                                     remoteVideo.play().catch(err => console.log(err));
+                                    
+                                    // [핵심 추가] 화공이 시작되면 해당 자리에 '소리끄기' 버튼을 보여줌!
+                                    const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
+                                    if (soundBtn) {
+                                        soundBtn.style.display = "inline-block";
+                                        soundBtn.innerText = "소리끄기";
+                                        soundBtn.style.background = "#00b894"; // 켜진 상태니까 초록색
+                                    }
                                 };
 
                                 pc.onicecandidate = (e) => {
@@ -735,6 +760,10 @@ def read_root():
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
+                                
+                                // 화공이 끝나면 개별 소리끄기 버튼도 다시 숨김
+                                const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
+                                if (soundBtn) { soundBtn.style.display = "none"; }
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
@@ -833,14 +862,12 @@ def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # [핵심 변경] 사용자가 들어올 때마다 무조건 DB에서 최신 데이터를 새로 불러옴!
     fresh_state = load_data()
     
     await manager.connect(websocket)
     client_id = str(id(websocket))
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-    # 맨 위에서 새로 불러온 최신 상태를 전송!
     await websocket.send_text(json.dumps({"type": "init_state", "state": fresh_state}))
     
     try:
@@ -858,16 +885,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast_user_list()
                 continue
 
-            # [핵심 변경] 채팅 청소 시 DB 데이터를 즉시 비우고 저장!
             if p_type == "clear_chat":
                 fresh_state["chat_history"] = []
-                # asyncio.to_thread로 DB 저장 작업을 비동기로 처리해서 서버 렉 방지
                 asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
-            # [핵심 변경] 채팅 발생 시 DB에 즉시 추가하고 저장!
             if p_type == "chat":
                 chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg")}
                 fresh_state["chat_history"].append(chat_obj)
@@ -875,13 +899,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     fresh_state["chat_history"].pop(0)
                 
                 await manager.broadcast(json.dumps(packet))
-                # 비동기 DB 저장
                 asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 
             else:
                 packet["sender"] = client_id
                 
-                # [핵심 변경] 모든 상태 변경 이벤트마다 DB에 즉시 즉시 즉시 저장!
                 if p_type == "username_change":
                     fresh_state["cards"][packet["index"]]["user"] = packet["user"]
                     asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
