@@ -16,11 +16,13 @@ try:
 except Exception as e:
     print("망고로드 연결 실패:", e)
 
+# [핵심 변경] 데이터를 불러올 때, 없으면 빈 데이터를 DB에 저장해서 초기 상태를 확실히 박아둠!
 def load_data():
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
+            # 8개로 원복 유지
             if len(cards) > 8:
                 data["cards"] = cards[:8]
             elif len(cards) < 8:
@@ -30,13 +32,16 @@ def load_data():
     except Exception:
         pass
     
-    return {
+    # DB에 데이터가 아예 없을 때만 초기화
+    initial_data = {
         "_id": "main_state",
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(8)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
     }
+    collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
+    return initial_data
 
 def save_data(data):
     try:
@@ -329,10 +334,7 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                // [핵심 추가] 폰인지 컴퓨터인지 알아내는 센서
                 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                
-                // 폰이면 기본 CSS 3px 블러, 컴퓨터면 줌 방어용 SVG 필터 적용!
                 const activeFilter = isMosaic ? (isMobile ? 'blur(3px)' : 'url(#relative-blur)') : 'none';
 
                 if (remoteVideo) {
@@ -399,7 +401,6 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    // 화면 송출 시에도 기기 감지해서 맞춤 필터 적용
                     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
@@ -666,7 +667,6 @@ def read_root():
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
                                     
-                                    // 타인 화면 수신 시에도 기기 감지해서 맞춤 필터 씌우기
                                     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
@@ -833,11 +833,15 @@ def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # [핵심 변경] 사용자가 들어올 때마다 무조건 DB에서 최신 데이터를 새로 불러옴!
+    fresh_state = load_data()
+    
     await manager.connect(websocket)
     client_id = str(id(websocket))
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+    # 맨 위에서 새로 불러온 최신 상태를 전송!
+    await websocket.send_text(json.dumps({"type": "init_state", "state": fresh_state}))
     
     try:
         while True:
@@ -854,42 +858,47 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast_user_list()
                 continue
 
+            # [핵심 변경] 채팅 청소 시 DB 데이터를 즉시 비우고 저장!
             if p_type == "clear_chat":
-                server_state["chat_history"] = []
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                fresh_state["chat_history"] = []
+                # asyncio.to_thread로 DB 저장 작업을 비동기로 처리해서 서버 렉 방지
+                asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
+            # [핵심 변경] 채팅 발생 시 DB에 즉시 추가하고 저장!
             if p_type == "chat":
                 chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg")}
-                server_state["chat_history"].append(chat_obj)
-                if len(server_state["chat_history"]) > 100:
-                    server_state["chat_history"].pop(0)
+                fresh_state["chat_history"].append(chat_obj)
+                if len(fresh_state["chat_history"]) > 100:
+                    fresh_state["chat_history"].pop(0)
                 
                 await manager.broadcast(json.dumps(packet))
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                # 비동기 DB 저장
+                asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 
             else:
                 packet["sender"] = client_id
                 
+                # [핵심 변경] 모든 상태 변경 이벤트마다 DB에 즉시 즉시 즉시 저장!
                 if p_type == "username_change":
-                    server_state["cards"][packet["index"]]["user"] = packet["user"]
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    fresh_state["cards"][packet["index"]]["user"] = packet["user"]
+                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 elif p_type == "card_bg_change":
-                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    fresh_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
+                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 elif p_type == "global_bg_image":
-                    server_state["global_bg"] = packet.get("dataUrl")
-                    server_state["global_bg_type"] = "image"
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    fresh_state["global_bg"] = packet.get("dataUrl")
+                    fresh_state["global_bg_type"] = "image"
+                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 elif p_type == "global_bg_youtube":
-                    server_state["global_bg"] = packet.get("videoId")
-                    server_state["global_bg_type"] = "youtube"
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    fresh_state["global_bg"] = packet.get("videoId")
+                    fresh_state["global_bg_type"] = "youtube"
+                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 elif p_type == "toggle_mosaic":
-                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    fresh_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
+                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
