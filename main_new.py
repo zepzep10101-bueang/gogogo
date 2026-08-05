@@ -259,10 +259,8 @@ def read_root():
                 ]
             };
 
-            // [핵심 변경] 채팅창에 시간도 같이 띄워주는 기능 추가!
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
-                // 시간이 있으면 예쁜 회색 폰트로 옆에 살짝 붙여줌
                 const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
                 history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
                 history.scrollTop = history.scrollHeight;
@@ -579,7 +577,6 @@ def read_root():
                                 ).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                             }
-                            // [핵심 변경] 서버에서 받은 채팅 데이터 표시할 때 시간(time)도 같이 넘겨줌!
                             else if (data.type === "chat") {
                                 logChat(data.senderName, data.msg, data.time);
                             } 
@@ -607,7 +604,6 @@ def read_root():
                                     document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                                 }
 
-                                // [핵심 변경] 초기 DB 기록 불러올 때도 저장된 시간을 예쁘게 붙여줌!
                                 if (state.chat_history) {
                                     const historyEl = document.getElementById('chatHistory');
                                     historyEl.innerHTML = "";
@@ -833,7 +829,7 @@ def read_root():
                 }
             }
 
-            // [핵심 변경] 채팅을 전송할 때 브라우저의 현재 시간도 같이 묶어서 서버로 보냄!
+            // [핵심 추가] 날짜(월/일)와 시간(시:분)을 완벽하게 조합해서 전달!
             function sendChat() {
                 const input = document.getElementById('chatInput');
                 const msgText = input.value.trim();
@@ -842,7 +838,10 @@ def read_root():
                 const myName = window.myNickname || "익명";
                 
                 const now = new Date();
-                const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                const month = now.getMonth() + 1;
+                const date = now.getDate();
+                const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                const timeStr = `${month}/${date} ${timeString}`; // 예: 8/6 오후 03:45
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr }));
@@ -888,7 +887,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
-            # [핵심 변경] 서버가 메시지를 받을 때 시간(time) 데이터도 안전하게 뽑아서 DB에 저장!
             if p_type == "chat":
                 chat_obj = {
                     "senderName": packet.get("senderName"), 
