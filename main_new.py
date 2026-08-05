@@ -20,6 +20,13 @@ def load_data():
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
+            # 아까 12개로 잘못 저장됐을 수 있는 DB 데이터를 다시 8개로 깔끔하게 자름!
+            cards = data.get("cards", [])
+            if len(cards) > 8:
+                data["cards"] = cards[:8]
+            elif len(cards) < 8:
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 8)]
+                data["cards"].extend(new_cards)
             return data
     except Exception:
         pass
@@ -145,6 +152,15 @@ def read_root():
     </head>
     <body>
 
+        <!-- 화면 줌(Zoom) 뚫림 방지용 상대 비율 필터 유지 -->
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="position:absolute; width:0; height:0; display:none;">
+          <defs>
+            <filter id="relative-blur" primitiveUnits="objectBoundingBox">
+              <feGaussianBlur stdDeviation="0.008 0.008" />
+            </filter>
+          </defs>
+        </svg>
+
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -229,6 +245,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
+            // 다시 8명으로 롤백!
             const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
@@ -314,12 +331,12 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                // [핵심 변경] 두부처럼 보이던 4px을 2px로 깎아서 타자치는 글의 흐름이 보이게 수정
+                // 줌 아웃 방어 필터 적용
                 if (remoteVideo) {
-                    remoteVideo.style.filter = isMosaic ? "blur(2px)" : "none";
+                    remoteVideo.style.filter = isMosaic ? "url(#relative-blur)" : "none";
                 }
                 if (localVideo) {
-                    localVideo.style.filter = isMosaic ? "blur(2px)" : "none";
+                    localVideo.style.filter = isMosaic ? "url(#relative-blur)" : "none";
                 }
             }
 
@@ -379,8 +396,7 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    // 2px 블러 적용
-                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(2px);' : '';
+                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#relative-blur);' : '';
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
@@ -642,8 +658,7 @@ def read_root():
 
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    // 타인 화면 수신 시 2px 블러 적용
-                                    let filterStyle = cardData[index].is_mosaic ? 'filter: blur(2px);' : '';
+                                    let filterStyle = cardData[index].is_mosaic ? 'filter: url(#relative-blur);' : '';
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
