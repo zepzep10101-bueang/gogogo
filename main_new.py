@@ -21,10 +21,11 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            if len(cards) > 10:
-                data["cards"] = cards[:10]
-            elif len(cards) < 10:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 10)]
+            # [핵심 변경] 12칸으로 확장!
+            if len(cards) > 12:
+                data["cards"] = cards[:12]
+            elif len(cards) < 12:
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 12)]
                 data["cards"].extend(new_cards)
             return data
     except Exception:
@@ -32,7 +33,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(10)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(12)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
@@ -129,10 +130,10 @@ def read_root():
             #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; }
+            .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; }
             
-            /* [핵심 변경] 카드가 찌그러지지 않도록 적정 너비를 유지하면서 세로 스크롤이 자연스럽게 내려가도록 3열 또는 4열의 큼직한 격자로 설정! */
-            .card-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 15px; align-content: start; }
+            /* [핵심 변경] 한 줄에 4개씩(4열) 큼직하게 배치! 총 12칸이 4x3 구조로 됨 */
+            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
@@ -141,7 +142,9 @@ def read_root():
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.2s ease-in-out; }
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; }
+            /* [핵심 변경] 오른쪽 패널을 화면에 스티커처럼 딱 고정(sticky)시켜서 스크롤 내려도 입력창이 무조건 보이게 함! */
+            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
+            
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             .chat-box { flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-end; }
             .chat-input { display: flex; margin-top: 10px; }
@@ -251,7 +254,8 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 10}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
+            // [핵심 변경] 카드 총 개수를 12개로 설정 (4개씩 3줄)
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
