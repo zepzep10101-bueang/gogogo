@@ -21,10 +21,11 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            if len(cards) > 8:
-                data["cards"] = cards[:8]
-            elif len(cards) < 8:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 8)]
+            # [핵심 변경] 8개에서 10개로 확장!
+            if len(cards) > 10:
+                data["cards"] = cards[:10]
+            elif len(cards) < 10:
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 10)]
                 data["cards"].extend(new_cards)
             return data
     except Exception:
@@ -32,7 +33,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(8)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(10)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": []
@@ -113,7 +114,8 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
-        <title>통합</title>
+        <!-- [핵심 변경] 타이틀을 작가 대통합⭐ 으로 변경! -->
+        <title>작가 대통합⭐</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
@@ -130,13 +132,16 @@ def read_root():
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
             .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; }
-            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
-            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
+            /* [핵심 변경] 한 줄에 5개씩 들어가도록 5열(5 columns) 격자로 변경! */
+            .card-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-content: start; }
+            
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
+            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 3px; position: relative; z-index: 3; }
+            
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.2s ease-in-out; }
-            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+            .share-btn { padding: 3px 5px; font-size: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
@@ -245,7 +250,8 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 8}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
+            // [핵심 변경] 카드 배열을 총 10개로 확장!
+            const cardData = Array.from({length: 10}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -285,9 +291,9 @@ def read_root():
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
-                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:3px; font-size:11px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
                                 
-                                <div style="display:flex; gap:3px;">
+                                <div style="display:flex; gap:2px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="toggleMosaic(${index})">${mosaicBtnText}</button>
@@ -296,12 +302,12 @@ def read_root():
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
-                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:3px;">
+                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}">
-                                <span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
+                                <span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
                             </div>
                         </div>
                     `;
@@ -455,7 +461,7 @@ def read_root():
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 
-                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                box.innerHTML = `<span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
                 
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
@@ -743,7 +749,7 @@ def read_root():
                                     }
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
-                                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                                box.innerHTML = `<span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
@@ -829,7 +835,6 @@ def read_root():
                 }
             }
 
-            // [핵심 추가] 날짜(월/일)와 시간(시:분)을 완벽하게 조합해서 전달!
             function sendChat() {
                 const input = document.getElementById('chatInput');
                 const msgText = input.value.trim();
@@ -841,7 +846,7 @@ def read_root():
                 const month = now.getMonth() + 1;
                 const date = now.getDate();
                 const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                const timeStr = `${month}/${date} ${timeString}`; // 예: 8/6 오후 03:45
+                const timeStr = `${month}/${date} ${timeString}`;
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr }));
