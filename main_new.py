@@ -21,7 +21,6 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # [핵심 변경] 8개에서 10개로 확장!
             if len(cards) > 10:
                 data["cards"] = cards[:10]
             elif len(cards) < 10:
@@ -114,7 +113,6 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
-        <!-- [핵심 변경] 타이틀을 작가 대통합⭐ 으로 변경! -->
         <title>작가 대통합⭐</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
@@ -132,10 +130,7 @@ def read_root():
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
             .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; }
-            
-            /* [핵심 변경] 한 줄에 5개씩 들어가도록 5열(5 columns) 격자로 변경! */
             .card-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-content: start; }
-            
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 3px; position: relative; z-index: 3; }
             
@@ -170,7 +165,7 @@ def read_root():
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
                 <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 15px;">매번 접속할 때마다 닉네임과 비밀번호를 적어줘!</p>
-                <input type="text" id="nickInput" placeholder="내 닉네임 (예: 디오)" onkeypress="if(event.key==='Enter') login()"><br>
+                <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
                 <br>
                 <button onclick="login()">입장하기</button>
@@ -223,6 +218,7 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "1122";
+            const ADMIN_NICKNAME = "부엉"; // [핵심] 누나만 관리자(방 주인) 권한을 갖도록 설정!
 
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
@@ -239,6 +235,8 @@ def read_root():
 
                 if (inputPw === ROOM_PASSWORD) {
                     window.myNickname = inputNick; 
+                    window.isAdmin = (inputNick === ADMIN_NICKNAME); // 방 주인 여부 판별!
+                    
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
@@ -250,7 +248,6 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            // [핵심 변경] 카드 배열을 총 10개로 확장!
             const cardData = Array.from({length: 10}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
@@ -288,6 +285,8 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
 
+                    // [핵심 변경] 방 주인(부엉)에게만 다른 사람 화면을 통제할 수 있는 [관리자 모자이크] 버튼이 보임!
+                    // 본인 화면일 때는 일반 모자이크 버튼, 남의 화면일 때는 관리자 모자이크 버튼으로 작동
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
@@ -296,7 +295,7 @@ def read_root():
                                 <div style="display:flex; gap:2px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="toggleMosaic(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
@@ -314,6 +313,24 @@ def read_root():
                 });
             }
 
+            // [핵심 변경] 모자이크 버튼 클릭 시 본인이 공유 중이거나, 방 주인(부엉)이면 남의 화면도 원격 제어 가능!
+            function handleMosaicClick(index) {
+                const isMyStream = !!myStreams[index];
+                
+                if (!isMyStream && !window.isAdmin) {
+                    alert("본인이 화면을 공유 중일 때만 모자이크를 조작할 수 있어!");
+                    return;
+                }
+
+                const newState = !cardData[index].is_mosaic;
+                cardData[index].is_mosaic = newState;
+                applyMosaicUI(index, newState);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
+                }
+            }
+
             function toggleViewerSound(index) {
                 const vid = document.getElementById(`remote-video-${index}`);
                 const btn = document.getElementById(`sound-toggle-btn-${index}`);
@@ -327,21 +344,6 @@ def read_root():
                 } else {
                     btn.innerText = "소리끄기";
                     btn.style.background = "#00b894"; 
-                }
-            }
-
-            function toggleMosaic(index) {
-                if (!myStreams[index]) {
-                    alert("본인이 화면을 공유 중일 때만 모자이크를 조작할 수 있어!");
-                    return;
-                }
-
-                const newState = !cardData[index].is_mosaic;
-                cardData[index].is_mosaic = newState;
-                applyMosaicUI(index, newState);
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
                 }
             }
 
