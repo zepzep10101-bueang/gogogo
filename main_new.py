@@ -21,7 +21,6 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # [핵심 변경] 12칸으로 확장!
             if len(cards) > 12:
                 data["cards"] = cards[:12]
             elif len(cards) < 12:
@@ -47,6 +46,7 @@ def save_data(data):
     except Exception as e:
         print("망고로드 저장 에러:", e)
 
+# 서버 전체가 쳐다보는 단일 마스터 장부
 server_state = load_data()
 app = FastAPI()
 
@@ -132,7 +132,6 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; }
             
-            /* [핵심 변경] 한 줄에 4개씩(4열) 큼직하게 배치! 총 12칸이 4x3 구조로 됨 */
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
@@ -142,7 +141,6 @@ def read_root():
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.2s ease-in-out; }
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
-            /* [핵심 변경] 오른쪽 패널을 화면에 스티커처럼 딱 고정(sticky)시켜서 스크롤 내려도 입력창이 무조건 보이게 함! */
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
@@ -254,8 +252,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            // [핵심 변경] 카드 총 개수를 12개로 설정 (4개씩 3줄)
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -868,13 +865,12 @@ def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    fresh_state = load_data()
-    
+    # [핵심 변경] 개인 장부(fresh_state) 대신, 마스터 장부(server_state)를 모두가 공유하게 바꿨어!
     await manager.connect(websocket)
     client_id = str(id(websocket))
     
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-    await websocket.send_text(json.dumps({"type": "init_state", "state": fresh_state}))
+    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
     
     try:
         while True:
@@ -892,8 +888,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "clear_chat":
-                fresh_state["chat_history"] = []
-                asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                # [핵심 변경] 청소 버튼 누르면 마스터 장부 비우고 즉시 DB에 덮어씀 (부활 원천 차단!)
+                server_state["chat_history"] = []
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
@@ -904,33 +901,33 @@ async def websocket_endpoint(websocket: WebSocket):
                     "msg": packet.get("msg"),
                     "time": packet.get("time", "")
                 }
-                fresh_state["chat_history"].append(chat_obj)
-                if len(fresh_state["chat_history"]) > 100:
-                    fresh_state["chat_history"].pop(0)
+                server_state["chat_history"].append(chat_obj)
+                if len(server_state["chat_history"]) > 100:
+                    server_state["chat_history"].pop(0)
                 
                 await manager.broadcast(json.dumps(packet))
-                asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
             else:
                 packet["sender"] = client_id
                 
                 if p_type == "username_change":
-                    fresh_state["cards"][packet["index"]]["user"] = packet["user"]
-                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                    server_state["cards"][packet["index"]]["user"] = packet["user"]
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "card_bg_change":
-                    fresh_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "global_bg_image":
-                    fresh_state["global_bg"] = packet.get("dataUrl")
-                    fresh_state["global_bg_type"] = "image"
-                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                    server_state["global_bg"] = packet.get("dataUrl")
+                    server_state["global_bg_type"] = "image"
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "global_bg_youtube":
-                    fresh_state["global_bg"] = packet.get("videoId")
-                    fresh_state["global_bg_type"] = "youtube"
-                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                    server_state["global_bg"] = packet.get("videoId")
+                    server_state["global_bg_type"] = "youtube"
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "toggle_mosaic":
-                    fresh_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
-                    asyncio.create_task(asyncio.to_thread(save_data, fresh_state))
+                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
