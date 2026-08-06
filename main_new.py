@@ -130,13 +130,16 @@ def read_root():
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
             .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; }
-            .card-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-content: start; }
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
-            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 3px; position: relative; z-index: 3; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
+            /* [핵심 변경] 카드가 찌그러지지 않도록 적정 너비를 유지하면서 세로 스크롤이 자연스럽게 내려가도록 3열 또는 4열의 큼직한 격자로 설정! */
+            .card-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 15px; align-content: start; }
+            
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
+            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
+            
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.2s ease-in-out; }
-            .share-btn { padding: 3px 5px; font-size: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
@@ -218,7 +221,7 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "1122";
-            const ADMIN_NICKNAME = "부엉"; // [핵심] 누나만 관리자(방 주인) 권한을 갖도록 설정!
+            const ADMIN_NICKNAME = "부엉";
 
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
@@ -235,7 +238,7 @@ def read_root():
 
                 if (inputPw === ROOM_PASSWORD) {
                     window.myNickname = inputNick; 
-                    window.isAdmin = (inputNick === ADMIN_NICKNAME); // 방 주인 여부 판별!
+                    window.isAdmin = (inputNick === ADMIN_NICKNAME);
                     
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
@@ -248,7 +251,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 10}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
+            const cardData = Array.from({length: 10}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -285,14 +288,12 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
 
-                    // [핵심 변경] 방 주인(부엉)에게만 다른 사람 화면을 통제할 수 있는 [관리자 모자이크] 버튼이 보임!
-                    // 본인 화면일 때는 일반 모자이크 버튼, 남의 화면일 때는 관리자 모자이크 버튼으로 작동
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
-                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:3px; font-size:11px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
                                 
-                                <div style="display:flex; gap:2px;">
+                                <div style="display:flex; gap:3px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
@@ -301,19 +302,18 @@ def read_root():
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:3px;">
-                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
+                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}">
-                                <span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
+                                <span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
                             </div>
                         </div>
                     `;
                 });
             }
 
-            // [핵심 변경] 모자이크 버튼 클릭 시 본인이 공유 중이거나, 방 주인(부엉)이면 남의 화면도 원격 제어 가능!
             function handleMosaicClick(index) {
                 const isMyStream = !!myStreams[index];
                 
@@ -463,7 +463,7 @@ def read_root():
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 
-                box.innerHTML = `<span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
                 
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
@@ -751,7 +751,7 @@ def read_root():
                                     }
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
-                                box.innerHTML = `<span style="font-size:10px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
