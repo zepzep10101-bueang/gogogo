@@ -26,6 +26,12 @@ def load_data():
             elif len(cards) < 12:
                 new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 12)]
                 data["cards"].extend(new_cards)
+            
+            # [핵심 추가] 서버가 켜질 때 (렌더가 깨어날 때) 이름과 모자이크만 강제 초기화! 유령 이름 방지!
+            for i, card in enumerate(data["cards"]):
+                card["user"] = f"자리{i+1}"
+                card["is_mosaic"] = False
+                
             return data
     except Exception:
         pass
@@ -54,7 +60,8 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self.active_shares: dict[int, str] = {}
         self.active_users: dict[WebSocket, str] = {}
-        self.active_slots: dict[str, int] = {} # [핵심 추가] 접속자마다 자동 배정된 빈자리 기억
+        # [핵심 추가] 수동으로 여러 자리를 차지해도 다 기억할 수 있게 리스트로 변경!
+        self.active_slots: dict[str, list[int]] = {} 
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -266,7 +273,6 @@ def read_root():
                 ]
             };
 
-            // [핵심 변경] 화공 안 켠 사람의 빈 화면에 굵은 이름 박아주는 함수
             function getEmptySlotHTML(username) {
                 if (!username || username.startsWith("자리")) {
                     return `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
@@ -915,7 +921,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
                 
-                # [핵심 추가] 접속 시 남는 자리가 있으면 자동으로 이름 박아주기!
                 assigned_idx = None
                 for i, card in enumerate(server_state["cards"]):
                     if card["user"].startswith("자리"):
@@ -923,7 +928,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         break
                 
                 if assigned_idx is not None:
-                    manager.active_slots[client_id] = assigned_idx
+                    if client_id not in manager.active_slots:
+                        manager.active_slots[client_id] = []
+                    manager.active_slots[client_id].append(assigned_idx)
+                    
                     server_state["cards"][assigned_idx]["user"] = nickname
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     
@@ -961,7 +969,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 packet["sender"] = client_id
                 
                 if p_type == "username_change":
-                    server_state["cards"][packet["index"]]["user"] = packet["user"]
+                    idx = packet["index"]
+                    val = packet["user"]
+                    server_state["cards"][idx]["user"] = val
+                    
+                    # [핵심 추가] 수동으로 이름표를 달거나 화공을 켜도 내 소유로 서버가 완벽 추적!
+                    if not val.startswith("자리"):
+                        if client_id not in manager.active_slots:
+                            manager.active_slots[client_id] = []
+                        if idx not in manager.active_slots[client_id]:
+                            manager.active_slots[client_id].append(idx)
+                            
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "card_bg_change":
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
@@ -989,22 +1007,23 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
         
-        # [핵심 추가] 연결이 끊어지면 내 이름이 있던 빈자리를 다시 '자리X'로 돌려놓기
-        reverted_idx = None
+        # [핵심 추가] 연결 끊길 때, 내가 건드린 모든 자리의 이름을 싹 다 청소하고 감!
+        reverted_indexes = []
         if client_id in manager.active_slots:
-            reverted_idx = manager.active_slots[client_id]
+            for r_idx in manager.active_slots[client_id]:
+                server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                reverted_indexes.append(r_idx)
             del manager.active_slots[client_id]
-            server_state["cards"][reverted_idx]["user"] = f"자리{reverted_idx+1}"
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
 
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
         
-        if reverted_idx is not None:
+        for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({
                 "type": "username_change",
-                "index": reverted_idx,
-                "user": f"자리{reverted_idx+1}"
+                "index": r_idx,
+                "user": f"자리{r_idx+1}"
             }))
             
         for idx in freed_indexes:
