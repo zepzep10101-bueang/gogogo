@@ -46,7 +46,6 @@ def save_data(data):
     except Exception as e:
         print("망고로드 저장 에러:", e)
 
-# 서버 전체가 쳐다보는 단일 마스터 장부
 server_state = load_data()
 app = FastAPI()
 
@@ -55,6 +54,7 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self.active_shares: dict[int, str] = {}
         self.active_users: dict[WebSocket, str] = {}
+        self.active_slots: dict[str, int] = {} # [핵심 추가] 접속자마다 자동 배정된 빈자리 기억
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -266,6 +266,19 @@ def read_root():
                 ]
             };
 
+            // [핵심 변경] 화공 안 켠 사람의 빈 화면에 굵은 이름 박아주는 함수
+            function getEmptySlotHTML(username) {
+                if (!username || username.startsWith("자리")) {
+                    return `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                } else {
+                    return `
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px;">
+                        <span style="font-size:26px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:8px;">${username}</span>
+                        <span style="font-size:12px; color:#aaa;">화면 미공유 중</span>
+                    </div>`;
+                }
+            }
+
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
                 const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
@@ -308,7 +321,7 @@ def read_root():
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}">
-                                <span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>
+                                ${getEmptySlotHTML(card.user)}
                             </div>
                         </div>
                     `;
@@ -371,6 +384,12 @@ def read_root():
 
             function updateUsername(index, val) {
                 cardData[index].user = val;
+                
+                const box = document.getElementById(`stream-box-${index}`);
+                if (box && !box.querySelector('video')) {
+                    box.innerHTML = getEmptySlotHTML(val);
+                }
+
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 }
@@ -464,7 +483,7 @@ def read_root():
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 
-                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                box.innerHTML = getEmptySlotHTML(cardData[index].user);
                 
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
@@ -603,6 +622,11 @@ def read_root():
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
                                             if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
+                                            
+                                            const box = document.getElementById(`stream-box-${i}`);
+                                            if (box && !box.querySelector('video')) {
+                                                box.innerHTML = getEmptySlotHTML(card.user);
+                                            }
                                         }
                                     });
                                 }
@@ -627,6 +651,11 @@ def read_root():
                                 cardData[data.index].user = data.user;
                                 const inputEl = document.getElementById(`username-${data.index}`);
                                 if (inputEl) { inputEl.value = data.user; }
+                                
+                                const box = document.getElementById(`stream-box-${data.index}`);
+                                if (box && !box.querySelector('video')) {
+                                    box.innerHTML = getEmptySlotHTML(data.user);
+                                }
                             } else if (data.type === "card_bg_change") {
                                 cardData[data.index].card_bg = data.dataUrl;
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
@@ -752,7 +781,7 @@ def read_root():
                                     }
                                 }
                                 const box = document.getElementById(`stream-box-${index}`);
-                                box.innerHTML = `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                                box.innerHTML = getEmptySlotHTML(cardData[index].user);
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
@@ -865,7 +894,6 @@ def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # [핵심 변경] 개인 장부(fresh_state) 대신, 마스터 장부(server_state)를 모두가 공유하게 바꿨어!
     await manager.connect(websocket)
     client_id = str(id(websocket))
     
@@ -883,12 +911,33 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "set_nickname":
-                manager.active_users[websocket] = packet.get("nickname", "익명")
+                nickname = packet.get("nickname", "익명")
+                manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
+                
+                # [핵심 추가] 접속 시 남는 자리가 있으면 자동으로 이름 박아주기!
+                assigned_idx = None
+                for i, card in enumerate(server_state["cards"]):
+                    if card["user"].startswith("자리"):
+                        assigned_idx = i
+                        break
+                
+                if assigned_idx is not None:
+                    manager.active_slots[client_id] = assigned_idx
+                    server_state["cards"][assigned_idx]["user"] = nickname
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    
+                    change_packet = json.dumps({
+                        "type": "username_change",
+                        "index": assigned_idx,
+                        "user": nickname
+                    })
+                    await manager.broadcast(change_packet)
+                    await websocket.send_text(change_packet)
+                
                 continue
 
             if p_type == "clear_chat":
-                # [핵심 변경] 청소 버튼 누르면 마스터 장부 비우고 즉시 DB에 덮어씀 (부활 원천 차단!)
                 server_state["chat_history"] = []
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
@@ -938,8 +987,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
+        client_id = str(id(websocket))
+        
+        # [핵심 추가] 연결이 끊어지면 내 이름이 있던 빈자리를 다시 '자리X'로 돌려놓기
+        reverted_idx = None
+        if client_id in manager.active_slots:
+            reverted_idx = manager.active_slots[client_id]
+            del manager.active_slots[client_id]
+            server_state["cards"][reverted_idx]["user"] = f"자리{reverted_idx+1}"
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
+        
+        if reverted_idx is not None:
+            await manager.broadcast(json.dumps({
+                "type": "username_change",
+                "index": reverted_idx,
+                "user": f"자리{reverted_idx+1}"
+            }))
+            
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
