@@ -7,7 +7,7 @@ asyncio = __import__('asyncio')
 
 from pymongo import MongoClient
 
-MONGO_URI = os.environ.get("MONGO_URI", "여기에_누나의_망고로드_주소를_넣어주면_돼")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0")
 
 try:
     client = MongoClient(MONGO_URI)
