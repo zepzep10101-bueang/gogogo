@@ -27,7 +27,6 @@ def load_data():
                 new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 12)]
                 data["cards"].extend(new_cards)
             
-            # [핵심 추가] 서버가 켜질 때 (렌더가 깨어날 때) 이름과 모자이크만 강제 초기화! 유령 이름 방지!
             for i, card in enumerate(data["cards"]):
                 card["user"] = f"자리{i+1}"
                 card["is_mosaic"] = False
@@ -60,7 +59,6 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self.active_shares: dict[int, str] = {}
         self.active_users: dict[WebSocket, str] = {}
-        # [핵심 추가] 수동으로 여러 자리를 차지해도 다 기억할 수 있게 리스트로 변경!
         self.active_slots: dict[str, list[int]] = {} 
 
     async def connect(self, websocket: WebSocket):
@@ -265,13 +263,7 @@ def read_root():
             const candidateBuffers = {}; 
             
             const expectedShares = {}; 
-            
-            const rtcConfig = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            };
+            const myOwnedSlots = new Set(); // [핵심 추가] 내 자리를 빼앗기지 않게 기억하는 메모리!
 
             function getEmptySlotHTML(username) {
                 if (!username || username.startsWith("자리")) {
@@ -390,6 +382,13 @@ def read_root():
 
             function updateUsername(index, val) {
                 cardData[index].user = val;
+                
+                const myName = window.myNickname || "익명";
+                if (val === myName) {
+                    myOwnedSlots.add(index);
+                } else {
+                    myOwnedSlots.delete(index);
+                }
                 
                 const box = document.getElementById(`stream-box-${index}`);
                 if (box && !box.querySelector('video')) {
@@ -579,7 +578,8 @@ def read_root():
                         statusEl.className = "status-indicator status-online";
 
                         const myNick = window.myNickname || "익명";
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick }));
+                        const ownedArr = Array.from(myOwnedSlots);
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
 
                         if (pingInterval) clearInterval(pingInterval);
                         pingInterval = setInterval(() => {
@@ -657,6 +657,13 @@ def read_root():
                                 cardData[data.index].user = data.user;
                                 const inputEl = document.getElementById(`username-${data.index}`);
                                 if (inputEl) { inputEl.value = data.user; }
+                                
+                                const myName = window.myNickname || "익명";
+                                if (data.user === myName) {
+                                    myOwnedSlots.add(data.index);
+                                } else {
+                                    myOwnedSlots.delete(data.index);
+                                }
                                 
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
@@ -918,8 +925,35 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if p_type == "set_nickname":
                 nickname = packet.get("nickname", "익명")
+                owned = packet.get("owned", [])
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
+                
+                if client_id not in manager.active_slots:
+                    manager.active_slots[client_id] = []
+
+                recovered = False
+                if owned:
+                    for idx in owned:
+                        if 0 <= idx < 12:
+                            current_user = server_state["cards"][idx]["user"]
+                            if current_user.startswith("자리") or current_user == nickname:
+                                if idx not in manager.active_slots[client_id]:
+                                    manager.active_slots[client_id].append(idx)
+                                server_state["cards"][idx]["user"] = nickname
+                                recovered = True
+                                
+                                change_packet = json.dumps({
+                                    "type": "username_change",
+                                    "index": idx,
+                                    "user": nickname
+                                })
+                                await manager.broadcast(change_packet)
+                                await websocket.send_text(change_packet)
+                
+                if recovered:
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    continue
                 
                 assigned_idx = None
                 for i, card in enumerate(server_state["cards"]):
@@ -928,10 +962,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         break
                 
                 if assigned_idx is not None:
-                    if client_id not in manager.active_slots:
-                        manager.active_slots[client_id] = []
                     manager.active_slots[client_id].append(assigned_idx)
-                    
                     server_state["cards"][assigned_idx]["user"] = nickname
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     
@@ -973,7 +1004,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     val = packet["user"]
                     server_state["cards"][idx]["user"] = val
                     
-                    # [핵심 추가] 수동으로 이름표를 달거나 화공을 켜도 내 소유로 서버가 완벽 추적!
                     if not val.startswith("자리"):
                         if client_id not in manager.active_slots:
                             manager.active_slots[client_id] = []
@@ -1007,7 +1037,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
         
-        # [핵심 추가] 연결 끊길 때, 내가 건드린 모든 자리의 이름을 싹 다 청소하고 감!
         reverted_indexes = []
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
