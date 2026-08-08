@@ -143,7 +143,10 @@ def read_root():
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
             
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; transition: filter 0.2s ease-in-out; }
+            
+            /* [중요] 비디오가 절대 이름표에 가려지지 않게 z-index: 10으로 최상단 배치! */
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
+            
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
@@ -158,6 +161,9 @@ def read_root():
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
+            
+            /* [추가] 엉킴 복구 버튼 스타일 */
+            .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: bold; }
         </style>
     </head>
     <body>
@@ -214,7 +220,11 @@ def read_root():
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>💬 실시간 채팅</h3>
-                        <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">채팅 청소</button>
+                        <!-- [추가] 엉킴 복구 버튼 -->
+                        <div>
+                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공 엉킴 복구</button>
+                            <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:3px;">채팅 청소</button>
+                        </div>
                     </div>
                     <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
                     <div class="chat-input">
@@ -263,14 +273,21 @@ def read_root():
             const candidateBuffers = {}; 
             
             const expectedShares = {}; 
-            const myOwnedSlots = new Set(); // [핵심 추가] 내 자리를 빼앗기지 않게 기억하는 메모리!
+            const myOwnedSlots = new Set(); 
+
+            const rtcConfig = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            };
 
             function getEmptySlotHTML(username) {
                 if (!username || username.startsWith("자리")) {
-                    return `<span style="font-size:11px; color:#aaa; position:relative; z-index:2;">화면 미공유 중</span>`;
+                    return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
                 } else {
                     return `
-                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px;">
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;">
                         <span style="font-size:26px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:8px;">${username}</span>
                         <span style="font-size:12px; color:#aaa;">화면 미공유 중</span>
                     </div>`;
@@ -290,6 +307,20 @@ def read_root():
                         ws.send(JSON.stringify({ type: "clear_chat" }));
                     }
                 }
+            }
+
+            // [추가] 엉킨 WebRTC를 강제로 리셋하고 다시 연결을 시도하는 응급 구조 기능!
+            function forceRecoverWebRTC() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "request_existing_shares" }));
+                    for (let idx in expectedShares) {
+                        const sharerId = expectedShares[idx];
+                        if (sharerId && sharerId !== ws.clientId) {
+                            ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
+                        }
+                    }
+                }
+                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
 
             function initCards() {
@@ -485,11 +516,10 @@ def read_root():
                 }
 
                 const box = document.getElementById(`stream-box-${index}`);
-                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
-                const btnCam = document.getElementById(`share-btn-cam-${index}`);
-                
                 box.innerHTML = getEmptySlotHTML(cardData[index].user);
                 
+                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
+                const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
                 
@@ -709,7 +739,9 @@ def read_root():
                                 const senderId = data.sender;
                                 const pcKey = `${index}_${senderId}`;
 
-                                if (peerConnections[pcKey]) peerConnections[pcKey].close();
+                                if (peerConnections[pcKey]) {
+                                    try { peerConnections[pcKey].close(); } catch(e) {}
+                                }
 
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[pcKey] = pc;
@@ -729,6 +761,7 @@ def read_root():
                                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
                                     
+                                    // [중요] 비디오가 무조건 글자들을 밀어내고 덮어쓰도록 렌더링을 강화!
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
