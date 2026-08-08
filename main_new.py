@@ -7,7 +7,7 @@ asyncio = __import__('asyncio')
 
 from pymongo import MongoClient
 
-MONGO_URI = os.environ.get("MONGO_URI")
+MONGO_URL = os.environ.get("MONGO_URI")
 try:
     client = MongoClient(MONGO_URI)
     db = client["dashboard_db"]
