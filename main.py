@@ -143,7 +143,6 @@ def read_root():
             
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
             
-            /* [중요] 비디오가 절대 이름표에 가려지지 않게 z-index: 10으로 최상단 배치! */
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
             .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
@@ -161,7 +160,6 @@ def read_root():
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             
-            /* [추가] 엉킴 복구 버튼 스타일 */
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: bold; }
         </style>
     </head>
@@ -205,8 +203,9 @@ def read_root():
                 <div class="panel-box">
                     <h3>🖼️ 나만의 전체 배경 설정</h3>
                     <div class="bg-control">
-                        <div style="font-size: 11px; color: #aaa;">GIF/이미지 파일 선택:</div>
-                        <input type="file" id="bgFileInput" accept="image/*" style="font-size:11px;" onchange="setLocalBackground(event)">
+                        <div style="font-size: 11px; color: #aaa;">일반 사진 파일 선택 (움짤X):</div>
+                        <!-- [수정됨] accept 속성으로 jpg, png, webp 등 일반 이미지만 선택 가능하게 강제 -->
+                        <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:11px;" onchange="setLocalBackground(event)">
                         
                         <div style="font-size: 11px; color: #aaa; margin-top: 5px;">유튜브 링크 입력:</div>
                         <div style="display:flex; gap:4px;">
@@ -219,7 +218,6 @@ def read_root():
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>💬 실시간 채팅</h3>
-                        <!-- [추가] 엉킴 복구 버튼 -->
                         <div>
                             <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공 엉킴 복구</button>
                             <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:3px;">채팅 청소</button>
@@ -308,7 +306,6 @@ def read_root():
                 }
             }
 
-            // [추가] 엉킨 WebRTC를 강제로 리셋하고 다시 연결을 시도하는 응급 구조 기능!
             function forceRecoverWebRTC() {
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "request_existing_shares" }));
@@ -345,7 +342,8 @@ def read_root():
                             </div>
                             
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
-                                <input type="file" id="card-file-${index}" accept="image/*" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                                <!-- [수정됨] accept 속성으로 jpg, png, webp 등 일반 이미지만 선택 가능하게 강제 -->
+                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}">
@@ -434,6 +432,13 @@ def read_root():
                 const file = event.target.files[0];
                 if (!file) return;
 
+                // [추가됨] JavaScript 단에서도 GIF 파일이 들어오면 차단 경고창 띄우기!
+                if (file.type === "image/gif") {
+                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
+                    event.target.value = ""; // 선택된 파일 초기화
+                    return;
+                }
+
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const dataUrl = e.target.result;
@@ -443,6 +448,29 @@ def read_root():
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function setLocalBackground(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                // [추가됨] 전체 배경도 GIF 파일 차단!
+                if (file.type === "image/gif") {
+                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
+                    event.target.value = ""; // 선택된 파일 초기화
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
+                    
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: dataUrl }));
                     }
                 };
                 reader.readAsDataURL(file);
@@ -555,22 +583,6 @@ def read_root():
                     }
                 }
             }, 5000);
-
-            function setLocalBackground(event) {
-                const file = event.target.files[0];
-                if (!file) return;
-                
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const dataUrl = e.target.result;
-                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
-                    
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: dataUrl }));
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
 
             function extractYoutubeId(url) {
                 if (!url) return null;
@@ -760,7 +772,6 @@ def read_root():
                                     const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
                                     let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
                                     
-                                    // [중요] 비디오가 무조건 글자들을 밀어내고 덮어쓰도록 렌더링을 강화!
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
