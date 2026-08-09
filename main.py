@@ -134,7 +134,8 @@ def read_root():
             #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; }
+            /* 전체 레이아웃: 카드 영역 넓히고 우측 사이드바는 날씬하게 고정 */
+            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
             
@@ -150,17 +151,24 @@ def read_root():
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
-            .chat-box { flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-end; }
-            .chat-input { display: flex; margin-top: 10px; }
-            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; }
-            .chat-input button { padding: 8px 15px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; }
             
-            .bg-control { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+            /* 대시보드 내 설정 버튼 스타일 */
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; }
+            .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
+
+            /* 채팅창 롱다리 & 날씬하게 설정 (높이 확 키움) */
+            .chat-box { display: flex; flex-direction: column; height: 500px; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
+            .chat-input { display: flex; margin-top: 10px; }
+            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
+            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; flex-shrink: 0; }
+            
+            .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             
-            .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: bold; }
+            .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; }
         </style>
     </head>
     <body>
@@ -190,40 +198,48 @@ def read_root():
         <div class="overlay"></div>
 
         <div class="main-container">
+            <!-- 왼쪽: 12개 카드 영역 (더 넓게 확보) -->
             <div class="card-grid" id="cardGrid"></div>
 
+            <!-- 오른쪽: 날씬하고 긴 사이드바 영역 -->
             <div class="side-panel">
+                <!-- 대시보드 박스 안에 '배경 설정' 토글 버튼 쏙 집어넣음 -->
                 <div class="panel-box">
-                    <h3>👑 대시보드 <span id="connStatus" class="status-indicator status-offline">연결 중...</span></h3>
+                    <h3>
+                        👑 대시보드 
+                        <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
+                    </h3>
+                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
                     <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
-                </div>
-
-                <div class="panel-box">
-                    <h3>🖼️ 나만의 전체 배경 설정</h3>
-                    <div class="bg-control">
-                        <div style="font-size: 11px; color: #aaa;">일반 사진 파일 선택 (움짤X):</div>
-                        <!-- [수정됨] accept 속성으로 jpg, png, webp 등 일반 이미지만 선택 가능하게 강제 -->
-                        <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:11px;" onchange="setLocalBackground(event)">
-                        
-                        <div style="font-size: 11px; color: #aaa; margin-top: 5px;">유튜브 링크 입력:</div>
-                        <div style="display:flex; gap:4px;">
-                            <input type="text" id="bgYoutubeInput" placeholder="유튜브 URL 붙여넣기" style="flex-grow:1; font-size:11px; padding:4px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px;">
-                            <button onclick="setYoutubeBackground()" style="font-size:11px; padding:4px 8px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
+                    
+                    <!-- 숨겨져 있다가 '배경설정' 버튼 누르면 뿅하고 나타나는 미니 설정창 -->
+                    <div class="settings-dropdown" id="settingsDropdown">
+                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
+                        <div class="bg-control">
+                            <div style="font-size: 10px; color: #aaa;">일반 사진 선택 (움짤X):</div>
+                            <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%;" onchange="setLocalBackground(event)">
+                            
+                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크 입력:</div>
+                            <div style="display:flex; gap:3px;">
+                                <input type="text" id="bgYoutubeInput" placeholder="유튜브 URL" style="flex-grow:1; font-size:10px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
+                                <button onclick="setYoutubeBackground()" style="font-size:10px; padding:3px 6px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- 실시간 채팅창 (세로로 길쭉하게 확장됨) -->
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h3>💬 실시간 채팅</h3>
+                        <h3 style="font-size: 15px;">💬 실시간 채팅</h3>
                         <div>
-                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공 엉킴 복구</button>
-                            <button onclick="clearChat()" style="font-size:10px; padding:3px 6px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:3px;">채팅 청소</button>
+                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공복구</button>
+                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
                         </div>
                     </div>
-                    <div id="chatHistory" style="height: 180px; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4;"></div>
+                    <div id="chatHistory"></div>
                     <div class="chat-input">
                         <input type="text" id="chatInput" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendChat()">
                         <button onclick="sendChat()">전송</button>
@@ -235,6 +251,15 @@ def read_root():
         <script>
             const ROOM_PASSWORD = "1122";
             const ADMIN_NICKNAME = "부엉";
+
+            function toggleSettingsPanel() {
+                const dropdown = document.getElementById('settingsDropdown');
+                if (dropdown.style.display === 'block') {
+                    dropdown.style.display = 'none';
+                } else {
+                    dropdown.style.display = 'block';
+                }
+            }
 
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
@@ -264,7 +289,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -342,7 +367,6 @@ def read_root():
                             </div>
                             
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
-                                <!-- [수정됨] accept 속성으로 jpg, png, webp 등 일반 이미지만 선택 가능하게 강제 -->
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
@@ -432,10 +456,9 @@ def read_root():
                 const file = event.target.files[0];
                 if (!file) return;
 
-                // [추가됨] JavaScript 단에서도 GIF 파일이 들어오면 차단 경고창 띄우기!
                 if (file.type === "image/gif") {
                     alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; // 선택된 파일 초기화
+                    event.target.value = ""; 
                     return;
                 }
 
@@ -457,10 +480,9 @@ def read_root():
                 const file = event.target.files[0];
                 if (!file) return;
                 
-                // [추가됨] 전체 배경도 GIF 파일 차단!
                 if (file.type === "image/gif") {
                     alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; // 선택된 파일 초기화
+                    event.target.value = ""; 
                     return;
                 }
 
