@@ -1,13 +1,12 @@
+# 1. 무거운 옷 벗고 가벼운 slim 버전 입기 (용량 대폭 감소)
 FROM python:3.10-slim
 
 WORKDIR /app
 
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
-# 누나가 미리 만들어둔 재료 목록(requirements)으로 설치하기
-RUN pip install -r requirements.txt
-
-EXPOSE 8080
-
-# 누나의 파이썬 파일 이름(main_new)으로 실행!
-CMD ["python", "-m", "uvicorn", "main_new:app", "--host", "0.0.0.0", "--port", "8080"]
+# 2. 레일웨이용 포트 설정 적용 완료
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
