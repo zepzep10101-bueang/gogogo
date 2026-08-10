@@ -134,13 +134,17 @@ def read_root():
             #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
 
-            /* 전체 레이아웃: 카드 영역 넓히고 우측 사이드바는 날씬하게 고정 */
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
-            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; }
+            /* [수정] grid-auto-flow: dense 추가해서 큰 카드가 들어가도 빈칸이 예쁘게 채워지게 만듦 */
+            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; }
-            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            
+            /* [새로 추가] 카드가 커지는 마법의 CSS */
+            .timer-card.large { grid-column: span 2; grid-row: span 2; }
+
+            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
             
@@ -152,11 +156,9 @@ def read_root():
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            /* 대시보드 내 설정 버튼 스타일 */
             .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
-            /* 채팅창 롱다리 & 날씬하게 설정 (높이 확 키움) */
             .chat-box { display: flex; flex-direction: column; height: 500px; }
             #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
             .chat-input { display: flex; margin-top: 10px; }
@@ -198,12 +200,9 @@ def read_root():
         <div class="overlay"></div>
 
         <div class="main-container">
-            <!-- 왼쪽: 12개 카드 영역 (더 넓게 확보) -->
             <div class="card-grid" id="cardGrid"></div>
 
-            <!-- 오른쪽: 날씬하고 긴 사이드바 영역 -->
             <div class="side-panel">
-                <!-- 대시보드 박스 안에 '배경 설정' 토글 버튼 쏙 집어넣음 -->
                 <div class="panel-box">
                     <h3>
                         👑 대시보드 
@@ -214,7 +213,6 @@ def read_root():
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
                     
-                    <!-- 숨겨져 있다가 '배경설정' 버튼 누르면 뿅하고 나타나는 미니 설정창 -->
                     <div class="settings-dropdown" id="settingsDropdown">
                         <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
                         <div class="bg-control">
@@ -230,7 +228,6 @@ def read_root():
                     </div>
                 </div>
 
-                <!-- 실시간 채팅창 (세로로 길쭉하게 확장됨) -->
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3 style="font-size: 15px;">💬 실시간 채팅</h3>
@@ -289,7 +286,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -343,6 +340,22 @@ def read_root():
                 }
                 alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
+            
+            // [추가] 내 브라우저에서만 크기를 바꿨다 줄였다 하는 마법 함수!
+            function toggleCardSize(index) {
+                const card = document.getElementById(`card-card-${index}`);
+                const btn = document.getElementById(`size-btn-${index}`);
+                
+                if (card.classList.contains('large')) {
+                    card.classList.remove('large');
+                    btn.innerText = "크게";
+                    btn.style.background = "#fdcb6e";
+                } else {
+                    card.classList.add('large');
+                    btn.innerText = "작게";
+                    btn.style.background = "#e17055";
+                }
+            }
 
             function initCards() {
                 const grid = document.getElementById('cardGrid');
@@ -361,6 +374,9 @@ def read_root():
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    
+                                    <!-- [새로 추가] 내 화면에서만 크게/작게 만드는 조작 버튼 -->
+                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
                                     
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
