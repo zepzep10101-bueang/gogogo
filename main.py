@@ -132,16 +132,16 @@ def read_root():
             #bgMediaWrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
             #bgMediaWrapper img { width: 100vw; height: 100vh; object-fit: cover; display: block; }
             #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
-            .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.35); z-index: 1; pointer-events: none; }
+            
+            /* [수정] 배경을 까맣게 덮던 필름을 0.35에서 0.05로 줄여서 엄청 선명하게 만듦! */
+            .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
-            /* [수정] grid-auto-flow: dense 추가해서 큰 카드가 들어가도 빈칸이 예쁘게 채워지게 만듦 */
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            /* [새로 추가] 카드가 커지는 마법의 CSS */
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
             .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
@@ -156,7 +156,7 @@ def read_root():
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; margin-left: 5px; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; height: 500px; }
@@ -207,6 +207,8 @@ def read_root():
                     <h3>
                         👑 대시보드 
                         <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
+                        <!-- [추가] 빈자리 숨기기 버튼 -->
+                        <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리 숨기기</button>
                     </h3>
                     <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
                     <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
@@ -248,6 +250,37 @@ def read_root():
         <script>
             const ROOM_PASSWORD = "1122";
             const ADMIN_NICKNAME = "부엉";
+
+            // [추가] 빈자리 숨기기 상태를 기억하는 변수
+            let hideEmptySlots = false;
+
+            // [추가] 빈자리 숨기기 버튼 마법 함수
+            function toggleEmptySlots() {
+                hideEmptySlots = !hideEmptySlots;
+                const btn = document.getElementById('hide-empty-btn');
+                if (hideEmptySlots) {
+                    btn.innerText = "🐵 빈자리 보이기";
+                    btn.style.background = "#0984e3";
+                } else {
+                    btn.innerText = "🙈 빈자리 숨기기";
+                    btn.style.background = "#636e72";
+                }
+                applyEmptySlotVisibility();
+            }
+
+            // [추가] 이름이 '자리'로 시작하면 카드를 끄고 켜는 함수
+            function applyEmptySlotVisibility() {
+                cardData.forEach((card, index) => {
+                    const cardEl = document.getElementById(`card-card-${index}`);
+                    if (cardEl) {
+                        if (hideEmptySlots && card.user.startsWith("자리")) {
+                            cardEl.style.display = "none";
+                        } else {
+                            cardEl.style.display = "flex";
+                        }
+                    }
+                });
+            }
 
             function toggleSettingsPanel() {
                 const dropdown = document.getElementById('settingsDropdown');
@@ -341,7 +374,6 @@ def read_root():
                 alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
             
-            // [추가] 내 브라우저에서만 크기를 바꿨다 줄였다 하는 마법 함수!
             function toggleCardSize(index) {
                 const card = document.getElementById(`card-card-${index}`);
                 const btn = document.getElementById(`size-btn-${index}`);
@@ -375,7 +407,6 @@ def read_root():
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     
-                                    <!-- [새로 추가] 내 화면에서만 크게/작게 만드는 조작 버튼 -->
                                     <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
                                     
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
@@ -392,6 +423,9 @@ def read_root():
                         </div>
                     `;
                 });
+                
+                // [추가] 처음 카드를 다 그리고 나서 숨김 상태 한 번 체크!
+                applyEmptySlotVisibility();
             }
 
             function handleMosaicClick(index) {
@@ -731,6 +765,9 @@ def read_root():
                                     });
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
+                                
+                                // [추가] 초기 상태 세팅 후 빈자리 숨김 여부 적용
+                                applyEmptySlotVisibility();
                             }
                             else if (data.type === "username_change") {
                                 cardData[data.index].user = data.user;
@@ -748,6 +785,10 @@ def read_root():
                                 if (box && !box.querySelector('video')) {
                                     box.innerHTML = getEmptySlotHTML(data.user);
                                 }
+                                
+                                // [추가] 누군가 들어오거나 나갈 때 빈자리 자동 숨김 반영
+                                applyEmptySlotVisibility();
+                                
                             } else if (data.type === "card_bg_change") {
                                 cardData[data.index].card_bg = data.dataUrl;
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
