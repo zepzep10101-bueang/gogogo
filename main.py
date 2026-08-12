@@ -133,7 +133,6 @@ def read_root():
             #bgMediaWrapper img { width: 100vw; height: 100vh; object-fit: cover; display: block; }
             #bgMediaWrapper iframe { width: 100vw; height: 100vh; pointer-events: none; border: none; }
             
-            /* [수정] 배경을 까맣게 덮던 필름을 0.35에서 0.05로 줄여서 엄청 선명하게 만듦! */
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
@@ -207,7 +206,6 @@ def read_root():
                     <h3>
                         👑 대시보드 
                         <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
-                        <!-- [추가] 빈자리 숨기기 버튼 -->
                         <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리 숨기기</button>
                     </h3>
                     <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
@@ -251,10 +249,8 @@ def read_root():
             const ROOM_PASSWORD = "1122";
             const ADMIN_NICKNAME = "부엉";
 
-            // [추가] 빈자리 숨기기 상태를 기억하는 변수
             let hideEmptySlots = false;
 
-            // [추가] 빈자리 숨기기 버튼 마법 함수
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
@@ -268,7 +264,6 @@ def read_root():
                 applyEmptySlotVisibility();
             }
 
-            // [추가] 이름이 '자리'로 시작하면 카드를 끄고 켜는 함수
             function applyEmptySlotVisibility() {
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
@@ -424,7 +419,6 @@ def read_root():
                     `;
                 });
                 
-                // [추가] 처음 카드를 다 그리고 나서 숨김 상태 한 번 체크!
                 applyEmptySlotVisibility();
             }
 
@@ -766,7 +760,6 @@ def read_root():
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
                                 
-                                // [추가] 초기 상태 세팅 후 빈자리 숨김 여부 적용
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "username_change") {
@@ -786,7 +779,6 @@ def read_root():
                                     box.innerHTML = getEmptySlotHTML(data.user);
                                 }
                                 
-                                // [추가] 누군가 들어오거나 나갈 때 빈자리 자동 숨김 반영
                                 applyEmptySlotVisibility();
                                 
                             } else if (data.type === "card_bg_change") {
@@ -1162,8 +1154,19 @@ async def websocket_endpoint(websocket: WebSocket):
         reverted_indexes = []
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
-                server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
-                reverted_indexes.append(r_idx)
+                # [해결책 코드] 유령 연결(Ghost Check) 검사!
+                # 이 자리를 혹시 '새롭게 재접속한 나(New 부엉)'가 차지하고 있는지 확인해!
+                is_claimed_by_other = False
+                for other_cid, slots in manager.active_slots.items():
+                    if other_cid != client_id and r_idx in slots:
+                        is_claimed_by_other = True
+                        break
+                
+                # 아무도 안 쓰고 있을 때만 빈자리로 초기화!
+                if not is_claimed_by_other:
+                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    reverted_indexes.append(r_idx)
+                    
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
 
