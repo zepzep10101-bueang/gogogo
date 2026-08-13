@@ -246,7 +246,8 @@ def read_root():
         </div>
 
         <script>
-            const ROOM_PASSWORD = "1122";
+            // [여기서 비밀번호 변경!] 누나가 원하는 비밀번호로 수정해!
+            const ROOM_PASSWORD = "7777"; 
             const ADMIN_NICKNAME = "부엉";
 
             let hideEmptySlots = false;
@@ -286,10 +287,18 @@ def read_root():
                 }
             }
 
+            // [수정된 마법 1] 닉네임 자동 불러오기
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
+                
+                const savedNick = localStorage.getItem('mySavedNickname');
+                if (savedNick) {
+                    document.getElementById('nickInput').value = savedNick;
+                    document.getElementById('pwInput').focus();
+                }
             }
 
+            // [수정된 마법 2] 로그인 시 닉네임 영구 저장하기
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
@@ -302,6 +311,8 @@ def read_root():
                 if (inputPw === ROOM_PASSWORD) {
                     window.myNickname = inputNick; 
                     window.isAdmin = (inputNick === ADMIN_NICKNAME);
+                    
+                    localStorage.setItem('mySavedNickname', inputNick);
                     
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
@@ -1155,7 +1166,6 @@ async def websocket_endpoint(websocket: WebSocket):
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
                 # [해결책 코드] 유령 연결(Ghost Check) 검사!
-                # 이 자리를 혹시 '새롭게 재접속한 나(New 부엉)'가 차지하고 있는지 확인해!
                 is_claimed_by_other = False
                 for other_cid, slots in manager.active_slots.items():
                     if other_cid != client_id and r_idx in slots:
