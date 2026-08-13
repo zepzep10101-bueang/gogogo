@@ -118,7 +118,7 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
-        <title>🍀심사 합격& 돈 긁어모으는 방🏆</title>
+        <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
