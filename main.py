@@ -185,7 +185,7 @@ def read_root():
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
-                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 15px;">닉네임과 비밀번호는 한 번만 적으면 저장 돼!</p>
+                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 15px;">닉네임은 한 번만 적으면 저장 돼!</p>
                 <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
                 <br>
