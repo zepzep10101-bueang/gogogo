@@ -145,7 +145,7 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; transition: all 0.3s ease; align-content: center; justify-items: center; align-items: center; }
+            .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; align-content: center; justify-items: center; align-items: center; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
             .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
@@ -153,19 +153,19 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            /* [디오의 스마트 반응형 마법] 창 높이에 맞춰 카드가 쏙쏙 작아지도록 max-width와 유연한 height 제어 적용! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [초경량 최적화] GPU 하드웨어 가속(will-change)을 적용하여 ZEP 등과 동시 구동 시 버벅임 원천 차단 */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; will-change: transform; }
             
-            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 2 / 2; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 2 / 2; max-height: 100%; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
             .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; }
             
             .share-btn { padding: 3px 6px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 40px); transition: all 0.3s ease; }
+            .side-panel { display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 40px); }
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
