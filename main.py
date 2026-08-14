@@ -129,7 +129,6 @@ def read_root():
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            /* [디오의 마법] 100vh에 스크롤 금지(overflow: hidden)를 걸어서 화면 밖으로 도망 못 가게 했어! */
             body, html { width: 100%; height: 100%; overflow: hidden; background: #111; }
 
             .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
@@ -146,7 +145,6 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [디오의 마법] 인원수에 따라 가로/세로 비율을 알아서 쪼개주는 스마트 그리드 클래스들! */
             .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; transition: all 0.3s ease; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
@@ -157,7 +155,7 @@ def read_root():
 
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
             
-            .timer-card.large { grid-column: span 2; grid-row: span 2; }
+            .timer-card.large { grid-column: span 2; aspect-ratio: 16 / 9; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
@@ -281,7 +279,7 @@ def read_root():
             function formatNotice(text) {
                 if (!text) return "";
                 let formatted = makeLinksClickable(text);
-                return formatted.replace(/\\n/g, '<br>');
+                return formatted.replace(/\n/g, '<br>');
             }
 
             function toggleNoticePanel() {
@@ -294,9 +292,9 @@ def read_root():
             }
 
             function addNotice() {
-                const newVal = prompt("새로 추가할 공지를 적어주세요!\\n(새 공지는 맨 위로 올라갑니다)");
+                const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
-                    const combined = window.rawNotice ? ("📌 " + newVal + "\\n\\n" + window.rawNotice) : ("📌 " + newVal);
+                    const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: combined }));
                     }
@@ -321,11 +319,22 @@ def read_root():
                 } else {
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
+                    
+                    cardData.forEach((card, index) => {
+                        const cardEl = document.getElementById(`card-card-${index}`);
+                        const sizeBtn = document.getElementById(`size-btn-${index}`);
+                        if (cardEl && cardEl.classList.contains('large')) {
+                            cardEl.classList.remove('large');
+                            if (sizeBtn) {
+                                sizeBtn.innerText = "크게";
+                                sizeBtn.style.background = "#fdcb6e";
+                            }
+                        }
+                    });
                 }
                 applyEmptySlotVisibility();
             }
 
-            // [디오의 마법] 몇 명인지 똑똑하게 계산해서 화면 꽉 차게 모양을 바꾸는 기술!
             function applyEmptySlotVisibility() {
                 let visibleCount = 0;
                 cardData.forEach((card, index) => {
@@ -334,7 +343,6 @@ def read_root():
                     if (cardEl) {
                         if (hideEmptySlots && card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
-                            // 크게 버튼 효과도 꺼서 그리드 꼬임 방지
                             if(cardEl.classList.contains('large')){
                                 cardEl.classList.remove('large');
                                 if(sizeBtn) { sizeBtn.innerText="크게"; sizeBtn.style.background="#fdcb6e"; }
@@ -342,7 +350,6 @@ def read_root():
                         } else {
                             cardEl.style.display = "flex";
                             visibleCount++;
-                            // 이제 알아서 커지니까 크게 버튼 효과 끄기
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
                                 if (cardEl.classList.contains('large')) {
                                     cardEl.classList.remove('large');
@@ -358,7 +365,7 @@ def read_root():
 
                 const grid = document.getElementById('cardGrid');
                 if (grid) {
-                    grid.className = 'card-grid'; // 초기화 후 인원수에 맞춰 재조립!
+                    grid.className = 'card-grid'; 
                     if (visibleCount === 1) grid.classList.add('grid-1');
                     else if (visibleCount === 2) grid.classList.add('grid-2');
                     else if (visibleCount <= 4) grid.classList.add('grid-4');
@@ -879,6 +886,10 @@ def read_root():
 
                 checkWorkTimeStop(index);
 
+                // [디오의 버그 픽스!] 캠을 끌 때 남아있던 까만 비디오 찌꺼기를 완벽하게 청소!
+                const box = document.getElementById(`stream-box-${index}`);
+                if (box) box.innerHTML = '';
+
                 renderBox(index);
                 
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
@@ -1197,6 +1208,11 @@ def read_root():
                                         delete peerConnections[key];
                                     }
                                 }
+                                
+                                // [디오의 버그 픽스!] 여기도 비디오 찌꺼기 완벽하게 청소!
+                                const box = document.getElementById(`stream-box-${index}`);
+                                if (box) box.innerHTML = '';
+                                
                                 renderBox(index);
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
