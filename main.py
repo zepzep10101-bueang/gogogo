@@ -153,17 +153,17 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            /* [디오의 마법] 카드를 16:9 와이드 비율로 고정시켜서 모니터 화공 여백을 완벽하게 없앴어! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 16 / 9; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
+            /* [디오의 디자인 수리] 16:9 와이드 비율에 맞춰 내부 공간(padding)과 간격을 깔끔하게 대폭 슬림화! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 16 / 9; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
-            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
+            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
+            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
-            .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
+            .share-btn { padding: 3px 6px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 40px); transition: all 0.3s ease; }
             
@@ -320,18 +320,6 @@ def read_root():
                 } else {
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
-                    
-                    cardData.forEach((card, index) => {
-                        const cardEl = document.getElementById(`card-card-${index}`);
-                        const sizeBtn = document.getElementById(`size-btn-${index}`);
-                        if (cardEl && cardEl.classList.contains('large')) {
-                            cardEl.classList.remove('large');
-                            if (sizeBtn) {
-                                sizeBtn.innerText = "크게";
-                                sizeBtn.style.background = "#fdcb6e";
-                            }
-                        }
-                    });
                 }
                 applyEmptySlotVisibility();
             }
@@ -440,8 +428,8 @@ def read_root():
                 } else {
                     return `
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;">
-                        <span style="font-size:26px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:8px;">${username}</span>
-                        <span style="font-size:12px; color:#aaa;">화면 미공유 중</span>
+                        <span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span>
+                        <span style="font-size:11px; color:#aaa;">화면 미공유 중</span>
                     </div>`;
                 }
             }
@@ -450,7 +438,6 @@ def read_root():
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
 
-                // [디오의 버그 픽스!] 그리기 전에 비디오 찌꺼기 완벽하게 청소!
                 const existingVideo = box.querySelector('video');
                 if (existingVideo) existingVideo.remove();
 
@@ -459,12 +446,12 @@ def read_root():
                     const isMine = (card.user === window.myNickname) || window.isAdmin;
                     box.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 34px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
+                            <div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
                             ${isMine ? `
-                            <div style="margin-top: 12px; display: flex; gap: 6px;">
-                                <button onclick="startSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 11px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">⏹ 리셋</button>
+                            <div style="margin-top: 8px; display: flex; gap: 4px;">
+                                <button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button>
+                                <button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button>
+                                <button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button>
                             </div>
                             ` : ''}
                         </div>
@@ -494,7 +481,6 @@ def read_root():
                 const hasStream = !!myStreams[index];
                 const hasSw = sw && sw.is_active;
                 
-                // 일시정지 로직!
                 if (!hasStream && !hasSw) {
                     if (wt.is_running) {
                         wt.is_running = false;
@@ -601,7 +587,7 @@ def read_root():
                         let s = Math.floor(totalMs / 1000);
                         let h = Math.floor(s / 3600); s %= 3600;
                         let m = Math.floor(s / 60); s %= 60;
-                        if (wtDisplay) wtDisplay.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        if (wtDisplay) wtDisplay.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                         if (wtContainer) wtContainer.style.display = 'flex';
                     } else {
                         if (wtContainer) wtContainer.style.display = 'none';
@@ -664,28 +650,28 @@ def read_root():
 
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
-                            <div class="card-header" style="flex-direction: column; gap: 6px;">
-                                <div style="width: 100%;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
+                            <div class="card-header" style="flex-direction: column; gap: 4px;">
+                                <div style="width: 100%; display: flex; gap: 4px; align-items: center;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     
-                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; justify-content:center; align-items:center; gap:5px; margin-top:3px;">
-                                        <span id="work-timer-display-${index}" style="font-size:11px; color:#ffeaa7; font-weight:bold;">⏱ 00:00:00</span>
-                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 5px; font-size:9px; cursor:pointer;" title="작업시간 초기화">🔄</button>` : ''}
+                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; align-items:center; gap:3px;">
+                                        <span id="work-timer-display-${index}" style="font-size:10px; color:#ffeaa7; font-weight:bold; white-space:nowrap;">⏱ 00:00:00</span>
+                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                     </div>
                                 </div>
                                 
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; width:100%;">
-                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1 1 30%; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
-                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1 1 30%; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1 1 30%; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1 1 50%; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="flex:1 1 30%; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
-                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1 1 100%; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
+                                <div style="display:flex; flex-wrap:nowrap; gap:2px; justify-content:center; width:100%;">
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1.5; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="flex:1; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
+                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리</button>
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
-                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
+                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}"></div>
@@ -891,7 +877,6 @@ def read_root():
 
                 checkWorkTimeStop(index);
 
-                // [디오의 먹통 버그 완벽 수리!] 끄는 즉시 비디오 찌꺼기 시원하게 날려버리기!
                 const box = document.getElementById(`stream-box-${index}`);
                 if (box) box.innerHTML = '';
 
