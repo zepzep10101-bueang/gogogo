@@ -35,7 +35,7 @@ def load_data():
                     card["work_start_time"] = 0
             
             if "global_notice" not in data:
-                data["global_notice"] = "다 함께 모여서 열심히 마감해 봅시다!"
+                data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
                 
             return data
     except Exception:
@@ -47,7 +47,7 @@ def load_data():
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
-        "global_notice": "다 함께 모여서 열심히 마감해 봅시다!"
+        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!"
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -158,14 +158,14 @@ def read_root():
             
             .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
+            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); }
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; margin-left: 5px; }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
-            .chat-box { display: flex; flex-direction: column; height: 500px; }
+            .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
             #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
             .chat-input { display: flex; margin-top: 10px; }
             .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
@@ -202,29 +202,33 @@ def read_root():
 
             <div class="side-panel">
                 <div class="panel-box">
-                    <h3>
-                        👑 대시보드 
-                        <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
-                        <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리 숨기기</button>
-                    </h3>
+                    <!-- [디오의 깔끔 마법!] 대시보드 타이틀과 3개의 똑같은 버튼들을 한 몸처럼 예쁘게 묶었어! -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
+                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
+                            <div style="display: flex; gap: 4px;">
+                                <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리</button>
+                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
+                            </div>
+                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold;" onclick="toggleNoticePanel()">📢 공지사항</button>
+                        </div>
+                    </div>
+
                     <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
                     <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
 
-                    <!-- [디오의 깔끔 마법!] 평소엔 얇게 숨어있다가 누르면 스르륵 열리는 '접이식 공지사항' 버튼! -->
-                    <button onclick="toggleNoticePanel()" style="width: 100%; margin-top: 12px; padding: 8px; background: rgba(255, 118, 117, 0.2); border: 1px solid rgba(255, 118, 117, 0.5); border-radius: 5px; color: #ff7675; font-weight: bold; cursor: pointer; text-align: left; transition: background 0.2s;" onmouseover="this.style.background='rgba(255, 118, 117, 0.3)'" onmouseout="this.style.background='rgba(255, 118, 117, 0.2)'">
-                        📢 공지사항 열기 / 닫기
-                    </button>
-                    
-                    <!-- [디오의 깔끔 마법!] 버튼을 누르면 이 상자가 열리면서 안에 내용과 수정 버튼이 나와! -->
-                    <div id="noticeDropdown" style="display: none; margin-top: 5px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; border: 1px solid rgba(255,255,255,0.1);">
+                    <!-- 공지사항 드롭다운 (누르면 스르륵 열려요!) -->
+                    <div id="noticeDropdown" style="display: none; margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
                         <div style="text-align: right; margin-bottom: 8px;">
-                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 수정하기</button>
+                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
+                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 전체 수정/삭제</button>
                         </div>
-                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
+                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
+                    <!-- 배경설정 드롭다운 -->
                     <div class="settings-dropdown" id="settingsDropdown">
                         <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
                         <div class="bg-control">
@@ -258,18 +262,23 @@ def read_root():
         </div>
 
         <script>
-            // [여기서 비밀번호 변경!] 누나가 원하는 비밀번호로 수정해!
             const ROOM_PASSWORD = "7777"; 
             const ADMIN_NICKNAME = "부엉";
 
             let hideEmptySlots = false;
+            window.rawNotice = ""; 
 
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
             }
 
-            // [디오의 깔끔 마법!] 공지사항 열고 닫는 스위치 기능!
+            function formatNotice(text) {
+                if (!text) return "";
+                let formatted = makeLinksClickable(text);
+                return formatted.replace(/\n/g, '<br>');
+            }
+
             function toggleNoticePanel() {
                 const dropdown = document.getElementById('noticeDropdown');
                 if (dropdown.style.display === 'block') {
@@ -279,10 +288,20 @@ def read_root():
                 }
             }
 
-            function editNotice() {
-                const current = document.getElementById('noticeText').innerText;
-                const newVal = prompt("새 공지사항이나 링크를 적어주세요!", current);
+            // [디오의 마법] 새로 쓴 공지가 무조건 맨 위(최신)로 뿅! 올라가게 결합 순서를 바꿨어!
+            function addNotice() {
+                const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
+                    const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "update_notice", notice: combined }));
+                    }
+                }
+            }
+
+            function editNotice() {
+                const newVal = prompt("기존 공지를 전부 지우고 새로 쓰거나, 직접 글을 수정하세요!", window.rawNotice);
+                if (newVal !== null) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
                     }
@@ -902,7 +921,8 @@ def read_root():
                                 logChat(data.senderName, data.msg, data.time);
                             } 
                             else if (data.type === "update_notice") {
-                                document.getElementById('noticeText').innerHTML = makeLinksClickable(data.notice);
+                                window.rawNotice = data.notice;
+                                document.getElementById('noticeText').innerHTML = formatNotice(data.notice);
                             }
                             else if (data.type === "stopwatch_update") {
                                 cardData[data.index].stopwatch = data.stopwatch;
@@ -918,7 +938,8 @@ def read_root():
                                 const state = data.state;
                                 
                                 if (state.global_notice) {
-                                    document.getElementById('noticeText').innerHTML = makeLinksClickable(state.global_notice);
+                                    window.rawNotice = state.global_notice;
+                                    document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice);
                                 }
 
                                 if (state.cards) {
