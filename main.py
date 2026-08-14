@@ -469,7 +469,7 @@ def read_root():
                 const localVideo = document.getElementById(`video-${index}`);
                 
                 // [디오가 수정한 마법!] 그래픽카드 괴롭히는 SVG 필터 빼고, 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                const activeFilter = isMosaic ? 'blur(10px)' : 'none';
+                const activeFilter = isMosaic ? 'blur(5px)' : 'none';
 
                 if (remoteVideo) {
                     remoteVideo.style.filter = activeFilter;
