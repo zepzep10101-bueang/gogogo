@@ -129,7 +129,8 @@ def read_root():
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
+            /* [디오의 마법] 100vh에 스크롤 금지(overflow: hidden)를 걸어서 화면 밖으로 도망 못 가게 했어! */
+            body, html { width: 100%; height: 100%; overflow: hidden; background: #111; }
 
             .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
             .login-box { background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -143,23 +144,29 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
+            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
-            
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [디오의 마법] 인원수에 따라 가로/세로 비율을 알아서 쪼개주는 스마트 그리드 클래스들! */
+            .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; transition: all 0.3s ease; }
+            .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+            .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
+            .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            /* [디오의 마법] 까만 반투명 배경을 아예 없애버렸어! 투명 100%! */
-            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
             .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); }
+            .side-panel { display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 40px); transition: all 0.3s ease; }
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
@@ -274,7 +281,7 @@ def read_root():
             function formatNotice(text) {
                 if (!text) return "";
                 let formatted = makeLinksClickable(text);
-                return formatted.replace(/\n/g, '<br>');
+                return formatted.replace(/\\n/g, '<br>');
             }
 
             function toggleNoticePanel() {
@@ -287,9 +294,9 @@ def read_root():
             }
 
             function addNotice() {
-                const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
+                const newVal = prompt("새로 추가할 공지를 적어주세요!\\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
-                    const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
+                    const combined = window.rawNotice ? ("📌 " + newVal + "\\n\\n" + window.rawNotice) : ("📌 " + newVal);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: combined }));
                     }
@@ -314,44 +321,51 @@ def read_root():
                 } else {
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
-                    
-                    cardData.forEach((card, index) => {
-                        const cardEl = document.getElementById(`card-card-${index}`);
-                        const sizeBtn = document.getElementById(`size-btn-${index}`);
-                        if (cardEl && cardEl.classList.contains('large')) {
-                            cardEl.classList.remove('large');
-                            if (sizeBtn) {
-                                sizeBtn.innerText = "크게";
-                                sizeBtn.style.background = "#fdcb6e";
-                            }
-                        }
-                    });
                 }
                 applyEmptySlotVisibility();
             }
 
+            // [디오의 마법] 몇 명인지 똑똑하게 계산해서 화면 꽉 차게 모양을 바꾸는 기술!
             function applyEmptySlotVisibility() {
+                let visibleCount = 0;
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     const sizeBtn = document.getElementById(`size-btn-${index}`);
                     if (cardEl) {
                         if (hideEmptySlots && card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
+                            // 크게 버튼 효과도 꺼서 그리드 꼬임 방지
+                            if(cardEl.classList.contains('large')){
+                                cardEl.classList.remove('large');
+                                if(sizeBtn) { sizeBtn.innerText="크게"; sizeBtn.style.background="#fdcb6e"; }
+                            }
                         } else {
                             cardEl.style.display = "flex";
-                            
+                            visibleCount++;
+                            // 이제 알아서 커지니까 크게 버튼 효과 끄기
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
-                                if (!cardEl.classList.contains('large')) {
-                                    cardEl.classList.add('large');
+                                if (cardEl.classList.contains('large')) {
+                                    cardEl.classList.remove('large');
                                     if (sizeBtn) {
-                                        sizeBtn.innerText = "작게";
-                                        sizeBtn.style.background = "#e17055";
+                                        sizeBtn.innerText = "크게";
+                                        sizeBtn.style.background = "#fdcb6e";
                                     }
                                 }
                             }
                         }
                     }
                 });
+
+                const grid = document.getElementById('cardGrid');
+                if (grid) {
+                    grid.className = 'card-grid'; // 초기화 후 인원수에 맞춰 재조립!
+                    if (visibleCount === 1) grid.classList.add('grid-1');
+                    else if (visibleCount === 2) grid.classList.add('grid-2');
+                    else if (visibleCount <= 4) grid.classList.add('grid-4');
+                    else if (visibleCount <= 6) grid.classList.add('grid-6');
+                    else if (visibleCount <= 9) grid.classList.add('grid-9');
+                    else grid.classList.add('grid-12');
+                }
             }
 
             function toggleSettingsPanel() {
@@ -449,7 +463,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 이어서 누적되는 똑똑한 작업시간 측정기!
             function checkWorkTimeStart(index) {
                 let wt = cardData[index].work_timer;
                 if (!wt) wt = {is_running: false, start_time: 0, elapsed: 0};
@@ -470,7 +483,6 @@ def read_root():
                 const hasStream = !!myStreams[index];
                 const hasSw = sw && sw.is_active;
                 
-                // 화공이나 시계가 전부 꺼졌을 때만 일시정지!
                 if (!hasStream && !hasSw) {
                     if (wt.is_running) {
                         wt.is_running = false;
@@ -482,7 +494,6 @@ def read_root():
                 }
             }
             
-            // [디오의 마법] 작업시간을 아예 처음부터(0) 다시 재고 싶을 때 누르는 초기화 버튼!
             function resetWorkTimer(index) {
                 let wt = cardData[index].work_timer;
                 if (!wt) return;
@@ -552,7 +563,6 @@ def read_root():
             setInterval(() => {
                 const now = Date.now();
                 cardData.forEach((card, idx) => {
-                    // 수동 스톱워치
                     if (card.stopwatch && card.stopwatch.is_active) {
                         let totalMs = card.stopwatch.elapsed;
                         if (card.stopwatch.is_running) {
@@ -567,7 +577,6 @@ def read_root():
                         }
                     }
 
-                    // [디오의 누적 작업시간 렌더링]
                     const wt = card.work_timer;
                     const wtContainer = document.getElementById(`work-timer-container-${idx}`);
                     const wtDisplay = document.getElementById(`work-timer-display-${idx}`);
@@ -647,7 +656,6 @@ def read_root():
                                 <div style="width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
                                     
-                                    <!-- [디오의 마법] 작업시간 표시와 초기화 버튼을 가로로 예쁘게 배치했어! -->
                                     <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; justify-content:center; align-items:center; gap:5px; margin-top:3px;">
                                         <span id="work-timer-display-${index}" style="font-size:11px; color:#ffeaa7; font-weight:bold;">⏱ 00:00:00</span>
                                         ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 5px; font-size:9px; cursor:pointer;" title="작업시간 초기화">🔄</button>` : ''}
