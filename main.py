@@ -577,7 +577,7 @@ def read_root():
                     updateUsername(index, myName);
 
                     // [디오가 수정한 마법!] 가벼운 네이티브 블러(10px)만 쏙 적용!
-                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(10px);` : '';
+                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
                     
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
@@ -842,7 +842,7 @@ def read_root():
                                     const box = document.getElementById(`stream-box-${index}`);
                                     
                                     // [디오가 수정한 마법!] 남의 화면을 볼 때도 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(10px);` : '';
+                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
                                     
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
