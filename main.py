@@ -174,13 +174,7 @@ def read_root():
     </head>
     <body>
 
-        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="position:absolute; width:0; height:0; display:none;">
-          <defs>
-            <filter id="relative-blur" primitiveUnits="objectBoundingBox">
-              <feGaussianBlur stdDeviation="0.008 0.008" />
-            </filter>
-          </defs>
-        </svg>
+        <!-- [디오의 수정] 컴퓨터 느려지게 만들던 쓸데없는 무거운 SVG 필터를 시원하게 싹 삭제했어! -->
 
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
@@ -287,7 +281,6 @@ def read_root():
                 }
             }
 
-            // [수정된 마법 1] 닉네임 자동 불러오기
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
                 
@@ -298,7 +291,6 @@ def read_root():
                 }
             }
 
-            // [수정된 마법 2] 로그인 시 닉네임 영구 저장하기
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
@@ -476,8 +468,8 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                const activeFilter = isMosaic ? (isMobile ? 'blur(3px)' : 'url(#relative-blur)') : 'none';
+                // [디오가 수정한 마법!] 그래픽카드 괴롭히는 SVG 필터 빼고, 가볍고 뽀얀 네이티브 블러(10px) 적용!
+                const activeFilter = isMosaic ? 'blur(10px)' : 'none';
 
                 if (remoteVideo) {
                     remoteVideo.style.filter = activeFilter;
@@ -566,7 +558,6 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
-                        // [디오가 수정한 마법!] frameRate를 30에서 15로 낮춰서 컴퓨터 체력을 반으로 아껴줬어!
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 15 }, audio: true });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
@@ -585,9 +576,8 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
-                    let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
+                    // [디오가 수정한 마법!] 가벼운 네이티브 블러(10px)만 쏙 적용!
+                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(10px);` : '';
                     
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
@@ -851,9 +841,8 @@ def read_root():
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
                                     
-                                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                                    const activeFilter = isMobile ? 'blur(3px)' : 'url(#relative-blur)';
-                                    let filterStyle = cardData[index].is_mosaic ? `filter: ${activeFilter};` : '';
+                                    // [디오가 수정한 마법!] 남의 화면을 볼 때도 가볍고 뽀얀 네이티브 블러(10px) 적용!
+                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(10px);` : '';
                                     
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
@@ -1166,14 +1155,12 @@ async def websocket_endpoint(websocket: WebSocket):
         reverted_indexes = []
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
-                # [해결책 코드] 유령 연결(Ghost Check) 검사!
                 is_claimed_by_other = False
                 for other_cid, slots in manager.active_slots.items():
                     if other_cid != client_id and r_idx in slots:
                         is_claimed_by_other = True
                         break
                 
-                # 아무도 안 쓰고 있을 때만 빈자리로 초기화!
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     reverted_indexes.append(r_idx)
