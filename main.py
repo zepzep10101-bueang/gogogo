@@ -162,7 +162,7 @@ def read_root():
             
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 5px; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
@@ -202,7 +202,6 @@ def read_root():
 
             <div class="side-panel">
                 <div class="panel-box">
-                    <!-- [디오의 깔끔 마법!] 대시보드 타이틀과 3개의 똑같은 버튼들을 한 몸처럼 예쁘게 묶었어! -->
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
@@ -219,7 +218,6 @@ def read_root():
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
 
-                    <!-- 공지사항 드롭다운 (누르면 스르륵 열려요!) -->
                     <div id="noticeDropdown" style="display: none; margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
                         <div style="text-align: right; margin-bottom: 8px;">
                             <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
@@ -228,7 +226,6 @@ def read_root():
                         <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
-                    <!-- 배경설정 드롭다운 -->
                     <div class="settings-dropdown" id="settingsDropdown">
                         <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
                         <div class="bg-control">
@@ -288,7 +285,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 새로 쓴 공지가 무조건 맨 위(최신)로 뿅! 올라가게 결합 순서를 바꿨어!
             function addNotice() {
                 const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
@@ -308,27 +304,54 @@ def read_root():
                 }
             }
 
+            // [디오의 마법 1] 빈자리 버튼에 자동 확대/축소 마법을 달았어!
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
                 if (hideEmptySlots) {
-                    btn.innerText = "🐵 빈자리 보이기";
+                    btn.innerText = "🐵 빈자리 켜기";
                     btn.style.background = "#0984e3";
                 } else {
-                    btn.innerText = "🙈 빈자리 숨기기";
+                    btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
+                    
+                    // 빈자리 보이기(끄기) 모드로 돌아가면 커진 카드를 다시 원래대로 얌전하게!
+                    cardData.forEach((card, index) => {
+                        const cardEl = document.getElementById(`card-card-${index}`);
+                        const sizeBtn = document.getElementById(`size-btn-${index}`);
+                        if (cardEl && cardEl.classList.contains('large')) {
+                            cardEl.classList.remove('large');
+                            if (sizeBtn) {
+                                sizeBtn.innerText = "크게";
+                                sizeBtn.style.background = "#fdcb6e";
+                            }
+                        }
+                    });
                 }
                 applyEmptySlotVisibility();
             }
 
+            // [디오의 마법 2] 숨길 때 사람 있는 자리는 알아서 꽉 차게 팽창시켜!
             function applyEmptySlotVisibility() {
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
+                    const sizeBtn = document.getElementById(`size-btn-${index}`);
                     if (cardEl) {
                         if (hideEmptySlots && card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
                         } else {
                             cardEl.style.display = "flex";
+                            
+                            // 숨기기 모드일 땐 사람 있는 카드를 알아서 크게 쫙!
+                            if (hideEmptySlots && !card.user.startsWith("자리")) {
+                                if (!cardEl.classList.contains('large')) {
+                                    cardEl.classList.add('large');
+                                    if (sizeBtn) {
+                                        sizeBtn.innerText = "작게";
+                                        sizeBtn.style.background = "#e17055";
+                                    }
+                                }
+                            }
                         }
                     }
                 });
