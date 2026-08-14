@@ -212,8 +212,16 @@ def read_root():
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
 
-                    <div style="margin-top: 15px; padding: 12px; background: rgba(255, 118, 117, 0.15); border: 1px solid rgba(255, 118, 117, 0.5); border-radius: 8px; cursor: pointer; transition: background 0.2s;" onclick="editNotice()" onmouseover="this.style.background='rgba(255, 118, 117, 0.3)'" onmouseout="this.style.background='rgba(255, 118, 117, 0.15)'">
-                        <div style="font-size: 11px; font-weight: bold; color: #ff7675; margin-bottom: 6px;">📢 공지사항 (아무나 클릭해서 수정 가능)</div>
+                    <!-- [디오의 깔끔 마법!] 평소엔 얇게 숨어있다가 누르면 스르륵 열리는 '접이식 공지사항' 버튼! -->
+                    <button onclick="toggleNoticePanel()" style="width: 100%; margin-top: 12px; padding: 8px; background: rgba(255, 118, 117, 0.2); border: 1px solid rgba(255, 118, 117, 0.5); border-radius: 5px; color: #ff7675; font-weight: bold; cursor: pointer; text-align: left; transition: background 0.2s;" onmouseover="this.style.background='rgba(255, 118, 117, 0.3)'" onmouseout="this.style.background='rgba(255, 118, 117, 0.2)'">
+                        📢 공지사항 열기 / 닫기
+                    </button>
+                    
+                    <!-- [디오의 깔끔 마법!] 버튼을 누르면 이 상자가 열리면서 안에 내용과 수정 버튼이 나와! -->
+                    <div id="noticeDropdown" style="display: none; margin-top: 5px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="text-align: right; margin-bottom: 8px;">
+                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 수정하기</button>
+                        </div>
                         <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
@@ -259,6 +267,16 @@ def read_root():
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
+            }
+
+            // [디오의 깔끔 마법!] 공지사항 열고 닫는 스위치 기능!
+            function toggleNoticePanel() {
+                const dropdown = document.getElementById('noticeDropdown');
+                if (dropdown.style.display === 'block') {
+                    dropdown.style.display = 'none';
+                } else {
+                    dropdown.style.display = 'block';
+                }
             }
 
             function editNotice() {
@@ -546,7 +564,6 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
 
-                    // [디오의 디자인 마법!] 닉네임은 위로, 버튼들은 아래로 착착 맞게 Flexbox 자동 배열로 깔끔하게 정리했어!
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header" style="flex-direction: column; gap: 6px;">
