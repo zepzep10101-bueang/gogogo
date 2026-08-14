@@ -566,7 +566,8 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') {
-                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 30 }, audio: true });
+                        // [디오가 수정한 마법!] frameRate를 30에서 15로 낮춰서 컴퓨터 체력을 반으로 아껴줬어!
+                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 15 }, audio: true });
                         btnScreen.innerText = "중지";
                         btnScreen.style.background = "#d63031";
                         btnCam.style.display = "none"; 
