@@ -153,10 +153,10 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            /* [디오의 완벽 비율 마법] 평소엔 1:1 정사각형, '크게'를 누르면 16:9 와이드 TV 비율로 찌그러짐 없이 시원하게 확대! */
+            /* [디오의 최종 마법] 크게 눌러도 세로로 찌그러지지 않고 1:1 정사각형 비율을 칼같이 유지하도록 철벽 방어! */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; will-change: transform; }
             
-            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 16 / 9; max-height: 100%; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 1 / 1; max-height: 100%; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
@@ -623,12 +623,14 @@ def read_root():
                 alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
             
+            // [디오의 마법] 크게 버튼을 누르면 다른 사람의 '크게'는 자동 해제하고, 내가 누른 것만 독점해서 딱 1개만 크게 보이게 만들기!
             function toggleCardSize(index) {
                 const targetCard = document.getElementById(`card-card-${index}`);
                 const targetBtn = document.getElementById(`size-btn-${index}`);
                 
                 const isCurrentlyLarge = targetCard.classList.contains('large');
 
+                // 무조건 다른 모든 카드의 큰 화면을 해제! (오직 1개만 크게 유지)
                 cardData.forEach((_, i) => {
                     const cardEl = document.getElementById(`card-card-${i}`);
                     const sizeBtn = document.getElementById(`size-btn-${i}`);
@@ -641,6 +643,7 @@ def read_root():
                     }
                 });
 
+                // 만약 방금 누른 게 이미 큰 상태였다면 원래대로, 아니면 새로 크게 켜기!
                 if (!isCurrentlyLarge) {
                     targetCard.classList.add('large');
                     targetBtn.innerText = "작게";
