@@ -153,9 +153,10 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
+            /* [디오의 마법] 카드를 16:9 와이드 비율로 고정시켜서 모니터 화공 여백을 완벽하게 없앴어! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 16 / 9; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
             
-            .timer-card.large { grid-column: span 2; aspect-ratio: 16 / 9; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
@@ -448,7 +449,10 @@ def read_root():
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
-                if (box.querySelector('video')) return; 
+
+                // [디오의 버그 픽스!] 그리기 전에 비디오 찌꺼기 완벽하게 청소!
+                const existingVideo = box.querySelector('video');
+                if (existingVideo) existingVideo.remove();
 
                 const card = cardData[index];
                 if (card.stopwatch && card.stopwatch.is_active) {
@@ -490,6 +494,7 @@ def read_root():
                 const hasStream = !!myStreams[index];
                 const hasSw = sw && sw.is_active;
                 
+                // 일시정지 로직!
                 if (!hasStream && !hasSw) {
                     if (wt.is_running) {
                         wt.is_running = false;
@@ -886,7 +891,7 @@ def read_root():
 
                 checkWorkTimeStop(index);
 
-                // [디오의 버그 픽스!] 캠을 끌 때 남아있던 까만 비디오 찌꺼기를 완벽하게 청소!
+                // [디오의 먹통 버그 완벽 수리!] 끄는 즉시 비디오 찌꺼기 시원하게 날려버리기!
                 const box = document.getElementById(`stream-box-${index}`);
                 if (box) box.innerHTML = '';
 
@@ -1209,7 +1214,6 @@ def read_root():
                                     }
                                 }
                                 
-                                // [디오의 버그 픽스!] 여기도 비디오 찌꺼기 완벽하게 청소!
                                 const box = document.getElementById(`stream-box-${index}`);
                                 if (box) box.innerHTML = '';
                                 
