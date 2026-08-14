@@ -31,12 +31,11 @@ def load_data():
                 card["is_mosaic"] = False
                 if "stopwatch" not in card:
                     card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
-                # [디오의 마법] 작업 시작 시간을 기록할 공간을 새로 파줬어!
                 if "work_start_time" not in card:
                     card["work_start_time"] = 0
             
             if "global_notice" not in data:
-                data["global_notice"] = "📢 다 함께 모여서 열심히 마감해 봅시다! (부엉님만 클릭해서 수정 가능)"
+                data["global_notice"] = "다 함께 모여서 열심히 마감해 봅시다!"
                 
             return data
     except Exception:
@@ -48,7 +47,7 @@ def load_data():
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
-        "global_notice": "📢 다 함께 모여서 열심히 마감해 봅시다! (부엉님만 클릭해서 수정 가능)"
+        "global_notice": "다 함께 모여서 열심히 마감해 봅시다!"
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -157,7 +156,7 @@ def read_root():
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
-            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; }
+            .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
             
@@ -198,11 +197,6 @@ def read_root():
         </div>
         <div class="overlay"></div>
 
-        <div id="noticeBar" style="background: rgba(255, 118, 117, 0.9); color: white; text-align: center; padding: 12px; font-size: 15px; font-weight: bold; position: relative; z-index: 10; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px;" onclick="editNotice()">
-            <span>📢 <span id="noticeText">공지사항 로딩 중...</span></span>
-            <span id="noticeEditIcon" style="display:none; font-size:11px; background:rgba(0,0,0,0.3); padding:3px 7px; border-radius:4px;">✏️ 수정 (부엉님 전용)</span>
-        </div>
-
         <div class="main-container">
             <div class="card-grid" id="cardGrid"></div>
 
@@ -217,6 +211,11 @@ def read_root():
                     <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
                     <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
+
+                    <div style="margin-top: 15px; padding: 12px; background: rgba(255, 118, 117, 0.15); border: 1px solid rgba(255, 118, 117, 0.5); border-radius: 8px; cursor: pointer; transition: background 0.2s;" onclick="editNotice()" onmouseover="this.style.background='rgba(255, 118, 117, 0.3)'" onmouseout="this.style.background='rgba(255, 118, 117, 0.15)'">
+                        <div style="font-size: 11px; font-weight: bold; color: #ff7675; margin-bottom: 6px;">📢 공지사항 (아무나 클릭해서 수정 가능)</div>
+                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
+                    </div>
                     
                     <div class="settings-dropdown" id="settingsDropdown">
                         <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
@@ -257,16 +256,14 @@ def read_root():
 
             let hideEmptySlots = false;
 
-            // [디오의 마법] 인터넷 주소를 예쁜 클릭 링크로 바꿔주는 주문!
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
             }
 
             function editNotice() {
-                if (!window.isAdmin) return;
                 const current = document.getElementById('noticeText').innerText;
-                const newVal = prompt("새 공지사항이나 링크를 적어주세요 누나!", current);
+                const newVal = prompt("새 공지사항이나 링크를 적어주세요!", current);
                 if (newVal !== null && newVal.trim() !== "") {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
@@ -332,10 +329,6 @@ def read_root():
                     window.isAdmin = (inputNick === ADMIN_NICKNAME);
                     localStorage.setItem('mySavedNickname', inputNick);
                     
-                    if (window.isAdmin) {
-                        document.getElementById('noticeEditIcon').style.display = 'inline-block';
-                    }
-                    
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
@@ -374,7 +367,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 시계 화면 그려주기
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
@@ -400,7 +392,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 작업 시작 감지기 (버튼 누르는 순간 1번만 발송)
             function checkWorkTimeStart(index) {
                 if (!cardData[index].work_start_time) {
                     const t = Date.now();
@@ -411,7 +402,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 작업 종료 감지기
             function checkWorkTimeStop(index) {
                 const sw = cardData[index].stopwatch;
                 const hasStream = !!myStreams[index];
@@ -437,7 +427,6 @@ def read_root():
                     stopShare(index); 
                 }
                 
-                // 시계 켜면 작업시간 시작, 끄면 정지!
                 if (sw.is_active) {
                     checkWorkTimeStart(index);
                 } else {
@@ -476,11 +465,9 @@ def read_root():
                 renderBox(index);
             }
 
-            // [디오의 마법] 시계와 작업시간 1초마다 계산해서 띄워주기! (데이터 0원)
             setInterval(() => {
                 const now = Date.now();
                 cardData.forEach((card, idx) => {
-                    // 수동 스톱워치 렌더링
                     if (card.stopwatch && card.stopwatch.is_active) {
                         let totalMs = card.stopwatch.elapsed;
                         if (card.stopwatch.is_running) {
@@ -495,7 +482,6 @@ def read_root():
                         }
                     }
 
-                    // 자동 작업시간(오토타이머) 렌더링
                     const wtEl = document.getElementById(`work-timer-${idx}`);
                     if (wtEl && card.work_start_time) {
                         let s = Math.floor((now - card.work_start_time) / 1000);
@@ -560,22 +546,22 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
 
+                    // [디오의 디자인 마법!] 닉네임은 위로, 버튼들은 아래로 착착 맞게 Flexbox 자동 배열로 깔끔하게 정리했어!
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
-                            <div class="card-header">
-                                <!-- [디오의 마법] 닉네임 밑에 '자동 작업시간 타이머'가 숨어있어! -->
-                                <div style="display:flex; flex-direction:column; flex-grow:1; min-width:0;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
-                                    <span id="work-timer-${index}" style="font-size:10px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</span>
+                            <div class="card-header" style="flex-direction: column; gap: 6px;">
+                                <div style="width: 100%;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
+                                    <div id="work-timer-${index}" style="font-size:11px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</div>
                                 </div>
                                 
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:flex-end; max-width:60%;">
-                                    <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
-                                    <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
-                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
+                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; width:100%;">
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1 1 30%; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1 1 30%; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1 1 30%; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1 1 50%; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="flex:1 1 30%; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
+                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1 1 100%; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
                             </div>
                             
@@ -596,7 +582,7 @@ def read_root():
                 const isMyStream = !!myStreams[index];
                 
                 if (!isMyStream && !window.isAdmin) {
-                    alert("본인이 화면을 공유 중일 때만 모자이크를 조작할 수 있어!");
+                    alert("본인이 화면 공유 중이 아니면 만질 수 없어!");
                     return;
                 }
 
@@ -756,7 +742,6 @@ def read_root():
                     localVideo.srcObject = stream;
                     localVideo.play().catch(e => console.log(e));
 
-                    // 화공 시작하면 자동 작업시간 스타트!
                     checkWorkTimeStart(index);
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -785,7 +770,6 @@ def read_root():
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
                 }
 
-                // 화공 꺼지면 자동 작업시간도 체크해서 스톱!
                 checkWorkTimeStop(index);
 
                 renderBox(index);
@@ -1347,7 +1331,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "stopwatch_update":
                     server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                # [디오의 마법] 작업 시작 시간 서버에 저장하는 통신망!
                 elif p_type == "set_work_time":
                     server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
