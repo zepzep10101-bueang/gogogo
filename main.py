@@ -29,6 +29,14 @@ def load_data():
             for i, card in enumerate(data["cards"]):
                 card["user"] = f"자리{i+1}"
                 card["is_mosaic"] = False
+                if "stopwatch" not in card:
+                    card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
+                # [디오의 마법] 작업 시작 시간을 기록할 공간을 새로 파줬어!
+                if "work_start_time" not in card:
+                    card["work_start_time"] = 0
+            
+            if "global_notice" not in data:
+                data["global_notice"] = "📢 다 함께 모여서 열심히 마감해 봅시다! (부엉님만 클릭해서 수정 가능)"
                 
             return data
     except Exception:
@@ -36,10 +44,11 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(12)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(12)],
         "global_bg": None,
         "global_bg_type": None,
-        "chat_history": []
+        "chat_history": [],
+        "global_notice": "📢 다 함께 모여서 열심히 마감해 봅시다! (부엉님만 클릭해서 수정 가능)"
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -139,21 +148,20 @@ def read_root():
             
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(4px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
-            .card-header { display: flex; justify-content: space-between; align-items: center; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
+            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.65); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2); z-index: 2; }
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: #000; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
-            
-            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+            .share-btn { padding: 4px 6px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
             
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
             .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; margin-left: 5px; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
@@ -174,8 +182,6 @@ def read_root():
     </head>
     <body>
 
-        <!-- [디오의 수정] 컴퓨터 느려지게 만들던 쓸데없는 무거운 SVG 필터를 시원하게 싹 삭제했어! -->
-
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -191,6 +197,11 @@ def read_root():
             <div id="bgMediaWrapper"></div>
         </div>
         <div class="overlay"></div>
+
+        <div id="noticeBar" style="background: rgba(255, 118, 117, 0.9); color: white; text-align: center; padding: 12px; font-size: 15px; font-weight: bold; position: relative; z-index: 10; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px;" onclick="editNotice()">
+            <span>📢 <span id="noticeText">공지사항 로딩 중...</span></span>
+            <span id="noticeEditIcon" style="display:none; font-size:11px; background:rgba(0,0,0,0.3); padding:3px 7px; border-radius:4px;">✏️ 수정 (부엉님 전용)</span>
+        </div>
 
         <div class="main-container">
             <div class="card-grid" id="cardGrid"></div>
@@ -246,6 +257,23 @@ def read_root():
 
             let hideEmptySlots = false;
 
+            // [디오의 마법] 인터넷 주소를 예쁜 클릭 링크로 바꿔주는 주문!
+            function makeLinksClickable(text) {
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
+            }
+
+            function editNotice() {
+                if (!window.isAdmin) return;
+                const current = document.getElementById('noticeText').innerText;
+                const newVal = prompt("새 공지사항이나 링크를 적어주세요 누나!", current);
+                if (newVal !== null && newVal.trim() !== "") {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
+                    }
+                }
+            }
+
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
@@ -283,7 +311,6 @@ def read_root():
 
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
-                
                 const savedNick = localStorage.getItem('mySavedNickname');
                 if (savedNick) {
                     document.getElementById('nickInput').value = savedNick;
@@ -303,8 +330,11 @@ def read_root():
                 if (inputPw === ROOM_PASSWORD) {
                     window.myNickname = inputNick; 
                     window.isAdmin = (inputNick === ADMIN_NICKNAME);
-                    
                     localStorage.setItem('mySavedNickname', inputNick);
+                    
+                    if (window.isAdmin) {
+                        document.getElementById('noticeEditIcon').style.display = 'inline-block';
+                    }
                     
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
@@ -317,7 +347,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -343,6 +373,141 @@ def read_root():
                     </div>`;
                 }
             }
+
+            // [디오의 마법] 시계 화면 그려주기
+            function renderBox(index) {
+                const box = document.getElementById(`stream-box-${index}`);
+                if (!box) return;
+                if (box.querySelector('video')) return; 
+
+                const card = cardData[index];
+                if (card.stopwatch && card.stopwatch.is_active) {
+                    const isMine = (card.user === window.myNickname) || window.isAdmin;
+                    box.innerHTML = `
+                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
+                            <div id="sw-display-${index}" style="font-size: 34px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
+                            ${isMine ? `
+                            <div style="margin-top: 12px; display: flex; gap: 6px;">
+                                <button onclick="startSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">▶ 시작</button>
+                                <button onclick="pauseSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 11px;">⏸ 정지</button>
+                                <button onclick="resetSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">⏹ 리셋</button>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                } else {
+                    box.innerHTML = getEmptySlotHTML(card.user);
+                }
+            }
+
+            // [디오의 마법] 작업 시작 감지기 (버튼 누르는 순간 1번만 발송)
+            function checkWorkTimeStart(index) {
+                if (!cardData[index].work_start_time) {
+                    const t = Date.now();
+                    cardData[index].work_start_time = t;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
+                    }
+                }
+            }
+
+            // [디오의 마법] 작업 종료 감지기
+            function checkWorkTimeStop(index) {
+                const sw = cardData[index].stopwatch;
+                const hasStream = !!myStreams[index];
+                const hasSw = sw && sw.is_active;
+                if (!hasStream && !hasSw) {
+                    cardData[index].work_start_time = 0;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
+                    }
+                }
+            }
+
+            function toggleStopwatchMode(index) {
+                let sw = cardData[index].stopwatch;
+                if (!sw) sw = { is_active: false, is_running: false, start_time: 0, elapsed: 0 };
+                
+                sw.is_active = !sw.is_active;
+                sw.is_running = false;
+                sw.elapsed = 0;
+                cardData[index].stopwatch = sw;
+                
+                if (sw.is_active && myStreams[index]) {
+                    stopShare(index); 
+                }
+                
+                // 시계 켜면 작업시간 시작, 끄면 정지!
+                if (sw.is_active) {
+                    checkWorkTimeStart(index);
+                } else {
+                    checkWorkTimeStop(index);
+                }
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: sw }));
+                }
+                renderBox(index);
+            }
+
+            function startSw(index) {
+                cardData[index].stopwatch.is_running = true;
+                cardData[index].stopwatch.start_time = Date.now();
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+                }
+            }
+
+            function pauseSw(index) {
+                if (!cardData[index].stopwatch.is_running) return;
+                cardData[index].stopwatch.is_running = false;
+                cardData[index].stopwatch.elapsed += (Date.now() - cardData[index].stopwatch.start_time);
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+                }
+            }
+
+            function resetSw(index) {
+                cardData[index].stopwatch.is_running = false;
+                cardData[index].stopwatch.elapsed = 0;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+                }
+                renderBox(index);
+            }
+
+            // [디오의 마법] 시계와 작업시간 1초마다 계산해서 띄워주기! (데이터 0원)
+            setInterval(() => {
+                const now = Date.now();
+                cardData.forEach((card, idx) => {
+                    // 수동 스톱워치 렌더링
+                    if (card.stopwatch && card.stopwatch.is_active) {
+                        let totalMs = card.stopwatch.elapsed;
+                        if (card.stopwatch.is_running) {
+                            totalMs += (now - card.stopwatch.start_time);
+                        }
+                        const el = document.getElementById(`sw-display-${idx}`);
+                        if (el) {
+                            let s = Math.floor(totalMs / 1000);
+                            let h = Math.floor(s / 3600); s %= 3600;
+                            let m = Math.floor(s / 60); s %= 60;
+                            el.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        }
+                    }
+
+                    // 자동 작업시간(오토타이머) 렌더링
+                    const wtEl = document.getElementById(`work-timer-${idx}`);
+                    if (wtEl && card.work_start_time) {
+                        let s = Math.floor((now - card.work_start_time) / 1000);
+                        let h = Math.floor(s / 3600); s %= 3600;
+                        let m = Math.floor(s / 60); s %= 60;
+                        wtEl.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        wtEl.style.display = 'block';
+                    } else if (wtEl) {
+                        wtEl.style.display = 'none';
+                    }
+                });
+            }, 1000);
 
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
@@ -398,15 +563,18 @@ def read_root():
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
-                                <input type="text" id="username-${index}" value="${card.user}" style="flex-grow:1; min-width:0; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                                <!-- [디오의 마법] 닉네임 밑에 '자동 작업시간 타이머'가 숨어있어! -->
+                                <div style="display:flex; flex-direction:column; flex-grow:1; min-width:0;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:4px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px;" oninput="updateUsername(${index}, this.value)">
+                                    <span id="work-timer-${index}" style="font-size:10px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</span>
+                                </div>
                                 
-                                <div style="display:flex; gap:3px;">
+                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:flex-end; max-width:60%;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    
                                     <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
-                                    
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
                             </div>
@@ -415,13 +583,12 @@ def read_root():
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
-                            <div class="card-stream-box" id="stream-box-${index}">
-                                ${getEmptySlotHTML(card.user)}
-                            </div>
+                            <div class="card-stream-box" id="stream-box-${index}"></div>
                         </div>
                     `;
                 });
                 
+                cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
             }
 
@@ -468,8 +635,7 @@ def read_root():
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
                 
-                // [디오가 수정한 마법!] 그래픽카드 괴롭히는 SVG 필터 빼고, 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                const activeFilter = isMosaic ? 'blur(4px)' : 'none';
+                const activeFilter = isMosaic ? 'blur(5px)' : 'none';
 
                 if (remoteVideo) {
                     remoteVideo.style.filter = activeFilter;
@@ -491,7 +657,7 @@ def read_root():
                 
                 const box = document.getElementById(`stream-box-${index}`);
                 if (box && !box.querySelector('video')) {
-                    box.innerHTML = getEmptySlotHTML(val);
+                    renderBox(index);
                 }
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -555,6 +721,13 @@ def read_root():
                     return;
                 }
 
+                if (cardData[index].stopwatch && cardData[index].stopwatch.is_active) {
+                    cardData[index].stopwatch.is_active = false;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+                    }
+                }
+
                 try {
                     let stream;
                     if (type === 'screen') {
@@ -576,13 +749,15 @@ def read_root():
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
 
-                    // [디오가 수정한 마법!] 가벼운 네이티브 블러(10px)만 쏙 적용!
-                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(4px);` : '';
+                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
                     
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
                     localVideo.play().catch(e => console.log(e));
+
+                    // 화공 시작하면 자동 작업시간 스타트!
+                    checkWorkTimeStart(index);
 
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
@@ -610,8 +785,10 @@ def read_root():
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
                 }
 
-                const box = document.getElementById(`stream-box-${index}`);
-                box.innerHTML = getEmptySlotHTML(cardData[index].user);
+                // 화공 꺼지면 자동 작업시간도 체크해서 스톱!
+                checkWorkTimeStop(index);
+
+                renderBox(index);
                 
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
@@ -723,14 +900,34 @@ def read_root():
                             else if (data.type === "chat") {
                                 logChat(data.senderName, data.msg, data.time);
                             } 
+                            else if (data.type === "update_notice") {
+                                document.getElementById('noticeText').innerHTML = makeLinksClickable(data.notice);
+                            }
+                            else if (data.type === "stopwatch_update") {
+                                cardData[data.index].stopwatch = data.stopwatch;
+                                const box = document.getElementById(`stream-box-${data.index}`);
+                                if (box && !box.querySelector('video')) {
+                                    renderBox(data.index);
+                                }
+                            }
+                            else if (data.type === "set_work_time") {
+                                cardData[data.index].work_start_time = data.time;
+                            }
                             else if (data.type === "init_state") {
                                 const state = data.state;
+                                
+                                if (state.global_notice) {
+                                    document.getElementById('noticeText').innerHTML = makeLinksClickable(state.global_notice);
+                                }
+
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
                                             cardData[i].user = card.user;
                                             cardData[i].card_bg = card.card_bg;
                                             cardData[i].is_mosaic = card.is_mosaic || false;
+                                            cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
+                                            cardData[i].work_start_time = card.work_start_time || 0;
                                             applyMosaicUI(i, cardData[i].is_mosaic);
 
                                             const userEl = document.getElementById(`username-${i}`);
@@ -740,7 +937,7 @@ def read_root():
                                             
                                             const box = document.getElementById(`stream-box-${i}`);
                                             if (box && !box.querySelector('video')) {
-                                                box.innerHTML = getEmptySlotHTML(card.user);
+                                                renderBox(i);
                                             }
                                         }
                                     });
@@ -778,7 +975,7 @@ def read_root():
                                 
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
-                                    box.innerHTML = getEmptySlotHTML(data.user);
+                                    renderBox(data.index);
                                 }
                                 
                                 applyEmptySlotVisibility();
@@ -841,8 +1038,7 @@ def read_root():
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
                                     
-                                    // [디오가 수정한 마법!] 남의 화면을 볼 때도 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(4px);` : '';
+                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
                                     
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
@@ -908,8 +1104,7 @@ def read_root():
                                         delete peerConnections[key];
                                     }
                                 }
-                                const box = document.getElementById(`stream-box-${index}`);
-                                box.innerHTML = getEmptySlotHTML(cardData[index].user);
+                                renderBox(index);
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
@@ -1146,6 +1341,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     idx = packet.get("index")
                     if idx in manager.active_shares:
                         del manager.active_shares[idx]
+                elif p_type == "update_notice":
+                    server_state["global_notice"] = packet.get("notice", "")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "stopwatch_update":
+                    server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                # [디오의 마법] 작업 시작 시간 서버에 저장하는 통신망!
+                elif p_type == "set_work_time":
+                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
@@ -1163,6 +1368,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    server_state["cards"][r_idx]["work_start_time"] = 0
+                    server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
                     reverted_indexes.append(r_idx)
                     
             del manager.active_slots[client_id]
