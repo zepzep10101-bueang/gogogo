@@ -31,8 +31,8 @@ def load_data():
                 card["is_mosaic"] = False
                 if "stopwatch" not in card:
                     card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
-                if "work_start_time" not in card:
-                    card["work_start_time"] = 0
+                if "work_timer" not in card:
+                    card["work_timer"] = {"is_running": False, "start_time": 0, "elapsed": 0}
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
@@ -43,7 +43,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(12)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_timer": {"is_running": False, "start_time": 0, "elapsed": 0}} for i in range(12)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
@@ -153,7 +153,8 @@ def read_root():
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            /* [디오의 마법] 까만 반투명 배경을 아예 없애버렸어! 투명 100%! */
+            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
             
             .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
@@ -304,7 +305,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법 1] 빈자리 버튼에 자동 확대/축소 마법을 달았어!
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
@@ -315,7 +315,6 @@ def read_root():
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
                     
-                    // 빈자리 보이기(끄기) 모드로 돌아가면 커진 카드를 다시 원래대로 얌전하게!
                     cardData.forEach((card, index) => {
                         const cardEl = document.getElementById(`card-card-${index}`);
                         const sizeBtn = document.getElementById(`size-btn-${index}`);
@@ -331,7 +330,6 @@ def read_root():
                 applyEmptySlotVisibility();
             }
 
-            // [디오의 마법 2] 숨길 때 사람 있는 자리는 알아서 꽉 차게 팽창시켜!
             function applyEmptySlotVisibility() {
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
@@ -342,7 +340,6 @@ def read_root():
                         } else {
                             cardEl.style.display = "flex";
                             
-                            // 숨기기 모드일 땐 사람 있는 카드를 알아서 크게 쫙!
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
                                 if (!cardEl.classList.contains('large')) {
                                     cardEl.classList.add('large');
@@ -400,7 +397,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_timer: {is_running: false, start_time: 0, elapsed: 0} }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -452,24 +449,51 @@ def read_root():
                 }
             }
 
+            // [디오의 마법] 이어서 누적되는 똑똑한 작업시간 측정기!
             function checkWorkTimeStart(index) {
-                if (!cardData[index].work_start_time) {
-                    const t = Date.now();
-                    cardData[index].work_start_time = t;
+                let wt = cardData[index].work_timer;
+                if (!wt) wt = {is_running: false, start_time: 0, elapsed: 0};
+                if (!wt.is_running) {
+                    wt.is_running = true;
+                    wt.start_time = Date.now();
+                    cardData[index].work_timer = wt;
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
+                        ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
                     }
                 }
             }
 
             function checkWorkTimeStop(index) {
+                let wt = cardData[index].work_timer;
+                if (!wt) return;
                 const sw = cardData[index].stopwatch;
                 const hasStream = !!myStreams[index];
                 const hasSw = sw && sw.is_active;
+                
+                // 화공이나 시계가 전부 꺼졌을 때만 일시정지!
                 if (!hasStream && !hasSw) {
-                    cardData[index].work_start_time = 0;
+                    if (wt.is_running) {
+                        wt.is_running = false;
+                        wt.elapsed += (Date.now() - wt.start_time);
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
+                        }
+                    }
+                }
+            }
+            
+            // [디오의 마법] 작업시간을 아예 처음부터(0) 다시 재고 싶을 때 누르는 초기화 버튼!
+            function resetWorkTimer(index) {
+                let wt = cardData[index].work_timer;
+                if (!wt) return;
+                
+                if (confirm("작업시간을 0초로 다시 초기화할까요?")) {
+                    wt.elapsed = 0;
+                    if (wt.is_running) {
+                        wt.start_time = Date.now();
+                    }
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
+                        ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
                     }
                 }
             }
@@ -528,6 +552,7 @@ def read_root():
             setInterval(() => {
                 const now = Date.now();
                 cardData.forEach((card, idx) => {
+                    // 수동 스톱워치
                     if (card.stopwatch && card.stopwatch.is_active) {
                         let totalMs = card.stopwatch.elapsed;
                         if (card.stopwatch.is_running) {
@@ -542,15 +567,23 @@ def read_root():
                         }
                     }
 
-                    const wtEl = document.getElementById(`work-timer-${idx}`);
-                    if (wtEl && card.work_start_time) {
-                        let s = Math.floor((now - card.work_start_time) / 1000);
+                    // [디오의 누적 작업시간 렌더링]
+                    const wt = card.work_timer;
+                    const wtContainer = document.getElementById(`work-timer-container-${idx}`);
+                    const wtDisplay = document.getElementById(`work-timer-display-${idx}`);
+                    
+                    if (wt && (wt.is_running || wt.elapsed > 0)) {
+                        let totalMs = wt.elapsed;
+                        if (wt.is_running) {
+                            totalMs += (now - wt.start_time);
+                        }
+                        let s = Math.floor(totalMs / 1000);
                         let h = Math.floor(s / 3600); s %= 3600;
                         let m = Math.floor(s / 60); s %= 60;
-                        wtEl.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                        wtEl.style.display = 'block';
-                    } else if (wtEl) {
-                        wtEl.style.display = 'none';
+                        if (wtDisplay) wtDisplay.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        if (wtContainer) wtContainer.style.display = 'flex';
+                    } else {
+                        if (wtContainer) wtContainer.style.display = 'none';
                     }
                 });
             }, 1000);
@@ -605,13 +638,20 @@ def read_root():
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
+                    
+                    const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header" style="flex-direction: column; gap: 6px;">
                                 <div style="width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
-                                    <div id="work-timer-${index}" style="font-size:11px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</div>
+                                    
+                                    <!-- [디오의 마법] 작업시간 표시와 초기화 버튼을 가로로 예쁘게 배치했어! -->
+                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; justify-content:center; align-items:center; gap:5px; margin-top:3px;">
+                                        <span id="work-timer-display-${index}" style="font-size:11px; color:#ffeaa7; font-weight:bold;">⏱ 00:00:00</span>
+                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 5px; font-size:9px; cursor:pointer;" title="작업시간 초기화">🔄</button>` : ''}
+                                    </div>
                                 </div>
                                 
                                 <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; width:100%;">
@@ -954,8 +994,8 @@ def read_root():
                                     renderBox(data.index);
                                 }
                             }
-                            else if (data.type === "set_work_time") {
-                                cardData[data.index].work_start_time = data.time;
+                            else if (data.type === "work_timer_update") {
+                                cardData[data.index].work_timer = data.timer;
                             }
                             else if (data.type === "init_state") {
                                 const state = data.state;
@@ -972,7 +1012,7 @@ def read_root():
                                             cardData[i].card_bg = card.card_bg;
                                             cardData[i].is_mosaic = card.is_mosaic || false;
                                             cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
-                                            cardData[i].work_start_time = card.work_start_time || 0;
+                                            cardData[i].work_timer = card.work_timer || {is_running: false, start_time: 0, elapsed: 0};
                                             applyMosaicUI(i, cardData[i].is_mosaic);
 
                                             const userEl = document.getElementById(`username-${i}`);
@@ -1392,8 +1432,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "stopwatch_update":
                     server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "set_work_time":
-                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
+                elif p_type == "work_timer_update":
+                    server_state["cards"][packet["index"]]["work_timer"] = packet.get("timer")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
@@ -1412,8 +1452,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
-                    server_state["cards"][r_idx]["work_start_time"] = 0
                     server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
+                    server_state["cards"][r_idx]["work_timer"] = {"is_running": False, "start_time": 0, "elapsed": 0}
                     reverted_indexes.append(r_idx)
                     
             del manager.active_slots[client_id]
