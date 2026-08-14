@@ -139,7 +139,7 @@ def read_root():
             
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(4px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
@@ -153,7 +153,7 @@ def read_root():
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; }
             
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); }
             
             .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; float: right; font-weight: normal; margin-left: 5px; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
@@ -469,7 +469,7 @@ def read_root():
                 const localVideo = document.getElementById(`video-${index}`);
                 
                 // [디오가 수정한 마법!] 그래픽카드 괴롭히는 SVG 필터 빼고, 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                const activeFilter = isMosaic ? 'blur(5px)' : 'none';
+                const activeFilter = isMosaic ? 'blur(4px)' : 'none';
 
                 if (remoteVideo) {
                     remoteVideo.style.filter = activeFilter;
@@ -577,7 +577,7 @@ def read_root():
                     updateUsername(index, myName);
 
                     // [디오가 수정한 마법!] 가벼운 네이티브 블러(10px)만 쏙 적용!
-                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
+                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(4px);` : '';
                     
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
@@ -842,7 +842,7 @@ def read_root():
                                     const box = document.getElementById(`stream-box-${index}`);
                                     
                                     // [디오가 수정한 마법!] 남의 화면을 볼 때도 가볍고 뽀얀 네이티브 블러(10px) 적용!
-                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
+                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(4px);` : '';
                                     
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
