@@ -145,7 +145,7 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; transition: all 0.3s ease; }
+            .card-grid { display: grid; gap: 15px; height: 100%; min-height: 0; transition: all 0.3s ease; align-content: center; justify-items: center; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
             .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
@@ -153,10 +153,10 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            /* [디오의 디자인 수리] 16:9 와이드 비율에 맞춰 내부 공간(padding)과 간격을 깔끔하게 대폭 슬림화! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 16 / 9; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
+            /* [디오의 정사각형 마법] 납작했던 가로형을 1:1 정사각형 비율로 묵직하게 키웠어! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; height: 100%; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; min-height: 0; }
             
-            .timer-card.large { grid-column: span 2; grid-row: span 2; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; max-height: 100%; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
