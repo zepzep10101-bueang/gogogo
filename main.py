@@ -144,15 +144,21 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
+            /* [마법 1] 대시보드는 무조건 280px 고정! 안 잘리게 철벽 방어! */
+            .main-container { display: grid; grid-template-columns: 1fr 280px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
-            /* 사람 수에 따라 카드가 화면 중앙에서부터 예쁘게 늘어나는 동적 그리드 마법 */
+            /* [마법 2] 창이 950px 이하로 좁아지면 대시보드를 아래로 스르륵 내리기! (무게 0) */
+            @media (max-width: 950px) {
+                .main-container { grid-template-columns: 1fr; }
+                .side-panel { position: static; height: auto; margin-top: 20px; }
+            }
+
             .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; grid-auto-flow: dense; width: 100%; }
             .grid-1 { grid-template-columns: minmax(300px, 450px); }
             .grid-2 { grid-template-columns: repeat(2, minmax(300px, 450px)); }
-            .grid-3 { grid-template-columns: repeat(3, minmax(250px, 1fr)); }
-            .grid-4 { grid-template-columns: repeat(2, minmax(250px, 1fr)); } /* 4명일 땐 2x2가 예뻐요 */
-            .grid-max { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* 5명 이상은 최대 4열 유지 */
+            .grid-3 { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
+            .grid-4 { grid-template-columns: repeat(2, minmax(220px, 1fr)); } 
+            .grid-max { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } 
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
@@ -160,7 +166,6 @@ def read_root():
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            /* 화공/캠 우선 배치 및 콤팩트 버튼 유지 */
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; }
 
@@ -215,7 +220,6 @@ def read_root():
                         <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
                             <div style="display: flex; gap: 4px;">
-                                <!-- [디오 마법] 내 자리 하나 더 펴기 버튼 추가 -->
                                 <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리 추가</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
                             </div>
@@ -297,11 +301,9 @@ def read_root():
             function addNotice() {
                 const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
-                    // 기존 공지사항에 새 글을 누적시킴
                     const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: combined }));
-                        // 누나 화면에 즉시 띄워주기 마법!
                         window.rawNotice = combined;
                         document.getElementById('noticeText').innerHTML = formatNotice(combined);
                     }
@@ -313,14 +315,12 @@ def read_root():
                 if (newVal !== null) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
-                        // 즉시 수정 반영
                         window.rawNotice = newVal;
                         document.getElementById('noticeText').innerHTML = formatNotice(newVal);
                     }
                 }
             }
 
-            // 진짜 유저만 남기고 가짜 빈자리는 싹 지워버리는 핵심 마법 함수!
             function applyEmptySlotVisibility() {
                 let visibleCount = 0;
                 cardData.forEach((card, index) => {
@@ -328,7 +328,7 @@ def read_root():
                     if (cardEl) {
                         if (card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
-                            cardEl.classList.remove('large'); // 숨길 땐 혹시 모를 큰 크기도 리셋
+                            cardEl.classList.remove('large'); 
                         } else {
                             cardEl.style.display = "flex";
                             visibleCount++;
@@ -336,7 +336,6 @@ def read_root():
                     }
                 });
 
-                // 사람 수에 맞춰 바둑판이 예쁘게 모양을 잡도록 클래스 변경
                 const grid = document.getElementById('cardGrid');
                 if (grid) {
                     grid.className = 'card-grid';
@@ -348,7 +347,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법] 숨어있는 빈자리를 찾아서 내 자리로 펴기!
             function addMySlot() {
                 const myName = window.myNickname || "익명";
                 let emptyIdx = -1;
@@ -410,7 +408,6 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            // 16자리로 확장 완료!
             const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
@@ -427,7 +424,6 @@ def read_root():
             };
 
             function getEmptySlotHTML(username) {
-                // 이제 빈자리는 화면에 아예 안 뜰 거지만, 에러 방지용으로 남겨둠
                 if (!username || username.startsWith("자리")) {
                     return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
                 } else {
@@ -651,8 +647,6 @@ def read_root():
                 });
                 
                 cardData.forEach((_, i) => renderBox(i));
-                
-                // 처음 로딩될 때 바로 빈자리들을 싹 청소해서 배경을 보여줘!
                 applyEmptySlotVisibility();
             }
 
@@ -728,7 +722,6 @@ def read_root():
                     ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 }
                 
-                // 닉네임이 지워지거나 생길 때마다 카드를 보여주고 숨기는 마법!
                 applyEmptySlotVisibility();
             }
 
