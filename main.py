@@ -147,16 +147,18 @@ def read_root():
             
             .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
-            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            /* [화공/캠 우선 배치 마법] 버튼들이 좁아져도 화공/캠이 최우선으로 안 잘리게 설계 */
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; }
+            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; }
+
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
-            
-            .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); }
             
@@ -304,7 +306,6 @@ def read_root():
                 }
             }
 
-            // [디오의 마법 1] 빈자리 버튼에 자동 확대/축소 마법을 달았어!
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
@@ -314,8 +315,6 @@ def read_root():
                 } else {
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
-                    
-                    // 빈자리 보이기(끄기) 모드로 돌아가면 커진 카드를 다시 원래대로 얌전하게!
                     cardData.forEach((card, index) => {
                         const cardEl = document.getElementById(`card-card-${index}`);
                         const sizeBtn = document.getElementById(`size-btn-${index}`);
@@ -331,7 +330,6 @@ def read_root():
                 applyEmptySlotVisibility();
             }
 
-            // [디오의 마법 2] 숨길 때 사람 있는 자리는 알아서 꽉 차게 팽창시켜!
             function applyEmptySlotVisibility() {
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
@@ -341,8 +339,6 @@ def read_root():
                             cardEl.style.display = "none";
                         } else {
                             cardEl.style.display = "flex";
-                            
-                            // 숨기기 모드일 땐 사람 있는 카드를 알아서 크게 쫙!
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
                                 if (!cardEl.classList.contains('large')) {
                                     cardEl.classList.add('large');
@@ -421,8 +417,8 @@ def read_root():
                 } else {
                     return `
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;">
-                        <span style="font-size:26px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:8px;">${username}</span>
-                        <span style="font-size:12px; color:#aaa;">화면 미공유 중</span>
+                        <span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span>
+                        <span style="font-size:11px; color:#aaa;">화면 미공유 중</span>
                     </div>`;
                 }
             }
@@ -437,12 +433,12 @@ def read_root():
                     const isMine = (card.user === window.myNickname) || window.isAdmin;
                     box.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 34px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
+                            <div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
                             ${isMine ? `
-                            <div style="margin-top: 12px; display: flex; gap: 6px;">
-                                <button onclick="startSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 11px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">⏹ 리셋</button>
+                            <div style="margin-top: 8px; display: flex; gap: 4px;">
+                                <button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button>
+                                <button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button>
+                                <button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button>
                             </div>
                             ` : ''}
                         </div>
@@ -547,8 +543,8 @@ def read_root():
                         let s = Math.floor((now - card.work_start_time) / 1000);
                         let h = Math.floor(s / 3600); s %= 3600;
                         let m = Math.floor(s / 60); s %= 60;
-                        wtEl.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                        wtEl.style.display = 'block';
+                        wtEl.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        wtEl.style.display = 'inline-block';
                     } else if (wtEl) {
                         wtEl.style.display = 'none';
                     }
@@ -608,24 +604,24 @@ def read_root():
 
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
-                            <div class="card-header" style="flex-direction: column; gap: 6px;">
-                                <div style="width: 100%;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
-                                    <div id="work-timer-${index}" style="font-size:11px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</div>
+                            <div class="card-header">
+                                <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+                                    <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
                                 </div>
                                 
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; width:100%;">
-                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1 1 30%; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
-                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1 1 30%; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1 1 30%; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1 1 50%; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="flex:1 1 30%; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
-                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1 1 100%; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
+                                <div class="btn-group">
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675; flex: 2;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3; flex: 2;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad; flex: 1.5;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg}; flex: 2.5;" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black; flex: 1.5;" onclick="toggleCardSize(${index})">크게</button>
                                 </div>
+                                <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; width: 100%; display:none; margin-top: 2px;" onclick="toggleViewerSound(${index})">소리끄기</button>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
-                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
+                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}"></div>
@@ -1020,7 +1016,7 @@ def read_root():
                                 
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
-                                    renderBox(data.index);
+                                    renderBox(index);
                                 }
                                 
                                 applyEmptySlotVisibility();
@@ -1149,6 +1145,7 @@ def read_root():
                                         delete peerConnections[key];
                                     }
                                 }
+                                
                                 renderBox(index);
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
