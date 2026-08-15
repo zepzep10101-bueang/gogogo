@@ -168,7 +168,8 @@ def read_root():
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
+            /* [수정] 대시보드 조작 버튼 크기 및 여백 살짝 줄임 */
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 5px; font-size: 10px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
@@ -211,7 +212,8 @@ def read_root():
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-grow: 1;">
-                            <div style="display: flex; gap: 3px;">
+                            <!-- [수정] 자연스럽게 접히도록 flex-wrap: wrap 추가 -->
+                            <div style="display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#27ae60; font-weight:bold;" onclick="toggleEmptySlots()">👀 빈자리</button>
                                 <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 내 배경</button>
@@ -272,7 +274,6 @@ def read_root():
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
 
-            // [추가] 브라우저에 저장된 내 배경 불러오기
             function loadLocalBackground() {
                 const bgType = localStorage.getItem('myBgType');
                 const bgData = localStorage.getItem('myBgData');
@@ -397,7 +398,7 @@ def read_root():
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
-                    loadLocalBackground(); // [추가] 로그인 성공 시 내 배경 불러오기
+                    loadLocalBackground(); 
                 } else {
                     alert("비밀번호가 틀렸어! 다시 확인해봐.");
                 }
@@ -600,7 +601,7 @@ def read_root():
                         }
                     }
                 }
-                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
+                alert("화 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
 
             function initCards() {
@@ -772,7 +773,6 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
-            // [수정] 서버로 보내지 않고 내 브라우저(localStorage)에만 저장하는 기능
             function setLocalBackground(event) {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -798,7 +798,6 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
-            // [수정] 유튜브도 서버로 안 보내고 내 브라우저에만 저장
             function setYoutubeBackground() {
                 const inputVal = document.getElementById('bgYoutubeInput').value;
                 const videoId = extractYoutubeId(inputVal);
