@@ -145,15 +145,21 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [완벽 스크롤 마법] 화면 전체 높이에 딱 맞춰서 카드 영역 내부에 깔끔한 스크롤바가 생기도록 수정! */
-            .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; height: calc(100vh - 40px); overflow-y: auto; padding-right: 8px; align-content: start; }
+            /* [원래의 완벽한 바둑판 배열 복구] 스크롤 없이 인원수에 맞춰 화면 안에 쏙 들어오게 자동 조절! */
+            .card-grid { display: grid; gap: 12px; height: 100%; min-height: 0; align-content: center; justify-items: center; align-items: center; }
+            .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+            .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
+            .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; height: 280px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .timer-card.large { grid-column: span 2; grid-row: span 2; height: 575px; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 1 / 1; max-height: 100%; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; }
             
             .share-btn { padding: 3px 6px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
@@ -318,6 +324,7 @@ def read_root():
             }
 
             function applyEmptySlotVisibility() {
+                let visibleCount = 0;
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     const sizeBtn = document.getElementById(`size-btn-${index}`);
@@ -330,6 +337,7 @@ def read_root():
                             }
                         } else {
                             cardEl.style.display = "flex";
+                            visibleCount++;
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
                                 if (cardEl.classList.contains('large')) {
                                     cardEl.classList.remove('large');
@@ -342,6 +350,17 @@ def read_root():
                         }
                     }
                 });
+
+                const grid = document.getElementById('cardGrid');
+                if (grid) {
+                    grid.className = 'card-grid'; 
+                    if (visibleCount === 1) grid.classList.add('grid-1');
+                    else if (visibleCount === 2) grid.classList.add('grid-2');
+                    else if (visibleCount <= 4) grid.classList.add('grid-4');
+                    else if (visibleCount <= 6) grid.classList.add('grid-6');
+                    else if (visibleCount <= 9) grid.classList.add('grid-9');
+                    else grid.classList.add('grid-12');
+                }
             }
 
             function toggleSettingsPanel() {
