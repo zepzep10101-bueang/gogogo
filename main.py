@@ -113,8 +113,9 @@ class ConnectionManager:
                     pass
 
     async def broadcast_user_list(self):
-        users = [name for name in self.active_users.values() if name != "연결중..."]
-        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users})
+        # [수정] 강퇴 기능을 위해 객체 배열로 변환해서 전달
+        users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
+        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
         for conn in self.active_connections:
             try:
                 await conn.send_text(msg)
@@ -221,7 +222,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- [수정] 출석현황 모달 (달력 + 랭킹 합침) -->
+        <!-- 출석현황 모달 -->
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
@@ -320,7 +321,9 @@ def read_root():
         </div>
 
         <script>
+            // [수정] 방장 전용 비밀번호(8888) 도입!
             const ROOM_PASSWORD = "7777"; 
+            const ADMIN_PASSWORD = "8888"; 
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
@@ -337,7 +340,6 @@ def read_root():
                 document.getElementById(modalId).style.display = 'none';
             }
 
-            // [수정] 달력과 랭킹을 동시에 렌더링하는 함수
             function renderAttendanceBoard() {
                 const now = new Date();
                 const y = now.getFullYear();
@@ -432,7 +434,6 @@ def read_root():
                 if (todayEl) todayEl.innerHTML = todayHtml;
             }
 
-            // [수정] 달력 클릭 시 도장 찍기
             function stampAttendance(y, m, d) {
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
@@ -536,6 +537,7 @@ def read_root():
                 }
             }
 
+            // [수정] 닉네임 방어 및 방장 전용 로그인 로직 적용
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
@@ -545,17 +547,35 @@ def read_root():
                     return;
                 }
 
-                if (inputPw === ROOM_PASSWORD) {
-                    window.myNickname = inputNick; 
-                    window.isAdmin = (inputNick === ADMIN_NICKNAME);
-                    localStorage.setItem('mySavedNickname', inputNick);
-                    
-                    document.getElementById('loginOverlay').style.display = 'none';
-                    initCards();
-                    connectWebSocket();
-                    loadLocalBackground(); 
+                if (inputNick === ADMIN_NICKNAME) {
+                    if (inputPw !== ADMIN_PASSWORD) {
+                        alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!");
+                        return;
+                    }
+                    window.isAdmin = true;
                 } else {
-                    alert("비밀번호가 틀렸어! 다시 확인해봐.");
+                    if (inputPw !== ROOM_PASSWORD) {
+                        alert("비밀번호가 틀렸어! 다시 확인해봐.");
+                        return;
+                    }
+                    window.isAdmin = false;
+                }
+
+                window.myNickname = inputNick; 
+                localStorage.setItem('mySavedNickname', inputNick);
+                
+                document.getElementById('loginOverlay').style.display = 'none';
+                initCards();
+                connectWebSocket();
+                loadLocalBackground(); 
+            }
+
+            // [추가] 방장이 불청객 강퇴시키는 함수
+            function kickUser(nickname) {
+                if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "kick", target_nick: nickname }));
+                    }
                 }
             }
 
@@ -1119,7 +1139,12 @@ def read_root():
                             if (data.type === "pong") {
                                 return;
                             }
-                            
+                            // [추가] 내가 강퇴당했을 때의 처리!
+                            else if (data.type === "kicked") {
+                                alert("방장에 의해 방에서 쫓겨났어!");
+                                localStorage.removeItem('mySavedNickname'); 
+                                window.location.reload(); 
+                            }
                             else if (data.type === "chat_cleared") {
                                 document.getElementById('chatHistory').innerHTML = "";
                             }
@@ -1127,11 +1152,16 @@ def read_root():
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
-                                let listHtml = data.users.map(u => 
-                                    `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-block;">
-                                        <b style="color:white;">${u}</b>
-                                    </span>`
-                                ).join("");
+                                // [수정] 명단 그릴 때 방장이면 이름 옆에 강퇴 버튼 추가
+                                let listHtml = data.users.map(u => {
+                                    let kickBtn = '';
+                                    if (window.isAdmin && u.nickname !== window.myNickname) {
+                                        kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`;
+                                    }
+                                    return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;">
+                                        <b style="color:white;">${u.nickname}</b>${kickBtn}
+                                    </span>`;
+                                }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                             }
                             else if (data.type === "chat") {
@@ -1562,6 +1592,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
+                continue
+
+            # [추가] 서버에서 강퇴(kick) 요청을 받았을 때 처리!
+            if p_type == "kick":
+                target_nick = packet.get("target_nick")
+                for ws_conn, name in list(manager.active_users.items()):
+                    if name == target_nick:
+                        try:
+                            # 타겟 유저에게 쫓겨났다는 신호 보내기
+                            await ws_conn.send_text(json.dumps({"type": "kicked"}))
+                        except:
+                            pass
                 continue
 
             if p_type == "chat":
