@@ -143,10 +143,10 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
+            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 15px; padding: 15px; height: 100vh; color: white; position: relative; z-index: 2; align-items: center; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [원래 완벽한 오리지널 그리드 레이아웃] */
-            .card-grid { display: grid; gap: 10px; height: 100%; min-height: 0; align-content: center; justify-items: center; align-items: center; }
+            /* [신축성 오리지널 레이아웃] 창을 줄이면 박스들도 같이 줄어들며 꽉 차게 조절 */
+            .card-grid { display: grid; gap: 10px; width: 100%; height: 100%; max-height: calc(100vh - 30px); min-height: 0; align-content: center; justify-items: center; align-items: center; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
             .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
@@ -154,7 +154,7 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; height: 100%; max-height: 100%; }
 
@@ -163,22 +163,22 @@ def read_root():
             .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; }
             
-            .share-btn { padding: 3px 6px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
+            .share-btn { padding: 3px 5px; font-size: 9px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 40px); }
+            .side-panel { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 30px); justify-content: space-between; }
             
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 5px; }
-            .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 4px; }
+            .settings-dropdown { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
-            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
-            .chat-input { display: flex; margin-top: 10px; }
-            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
-            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; flex-shrink: 0; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 12px; color: #ddd; line-height: 1.4; }
+            .chat-input { display: flex; margin-top: 8px; }
+            .chat-input input { flex-grow: 1; padding: 6px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 12px; }
+            .chat-input button { padding: 6px 10px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-size: 12px; }
             
-            .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
+            .bg-control { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
@@ -210,7 +210,7 @@ def read_root():
             <div class="side-panel">
                 <div class="panel-box">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                        <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
+                        <h3 style="margin: 0; font-size: 16px; line-height: 20px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
                             <div style="display: flex; gap: 4px;">
                                 <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리 끄기</button>
@@ -220,17 +220,17 @@ def read_root():
                         </div>
                     </div>
 
-                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
-                    <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:4px;">연결 중...</span>
+                    <p style="margin-top:6px; font-size:13px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
-                    <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
+                    <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:3px;"></span></p>
 
-                    <div id="noticeDropdown" style="display: none; margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
-                        <div style="text-align: right; margin-bottom: 8px;">
-                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
-                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 전체 수정/삭제</button>
+                    <div id="noticeDropdown" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
+                        <div style="text-align: right; margin-bottom: 6px;">
+                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
+                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 수정/삭제</button>
                         </div>
-                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all;">공지사항 로딩 중...</div>
+                        <div id="noticeText" style="font-size: 12px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
                     <div class="settings-dropdown" id="settingsDropdown">
@@ -239,7 +239,7 @@ def read_root():
                             <div style="font-size: 10px; color: #aaa;">일반 사진 선택 (움짤X):</div>
                             <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%;" onchange="setLocalBackground(event)">
                             
-                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크 입력:</div>
+                            <div style="font-size: 10px; color: #aaa; margin-top: 2px;">유튜브 링크 입력:</div>
                             <div style="display:flex; gap:3px;">
                                 <input type="text" id="bgYoutubeInput" placeholder="유튜브 URL" style="flex-grow:1; font-size:10px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
                                 <button onclick="setYoutubeBackground()" style="font-size:10px; padding:3px 6px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
@@ -250,10 +250,10 @@ def read_root():
 
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="font-size: 15px;">💬 실시간 채팅</h3>
+                        <h3 style="font-size: 14px;">💬 실시간 채팅</h3>
                         <div>
-                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공복구</button>
-                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
+                            <button onclick="forceRecoverWebRTC()" class="recovery-btn" style="font-size:9px; padding:2px 4px;">🔄 화공복구</button>
+                            <button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -446,12 +446,12 @@ def read_root():
                     const isMine = (card.user === window.myNickname) || window.isAdmin;
                     box.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
+                            <div id="sw-display-${index}" style="font-size: 26px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
                             ${isMine ? `
-                            <div style="margin-top: 8px; display: flex; gap: 4px;">
-                                <button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button>
+                            <div style="margin-top: 6px; display: flex; gap: 4px;">
+                                <button onclick="startSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 9px;">▶ 시작</button>
+                                <button onclick="pauseSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 9px;">⏸ 정지</button>
+                                <button onclick="resetSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 9px;">⏹ 리셋</button>
                             </div>
                             ` : ''}
                         </div>
@@ -597,8 +597,8 @@ def read_root():
 
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
-                const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
-                history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
+                const tSpan = timeStr ? `<span style="font-size:9px; color:#636e72; margin-left:4px;">${timeStr}</span>` : '';
+                history.innerHTML += `<div style="margin-bottom: 4px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
                 history.scrollTop = history.scrollHeight;
             }
 
@@ -654,13 +654,13 @@ def read_root():
 
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
-                            <div class="card-header" style="flex-direction: column; gap: 4px;">
-                                <div style="width: 100%; display: flex; gap: 4px; align-items: center;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+                            <div class="card-header" style="flex-direction: column; gap: 3px;">
+                                <div style="width: 100%; display: flex; gap: 3px; align-items: center;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 2px; font-size: 10px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     
-                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; align-items:center; gap:3px;">
-                                        <span id="work-timer-display-${index}" style="font-size:10px; color:#ffeaa7; font-weight:bold; white-space:nowrap;">⏱ 00:00:00</span>
-                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
+                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; align-items:center; gap:2px;">
+                                        <span id="work-timer-display-${index}" style="font-size:9px; color:#ffeaa7; font-weight:bold; white-space:nowrap;">⏱ 00:00:00</span>
+                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 3px; font-size:8px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                     </div>
                                 </div>
                                 
@@ -668,14 +668,14 @@ def read_root():
                                     <button class="share-btn" id="share-btn-screen-${index}" style="flex:1; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="flex:1; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-sw-${index}" style="flex:1; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1.5; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1.4; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="flex:1; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리</button>
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
-                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:1px;">
+                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:8px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}"></div>
@@ -987,7 +987,7 @@ def read_root():
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
                                 let listHtml = data.users.map(u => 
-                                    `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-block;">
+                                    `<span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; display:inline-block;">
                                         <b style="color:white;">${u}</b>
                                     </span>`
                                 ).join("");
@@ -1051,8 +1051,8 @@ def read_root():
                                     const historyEl = document.getElementById('chatHistory');
                                     historyEl.innerHTML = "";
                                     state.chat_history.forEach(chat => {
-                                        const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : '';
-                                        historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
+                                        const tSpan = chat.time ? `<span style="font-size:9px; color:#636e72; margin-left:4px;">${chat.time}</span>` : '';
+                                        historyEl.innerHTML += `<div style="margin-bottom: 4px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
                                     });
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
