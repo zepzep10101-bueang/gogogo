@@ -38,6 +38,10 @@ def load_data():
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
+            
+            # [추가] 출석체크 데이터베이스 초기화
+            if "attendance" not in data:
+                data["attendance"] = {}
                 
             return data
     except Exception:
@@ -47,7 +51,8 @@ def load_data():
         "_id": "main_state",
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
         "chat_history": [],
-        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!"
+        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
+        "attendance": {} # [추가]
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -145,20 +150,14 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* 무조건 4열(바둑판) 유지, 윈도우 창이 작아지면 3열, 2열로 자연스럽게 줄어듦 */
             .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
-            
             @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            /* 상자 기본 크기 고정 및 둥근 테두리 */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            
-            /* '크게' 눌렀을 때 차지할 면적 (가로 2칸, 세로 2칸) */
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
-            
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
@@ -168,8 +167,8 @@ def read_root():
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
-            /* [수정] 대시보드 조작 버튼 크기 및 여백 살짝 줄임 */
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 5px; font-size: 10px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
+            /* [수정] 버튼 스타일: 여백을 꽉 채우도록 flex 속성 사용 */
+            .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
@@ -184,6 +183,13 @@ def read_root():
             .status-offline { background: #d63031; color: white; }
             
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+            
+            /* [추가] 달력 디자인 */
+            .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+            .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
+            .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
+            .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
+            .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
         </style>
     </head>
     <body>
@@ -211,21 +217,29 @@ def read_root():
                 <div class="panel-box" style="flex-shrink: 0;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
-                        <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-grow: 1;">
-                            <!-- [수정] 자연스럽게 접히도록 flex-wrap: wrap 추가 -->
-                            <div style="display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; width: 100%;">
-                                <button class="settings-toggle-btn" style="background:#27ae60; font-weight:bold;" onclick="toggleEmptySlots()">👀 빈자리</button>
-                                <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리</button>
-                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 내 배경</button>
+                        
+                        <!-- [수정] 버튼들이 공간을 예쁘게 채우도록 레이아웃 수정 -->
+                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
+                            <div style="display: flex; gap: 4px; width: 100%;">
+                                <button class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
+                                <button class="settings-toggle-btn" style="background:#0984e3; color:white; flex: 1; padding: 6px 0;" onclick="addMySlot()">➕ 자리</button>
                             </div>
-                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold; margin-left: 0;" onclick="toggleNoticePanel()">📢 공지</button>
+                            <div style="display: flex; gap: 4px; width: 100%;">
+                                <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="toggleSettingsPanel()">⚙️ 내 배경</button>
+                                <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="toggleAttendancePanel()">📅 출석체크</button>
+                            </div>
+                            <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="toggleNoticePanel()">📢 공지</button>
                         </div>
                     </div>
 
-                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:4px;">연결 중...</span>
-                    <p style="margin-top:6px; font-size:13px;">인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+                        <div>
+                            <span id="connStatus" class="status-indicator status-offline" style="margin-left: 0;">연결 중...</span>
+                            <span style="font-size:12px; margin-left: 5px;">인원: <b id="userCount" style="color:#ff7675;">0명</b></span>
+                        </div>
+                    </div>
                     
-                    <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
+                    <p style="margin-top:6px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
 
                     <div id="noticeDropdown" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
                         <div style="text-align: right; margin-bottom: 6px;">
@@ -235,6 +249,13 @@ def read_root():
                         <div id="noticeText" style="font-size: 12px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
+                    <!-- [추가] 출석체크 달력 패널 -->
+                    <div id="attendanceDropdown" class="settings-dropdown">
+                        <div style="font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 8px; text-align: center;" id="calMonthTitle">내 출석부</div>
+                        <div class="calendar-grid" id="calendarGrid"></div>
+                        <div style="font-size: 10px; color: #ffeaa7; text-align: center; margin-top: 6px;">오늘 날짜를 눌러서 🍀 도장을 찍어봐!</div>
+                    </div>
+
                     <div class="settings-dropdown" id="settingsDropdown">
                         <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 나만의 배경 (나에게만 보여요)</div>
                         <div class="bg-control">
@@ -273,6 +294,88 @@ def read_root():
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
+            window.attendanceData = {}; // [추가] 전역 출석 데이터
+
+            // [추가] 달력 렌더링 함수
+            function renderCalendar() {
+                const grid = document.getElementById('calendarGrid');
+                if (!grid) return;
+                
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                const today = now.getDate();
+                const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+                
+                document.getElementById('calMonthTitle').innerText = `${year}년 ${month}월 출석부`;
+                
+                const firstDay = new Date(year, month - 1, 1).getDay();
+                const daysInMonth = new Date(year, month, 0).getDate();
+                
+                let html = '';
+                const daysOfWeek = ['일','월','화','수','목','금','토'];
+                daysOfWeek.forEach(d => { 
+                    html += `<div style="text-align:center; font-size:10px; color:#ffeaa7; margin-bottom: 4px;">${d}</div>`; 
+                });
+                
+                for(let i=0; i<firstDay; i++) {
+                    html += `<div></div>`;
+                }
+                
+                const myName = window.myNickname || "익명";
+                const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
+                
+                for(let i=1; i<=daysInMonth; i++) {
+                    const isToday = (i === today);
+                    const isStamped = myAtt.includes(i);
+                    
+                    let cls = "cal-day";
+                    if (isToday && !isStamped) cls += " today";
+                    if (isStamped) cls += " stamped";
+                    
+                    const content = isStamped ? '🍀' : i;
+                    
+                    if (isToday && !isStamped) {
+                        html += `<div class="${cls}" onclick="stampAttendance(${year}, ${month}, ${i})" title="도장 찍기!">${content}</div>`;
+                    } else {
+                        html += `<div class="${cls}">${content}</div>`;
+                    }
+                }
+                grid.innerHTML = html;
+            }
+
+            // [추가] 도장 찍기 서버 전송 함수
+            function stampAttendance(y, m, d) {
+                const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+                const myName = window.myNickname || "익명";
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName }));
+                }
+            }
+
+            function toggleAttendancePanel() {
+                const d = document.getElementById('attendanceDropdown');
+                // 다른 패널 닫기
+                document.getElementById('settingsDropdown').style.display = 'none';
+                document.getElementById('noticeDropdown').style.display = 'none';
+                
+                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
+                if (d.style.display === 'block') renderCalendar();
+            }
+
+            function toggleSettingsPanel() {
+                const d = document.getElementById('settingsDropdown');
+                document.getElementById('attendanceDropdown').style.display = 'none';
+                document.getElementById('noticeDropdown').style.display = 'none';
+                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
+            }
+
+            function toggleNoticePanel() {
+                const d = document.getElementById('noticeDropdown');
+                document.getElementById('attendanceDropdown').style.display = 'none';
+                document.getElementById('settingsDropdown').style.display = 'none';
+                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
+            }
 
             function loadLocalBackground() {
                 const bgType = localStorage.getItem('myBgType');
@@ -293,15 +396,6 @@ def read_root():
                 if (!text) return "";
                 let formatted = makeLinksClickable(text);
                 return formatted.replace(/\n/g, '<br>');
-            }
-
-            function toggleNoticePanel() {
-                const dropdown = document.getElementById('noticeDropdown');
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    dropdown.style.display = 'block';
-                }
             }
 
             function addNotice() {
@@ -360,15 +454,6 @@ def read_root():
                     updateUsername(emptyIdx, myName);
                 } else {
                     alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!");
-                }
-            }
-
-            function toggleSettingsPanel() {
-                const dropdown = document.getElementById('settingsDropdown');
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    dropdown.style.display = 'block';
                 }
             }
 
@@ -601,7 +686,7 @@ def read_root():
                         }
                     }
                 }
-                alert("화 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
+                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
 
             function initCards() {
@@ -615,8 +700,6 @@ def read_root():
                     let sizeBtnText = card.is_large ? '작게' : '크게';
                     let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12';
                     let largeClass = card.is_large ? ' card-large' : '';
-
-                    const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle}">
@@ -1013,6 +1096,11 @@ def read_root():
                                     window.rawNotice = state.global_notice;
                                     document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice);
                                 }
+                                
+                                // [추가] 초기 상태에서 출석 데이터 받아오기
+                                if (state.attendance) {
+                                    window.attendanceData = state.attendance;
+                                }
 
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
@@ -1060,6 +1148,13 @@ def read_root():
                                 }
                                 
                                 applyEmptySlotVisibility();
+                            }
+                            // [추가] 출석 데이터 업데이트 수신
+                            else if (data.type === "attendance_update") {
+                                window.attendanceData = data.attendance;
+                                if (document.getElementById('attendanceDropdown').style.display === 'block') {
+                                    renderCalendar();
+                                }
                             }
                             else if (data.type === "username_change") {
                                 cardData[data.index].user = data.user;
@@ -1413,6 +1508,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await manager.broadcast(json.dumps(packet))
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
+            # [추가] 서버에서 출석체크 정보 받아서 저장하기
+            elif p_type == "attendance":
+                month = packet.get("month")
+                day = packet.get("day")
+                nickname = packet.get("nickname")
+                
+                if "attendance" not in server_state:
+                    server_state["attendance"] = {}
+                if month not in server_state["attendance"]:
+                    server_state["attendance"][month] = {}
+                if nickname not in server_state["attendance"][month]:
+                    server_state["attendance"][month][nickname] = []
+                    
+                if day not in server_state["attendance"][month][nickname]:
+                    server_state["attendance"][month][nickname].append(day)
+                    
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
                 
             else:
                 packet["sender"] = client_id
