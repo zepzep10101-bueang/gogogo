@@ -20,7 +20,6 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # 최대 인원을 16명으로 넉넉하게 확장
             if len(cards) > 16:
                 data["cards"] = cards[:16]
             elif len(cards) < 16:
@@ -144,29 +143,29 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            /* 대시보드 280px 꽉 잡아두기 */
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; min-width: 0; }
             
-            /* [누나 맞춤 마법 2] 인원수에 딱 맞게 예쁘게 커지는 스마트 바둑판! */
             .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; width: 100%; min-width: 0; }
-            .grid-1 { grid-template-columns: minmax(0, 800px); } /* 1명: 크게 1칸 */
-            .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* 2명: 2등분 큼직하게 */
-            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* 3명: 1줄로 3개 쫙 */
-            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* 4명: 2x2 바둑판 */
-            .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* 5~6명: 3x2 바둑판 */
-            .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } /* 7명 이상부터는 알아서 유연하게 */
+            .grid-1 { grid-template-columns: minmax(0, 800px); }
+            .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [마법 1] 비율 폭발 방지! aspect-ratio 삭제하고 min-height 부여해서 삐져나감 100% 방지 */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; cursor: grab; }
             
+            .timer-card:active { cursor: grabbing; }
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            /* [누나 맞춤 마법 1] 버튼을 얇은 한 줄로 합쳐서 화공 공간 살리기! (flex-wrap: nowrap) */
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            /* 비디오 박스도 공간을 알맞게 늘리도록 세팅 */
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -274,6 +273,67 @@ def read_root():
 
             window.rawNotice = ""; 
 
+            // [마법 2] 드래그 변수 
+            let dragSrcEl = null;
+
+            function handleDragStart(e) {
+                // 버튼이나 인풋 클릭할 때는 드래그 방지
+                if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'button') {
+                    return;
+                }
+                dragSrcEl = this;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', this.id);
+                this.style.opacity = '0.5';
+            }
+
+            function handleDragOver(e) {
+                if (e.preventDefault) { e.preventDefault(); }
+                e.dataTransfer.dropEffect = 'move';
+                return false;
+            }
+
+            function handleDragEnter(e) {
+                this.style.border = '2px dashed #ff7675';
+            }
+
+            function handleDragLeave(e) {
+                this.style.border = '1px solid rgba(255, 255, 255, 0.25)';
+            }
+
+            function handleDrop(e) {
+                if (e.stopPropagation) { e.stopPropagation(); }
+                
+                if (dragSrcEl && dragSrcEl !== this) {
+                    // DOM을 건드리면 영상이 끊기니까 껍데기(CSS order)만 바꿔서 내 화면에서만 위치 이동!
+                    let srcOrder = dragSrcEl.style.order || dragSrcEl.dataset.originalIndex;
+                    let destOrder = this.style.order || this.dataset.originalIndex;
+                    
+                    dragSrcEl.style.order = destOrder;
+                    this.style.order = srcOrder;
+                }
+                
+                this.style.border = '1px solid rgba(255, 255, 255, 0.25)';
+                return false;
+            }
+
+            function handleDragEnd(e) {
+                this.style.opacity = '1';
+                let cards = document.querySelectorAll('.timer-card');
+                cards.forEach(function (card) {
+                    card.style.border = '1px solid rgba(255, 255, 255, 0.25)';
+                });
+            }
+
+            function makeDraggable(el) {
+                el.addEventListener('dragstart', handleDragStart, false);
+                el.addEventListener('dragenter', handleDragEnter, false);
+                el.addEventListener('dragover', handleDragOver, false);
+                el.addEventListener('dragleave', handleDragLeave, false);
+                el.addEventListener('drop', handleDrop, false);
+                el.addEventListener('dragend', handleDragEnd, false);
+            }
+
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
@@ -335,7 +395,6 @@ def read_root():
                 const grid = document.getElementById('cardGrid');
                 if (grid) {
                     grid.className = 'card-grid';
-                    // [디오 마법] 인원수에 따른 완벽한 그리드 분할!
                     if (visibleCount === 1) grid.classList.add('grid-1');
                     else if (visibleCount === 2) grid.classList.add('grid-2');
                     else if (visibleCount === 3) grid.classList.add('grid-3');
@@ -612,12 +671,12 @@ def read_root():
                 cardData.forEach((card, index) => {
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
-                    let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
+                    let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크';
 
                     const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
-                        <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
+                        <div class="timer-card" id="card-card-${index}" style="${bgStyle} order: ${index};" data-original-index="${index}" draggable="true">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
@@ -625,7 +684,7 @@ def read_root():
                                     ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
-                                <!-- [디오 마법] 모든 버튼을 얇은 한 줄로 압축! -->
+                                <!-- 버튼 글씨 짧게 쳐서 한 줄로 압축! 화공 공간 엄청 넓어짐! -->
                                 <div class="btn-group">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -644,6 +703,9 @@ def read_root():
                         </div>
                     `;
                 });
+                
+                // 마우스 드래그 이벤트 장착 마법 발동!
+                document.querySelectorAll('.timer-card').forEach(makeDraggable);
                 
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
@@ -685,7 +747,7 @@ def read_root():
             function applyMosaicUI(index, isMosaic) {
                 const btn = document.getElementById(`share-btn-mosaic-${index}`);
                 if (btn) {
-                    btn.innerText = isMosaic ? "모자이크 해제" : "모자이크";
+                    btn.innerText = isMosaic ? "해제" : "모자이크";
                     btn.style.background = isMosaic ? "#e17055" : "#636e72";
                 }
 
