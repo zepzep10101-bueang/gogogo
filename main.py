@@ -215,6 +215,8 @@ def read_root():
                         <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
                             <div style="display: flex; gap: 4px;">
+                                <!-- [디오 마법] 내 자리 하나 더 펴기 버튼 추가 -->
+                                <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리 추가</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold;" onclick="toggleNoticePanel()">📢 공지사항</button>
@@ -343,6 +345,25 @@ def read_root():
                     else if (visibleCount === 3) grid.classList.add('grid-3');
                     else if (visibleCount === 4) grid.classList.add('grid-4');
                     else grid.classList.add('grid-max');
+                }
+            }
+
+            // [디오의 마법] 숨어있는 빈자리를 찾아서 내 자리로 펴기!
+            function addMySlot() {
+                const myName = window.myNickname || "익명";
+                let emptyIdx = -1;
+                for (let i = 0; i < cardData.length; i++) {
+                    if (cardData[i].user.startsWith("자리")) {
+                        emptyIdx = i;
+                        break;
+                    }
+                }
+                if (emptyIdx !== -1) {
+                    const inputEl = document.getElementById(`username-${emptyIdx}`);
+                    if (inputEl) inputEl.value = myName;
+                    updateUsername(emptyIdx, myName);
+                } else {
+                    alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!");
                 }
             }
 
@@ -607,6 +628,7 @@ def read_root():
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
+                                    ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
                                 <div class="btn-group">
