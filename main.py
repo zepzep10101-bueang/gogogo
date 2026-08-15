@@ -168,7 +168,7 @@ def read_root():
             
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
 
-            /* [추가] 팝업창(모달) 스타일 */
+            /* 팝업창(모달) 스타일 */
             .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; }
             .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
             .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; }
@@ -185,6 +185,13 @@ def read_root():
             .status-offline { background: #d63031; color: white; }
             
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+
+            /* 달력 디자인 */
+            .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+            .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
+            .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
+            .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
+            .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
         </style>
     </head>
     <body>
@@ -201,7 +208,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- [추가] 공지사항 모달 -->
+        <!-- 공지사항 모달 -->
         <div id="noticeModal" class="modal-overlay" onclick="if(event.target===this) closeModal('noticeModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('noticeModal')">❌</button>
@@ -214,18 +221,26 @@ def read_root():
             </div>
         </div>
 
-        <!-- [추가] 출석현황 모달 -->
+        <!-- [수정] 출석현황 모달 (달력 + 랭킹 합침) -->
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
-            <div class="modal-box">
+            <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
                 <h3 style="margin-bottom: 15px; font-size: 16px; text-align: center;">🏆 출석 현황</h3>
-                <div style="text-align: center; margin-bottom: 15px;">
-                    <button onclick="stampMyAttendance()" style="background:#27ae60; color:white; border:none; border-radius:5px; padding:10px 20px; font-weight:bold; cursor:pointer; width:100%; font-size:14px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">🍀 오늘 출석 도장 찍기!</button>
+                
+                <!-- 1. 개인 달력 -->
+                <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; text-align: center;" id="calMonthTitle">🍀 내 출석부</div>
+                    <div class="calendar-grid" id="calendarGrid"></div>
+                    <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">빨간 테두리(오늘)를 눌러서 도장을 찍어봐!</div>
                 </div>
+
+                <!-- 2. 모두의 랭킹 -->
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 달 출석 랭킹</div>
-                    <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6;">랭킹 로딩 중...</div>
+                    <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6; max-height: 100px; overflow-y: auto;">랭킹 로딩 중...</div>
                 </div>
+
+                <!-- 3. 오늘 출석자 -->
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;">
                     <div style="font-size: 13px; font-weight: bold; color: #81ecec; margin-bottom: 8px;">✅ 오늘 출석한 사람</div>
                     <div id="attTodayList" style="font-size: 12px; color: #ddd; line-height: 1.6; display: flex; flex-wrap: wrap; gap: 4px;">대기 중...</div>
@@ -233,7 +248,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- [추가] 배경설정 모달 -->
+        <!-- 배경설정 모달 -->
         <div id="settingsModal" class="modal-overlay" onclick="if(event.target===this) closeModal('settingsModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('settingsModal')">❌</button>
@@ -270,7 +285,6 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#0984e3; color:white; flex: 1; padding: 6px 0;" onclick="addMySlot()">➕ 자리</button>
                             </div>
                             <div style="display: flex; gap: 4px; width: 100%;">
-                                <!-- [수정] 팝업 열기 함수 연결 -->
                                 <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="openModal('settingsModal')">⚙️ 내 배경</button>
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
@@ -313,7 +327,6 @@ def read_root():
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
 
-            // [추가] 모달 제어 함수
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
                 if (modalId === 'attendanceModal') {
@@ -324,25 +337,67 @@ def read_root():
                 document.getElementById(modalId).style.display = 'none';
             }
 
+            // [수정] 달력과 랭킹을 동시에 렌더링하는 함수
             function renderAttendanceBoard() {
                 const now = new Date();
                 const y = now.getFullYear();
                 const m = now.getMonth() + 1;
-                const d = now.getDate();
+                const today = now.getDate();
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 
+                // 1. 개인 달력 렌더링
+                const calTitleEl = document.getElementById('calMonthTitle');
+                if (calTitleEl) calTitleEl.innerText = `🍀 ${y}년 ${m}월 내 출석부`;
+                
+                const grid = document.getElementById('calendarGrid');
+                if (grid) {
+                    const firstDay = new Date(y, m - 1, 1).getDay();
+                    const daysInMonth = new Date(y, m, 0).getDate();
+                    
+                    let html = '';
+                    const daysOfWeek = ['일','월','화','수','목','금','토'];
+                    daysOfWeek.forEach(d => { 
+                        html += `<div style="text-align:center; font-size:10px; color:#ffeaa7; margin-bottom: 4px;">${d}</div>`; 
+                    });
+                    
+                    for(let i=0; i<firstDay; i++) {
+                        html += `<div></div>`;
+                    }
+                    
+                    const myName = window.myNickname || "익명";
+                    const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
+                    
+                    for(let i=1; i<=daysInMonth; i++) {
+                        const isToday = (i === today);
+                        const isStamped = myAtt.includes(i);
+                        
+                        let cls = "cal-day";
+                        if (isToday && !isStamped) cls += " today";
+                        if (isStamped) cls += " stamped";
+                        
+                        const content = isStamped ? '🍀' : i;
+                        
+                        if (isToday && !isStamped) {
+                            html += `<div class="${cls}" onclick="stampAttendance(${y}, ${m}, ${i})" title="오늘 출석 도장 찍기!">${content}</div>`;
+                        } else {
+                            html += `<div class="${cls}">${content}</div>`;
+                        }
+                    }
+                    grid.innerHTML = html;
+                }
+
+                // 2. 랭킹 및 오늘 출석자 렌더링
                 const titleEl = document.getElementById('rankTitle');
-                if (titleEl) titleEl.innerText = `🏆 ${m}월 출석 랭킹`;
+                if (titleEl) titleEl.innerText = `🏆 ${m}월 모두의 랭킹`;
 
                 const monthData = window.attendanceData[monthStr] || {};
-                
                 let rankArr = [];
                 let todayAttendees = [];
                 
                 for (let user in monthData) {
                     const stamps = monthData[user];
                     rankArr.push({ name: user, count: stamps.length });
-                    if (stamps.includes(d)) {
+                    if (stamps.includes(today)) {
                         todayAttendees.push(user);
                     }
                 }
@@ -377,16 +432,13 @@ def read_root():
                 if (todayEl) todayEl.innerHTML = todayHtml;
             }
 
-            function stampMyAttendance() {
-                const now = new Date();
-                const y = now.getFullYear();
-                const m = now.getMonth() + 1;
-                const d = now.getDate();
+            // [수정] 달력 클릭 시 도장 찍기
+            function stampAttendance(y, m, d) {
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
                 
                 if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) {
-                    alert("누나(작가님)! 오늘은 이미 클로버 도장을 꾹 찍었어! 내일 또 찍으러 와 🍀");
+                    alert("누나(작가님)! 오늘은 이미 클로버 도장을 꾹 찍었어!");
                     return;
                 }
 
