@@ -143,17 +143,17 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; min-width: 0; }
+            /* [마법] 전체 화면 가로 폭을 1800px로 넉넉하게 넓히고, 카드 쪽을 5배 넓게, 우측 패널을 240px로 쏙 줄여서 채팅창 공간 대확보! */
+            .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
             .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; width: 100%; min-width: 0; }
-            .grid-1 { grid-template-columns: minmax(0, 800px); }
+            .grid-1 { grid-template-columns: minmax(0, 900px); }
             .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+            .grid-max { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
             
-            /* [마법] 카드 모서리를 마우스로 잡고 자유롭게 늘릴 수 있는 resize 기능 탑재! */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-width: 250px; min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: box-shadow 0.3s ease; resize: both; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; cursor: move; }
@@ -165,16 +165,17 @@ def read_root():
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
-            .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
-            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; word-break: break-all; }
-            .chat-input { display: flex; margin-top: 10px; gap: 4px; }
-            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
-            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
+            /* [채팅창 쾌적화 마법] 채팅 상자를 더 길고 시원하게 늘림! */
+            .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 13px; color: #ddd; line-height: 1.5; word-break: break-all; padding-right: 4px; }
+            .chat-input { display: flex; margin-top: 8px; gap: 4px; }
+            .chat-input input { flex-grow: 1; padding: 7px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 12px; }
+            .chat-input button { padding: 7px 10px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; flex-shrink: 0; font-size: 12px; }
             
             .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
@@ -206,41 +207,41 @@ def read_root():
             <div class="card-grid" id="cardGrid"></div>
 
             <div class="side-panel">
-                <div class="panel-box">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 5px;">
-                        <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
-                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-grow: 1;">
-                            <div style="display: flex; gap: 4px;">
-                                <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리 추가</button>
-                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
+                <div class="panel-box" style="flex-shrink: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
+                        <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
+                        <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-grow: 1;">
+                            <div style="display: flex; gap: 3px;">
+                                <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리</button>
+                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경</button>
                             </div>
-                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold; margin-left: 0;" onclick="toggleNoticePanel()">📢 공지사항</button>
+                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold; margin-left: 0;" onclick="toggleNoticePanel()">📢 공지</button>
                         </div>
                     </div>
 
-                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
-                    <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:4px;">연결 중...</span>
+                    <p style="margin-top:6px; font-size:13px;">인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
-                    <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
+                    <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
 
-                    <div id="noticeDropdown" style="display: none; margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
-                        <div style="text-align: right; margin-bottom: 8px;">
-                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
-                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 전체 수정/삭제</button>
+                    <div id="noticeDropdown" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
+                        <div style="text-align: right; margin-bottom: 6px;">
+                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:9px; cursor:pointer; font-weight:bold; margin-right: 3px;">➕ 추가</button>
+                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:9px; cursor:pointer; font-weight:bold;">✏️ 수정/삭제</button>
                         </div>
-                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all;">공지사항 로딩 중...</div>
+                        <div id="noticeText" style="font-size: 12px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
                     <div class="settings-dropdown" id="settingsDropdown">
-                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 전체 배경 꾸미기</div>
+                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 배경 꾸미기</div>
                         <div class="bg-control">
-                            <div style="font-size: 10px; color: #aaa;">일반 사진 선택 (움짤X):</div>
-                            <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%;" onchange="setLocalBackground(event)">
+                            <div style="font-size: 10px; color: #aaa;">일반 사진 (움짤X):</div>
+                            <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%;" onchange="setLocalBackground(event)">
                             
-                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크 입력:</div>
+                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크:</div>
                             <div style="display:flex; gap:3px;">
-                                <input type="text" id="bgYoutubeInput" placeholder="유튜브 URL" style="flex-grow:1; font-size:10px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
-                                <button onclick="setYoutubeBackground()" style="font-size:10px; padding:3px 6px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
+                                <input type="text" id="bgYoutubeInput" placeholder="URL" style="flex-grow:1; font-size:9px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
+                                <button onclick="setYoutubeBackground()" style="font-size:9px; padding:3px 5px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
                             </div>
                         </div>
                     </div>
@@ -248,10 +249,10 @@ def read_root():
 
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap: 4px; flex-wrap: wrap;">
-                        <h3 style="font-size: 15px; white-space: nowrap;">💬 실시간 채팅</h3>
+                        <h3 style="font-size: 14px; white-space: nowrap;">💬 실시간 채팅</h3>
                         <div style="display:flex; gap: 2px;">
-                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공복구</button>
-                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
+                            <button onclick="forceRecoverWebRTC()" class="recovery-btn" style="font-size:9px; padding:2px 4px;">🔄 복구</button>
+                            <button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -447,7 +448,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
