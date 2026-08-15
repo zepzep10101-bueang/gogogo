@@ -23,12 +23,14 @@ def load_data():
             if len(cards) > 16:
                 data["cards"] = cards[:16]
             elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 16)]
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
                 card["user"] = f"자리{i+1}"
                 card["is_mosaic"] = False
+                if "is_large" not in card:
+                    card["is_large"] = False
                 if "stopwatch" not in card:
                     card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
                 if "work_start_time" not in card:
@@ -43,7 +45,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
@@ -145,22 +147,24 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; width: 100%; min-width: 0; }
-            .grid-1 { grid-template-columns: minmax(0, 900px); }
-            .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .grid-max { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+            /* [수정] 자유 배치 대신 깔끔한 반응형 바둑판 그리드로 변경! 빈 공간이 생기면 알아서 채워넣음 (dense) */
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-width: 250px; min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: box-shadow 0.3s ease; resize: both; }
+            /* [수정] 크기 조절(resize) 제거, 트랜지션 효과 추가 */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            
+            /* [수정] 크게 버튼 눌렀을 때 차지할 면적 (2칸x2칸) */
+            @media (min-width: 700px) {
+                .card-large { grid-column: span 2; grid-row: span 2; min-height: 500px; }
+            }
 
-            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; cursor: move; }
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            /* [수정] 영상이 안 짤리고 화면 상자 안에 가득 예쁘게 나오게 보존 */
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -268,54 +272,6 @@ def read_root():
 
             window.rawNotice = ""; 
 
-            function makeFreeDraggable(el) {
-                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                
-                const header = el.querySelector('.card-header');
-                if (header) {
-                    header.onmousedown = dragMouseDown;
-                } else {
-                    el.onmousedown = dragMouseDown;
-                }
-
-                function dragMouseDown(e) {
-                    if (['input', 'button'].includes(e.target.tagName.toLowerCase())) {
-                        return;
-                    }
-                    e.preventDefault();
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
-                    document.onmouseup = closeDragElement;
-                    document.onmousemove = elementDrag;
-                    
-                    if (el.style.position !== 'fixed') {
-                        const rect = el.getBoundingClientRect();
-                        el.style.position = 'fixed';
-                        el.style.zIndex = '9999';
-                        el.style.width = rect.width + 'px';
-                        el.style.height = rect.height + 'px';
-                        el.style.left = rect.left + 'px';
-                        el.style.top = rect.top + 'px';
-                        el.style.boxShadow = '0 10px 25px rgba(0,0,0,0.8)';
-                    }
-                }
-
-                function elementDrag(e) {
-                    e.preventDefault();
-                    pos1 = pos3 - e.clientX;
-                    pos2 = pos4 - e.clientY;
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
-                    el.style.top = (el.offsetTop - pos2) + "px";
-                    el.style.left = (el.offsetLeft - pos1) + "px";
-                }
-
-                function closeDragElement() {
-                    document.onmouseup = null;
-                    document.onmousemove = null;
-                }
-            }
-
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>');
@@ -360,7 +316,6 @@ def read_root():
             }
 
             function applyEmptySlotVisibility() {
-                let visibleCount = 0;
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
@@ -368,21 +323,9 @@ def read_root():
                             cardEl.style.display = "none";
                         } else {
                             cardEl.style.display = "flex";
-                            visibleCount++;
                         }
                     }
                 });
-
-                const grid = document.getElementById('cardGrid');
-                if (grid) {
-                    grid.className = 'card-grid';
-                    if (visibleCount === 1) grid.classList.add('grid-1');
-                    else if (visibleCount === 2) grid.classList.add('grid-2');
-                    else if (visibleCount === 3) grid.classList.add('grid-3');
-                    else if (visibleCount === 4) grid.classList.add('grid-4');
-                    else if (visibleCount <= 6) grid.classList.add('grid-5-6');
-                    else grid.classList.add('grid-max');
-                }
             }
 
             function addMySlot() {
@@ -446,7 +389,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -650,11 +593,16 @@ def read_root():
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크';
+                    
+                    // [추가] 사이즈 버튼 텍스트 및 클래스
+                    let sizeBtnText = card.is_large ? '작게' : '크게';
+                    let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12';
+                    let largeClass = card.is_large ? ' card-large' : '';
 
                     const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
-                        <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
+                        <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
@@ -667,6 +615,7 @@ def read_root():
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
                                 </div>
                             </div>
@@ -680,10 +629,33 @@ def read_root():
                     `;
                 });
                 
-                document.querySelectorAll('.timer-card').forEach(makeFreeDraggable);
-
+                // 드래그 기능 완전 삭제 (더 이상 상자가 이탈하지 않음)
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
+            }
+
+            function toggleSize(index) {
+                const newState = !cardData[index].is_large;
+                cardData[index].is_large = newState;
+                applySizeUI(index, newState);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "toggle_size", index: index, is_large: newState }));
+                }
+            }
+
+            function applySizeUI(index, isLarge) {
+                const cardEl = document.getElementById(`card-card-${index}`);
+                const btn = document.getElementById(`size-btn-${index}`);
+                
+                if (cardEl) {
+                    if (isLarge) cardEl.classList.add('card-large');
+                    else cardEl.classList.remove('card-large');
+                }
+                if (btn) {
+                    btn.innerText = isLarge ? "작게" : "크게";
+                    btn.style.background = isLarge ? "#e67e22" : "#f39c12";
+                }
             }
 
             function handleMosaicClick(index) {
@@ -1030,14 +1002,26 @@ def read_root():
                                             cardData[i].user = card.user;
                                             cardData[i].card_bg = card.card_bg;
                                             cardData[i].is_mosaic = card.is_mosaic || false;
+                                            cardData[i].is_large = card.is_large || false;
                                             cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
                                             cardData[i].work_start_time = card.work_start_time || 0;
+                                            
                                             applyMosaicUI(i, cardData[i].is_mosaic);
+                                            applySizeUI(i, cardData[i].is_large);
 
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
                                             if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
+                                            
+                                            const wtEl = document.getElementById(`work-timer-${i}`);
+                                            if (wtEl) {
+                                                if (card.work_start_time) {
+                                                    wtEl.style.display = 'inline-block';
+                                                } else {
+                                                    wtEl.style.display = 'none';
+                                                }
+                                            }
                                             
                                             const box = document.getElementById(`stream-box-${i}`);
                                             if (box && !box.querySelector('video')) {
@@ -1097,6 +1081,12 @@ def read_root():
                                 if (cardData[data.index]) {
                                     cardData[data.index].is_mosaic = data.is_mosaic;
                                     applyMosaicUI(data.index, data.is_mosaic);
+                                }
+                            }
+                            else if (data.type === "toggle_size") {
+                                if (cardData[data.index]) {
+                                    cardData[data.index].is_large = data.is_large;
+                                    applySizeUI(data.index, data.is_large);
                                 }
                             }
                             else if (data.type === "start_share") {
@@ -1445,6 +1435,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "toggle_size":
+                    server_state["cards"][packet["index"]]["is_large"] = packet.get("is_large", False)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
@@ -1478,6 +1471,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     server_state["cards"][r_idx]["work_start_time"] = 0
+                    server_state["cards"][r_idx]["is_large"] = False
                     server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
                     reverted_indexes.append(r_idx)
                     
