@@ -144,16 +144,17 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            /* [마법 1] 대시보드가 밑으로 안 도망가게 다시 고정! 대신 min-width: 0을 줘서 억지로라도 같이 줄어들게 만들었어! */
+            /* 대시보드 280px 꽉 잡아두기 */
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; min-width: 0; }
             
-            /* [마법 2] 카드들이 안 잘리고 무한대로 쪼그라들 수 있게 최소 크기(minmax 0)로 해제! */
-            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; grid-auto-flow: dense; width: 100%; min-width: 0; }
-            .grid-1 { grid-template-columns: minmax(0, 450px); }
-            .grid-2 { grid-template-columns: repeat(2, minmax(0, 450px)); }
-            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } 
-            .grid-max { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); } 
+            /* [누나 맞춤 마법 2] 인원수에 딱 맞게 예쁘게 커지는 스마트 바둑판! */
+            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; width: 100%; min-width: 0; }
+            .grid-1 { grid-template-columns: minmax(0, 800px); } /* 1명: 크게 1칸 */
+            .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* 2명: 2등분 큼직하게 */
+            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* 3명: 1줄로 3개 쫙 */
+            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* 4명: 2x2 바둑판 */
+            .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* 5~6명: 3x2 바둑판 */
+            .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } /* 7명 이상부터는 알아서 유연하게 */
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
@@ -161,13 +162,13 @@ def read_root():
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: wrap; }
-            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; flex-grow: 1; }
+            /* [누나 맞춤 마법 1] 버튼을 얇은 한 줄로 합쳐서 화공 공간 살리기! (flex-wrap: nowrap) */
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
+            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
 
-            /* 대시보드도 밖으로 안 삐져나가게 꽉 잡기 */
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
@@ -334,10 +335,12 @@ def read_root():
                 const grid = document.getElementById('cardGrid');
                 if (grid) {
                     grid.className = 'card-grid';
+                    // [디오 마법] 인원수에 따른 완벽한 그리드 분할!
                     if (visibleCount === 1) grid.classList.add('grid-1');
                     else if (visibleCount === 2) grid.classList.add('grid-2');
                     else if (visibleCount === 3) grid.classList.add('grid-3');
                     else if (visibleCount === 4) grid.classList.add('grid-4');
+                    else if (visibleCount <= 6) grid.classList.add('grid-5-6');
                     else grid.classList.add('grid-max');
                 }
             }
@@ -622,14 +625,15 @@ def read_root():
                                     ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
+                                <!-- [디오 마법] 모든 버튼을 얇은 한 줄로 압축! -->
                                 <div class="btn-group">
-                                    <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675; flex: 2;" onclick="toggleShare(${index}, 'screen')">화공</button>
-                                    <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3; flex: 2;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad; flex: 1.5;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg}; flex: 2.5;" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black; flex: 1.5;" onclick="toggleCardSize(${index})">크게</button>
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
+                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
                                 </div>
-                                <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; width: 100%; display:none; margin-top: 2px;" onclick="toggleViewerSound(${index})">소리끄기</button>
                             </div>
                             
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
@@ -673,7 +677,7 @@ def read_root():
                     btn.innerText = "소리켜기";
                     btn.style.background = "#b2bec3"; 
                 } else {
-                    btn.innerText = "소리끄기";
+                    btn.innerText = "음소거";
                     btn.style.background = "#00b894"; 
                 }
             }
@@ -1203,7 +1207,6 @@ def read_root():
                             statusEl.className = "status-indicator status-offline";
                         }
                         
-                        // [마법 3] 누나가 서버를 껐다 켜서 통신이 끊기면, 접속자들은 3초 뒤에 알아서 튕기고 화면을 새로고침해!
                         setTimeout(() => {
                             window.location.reload();
                         }, 3000);
