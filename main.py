@@ -144,21 +144,16 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            /* [마법 1] 대시보드는 무조건 280px 고정! 안 잘리게 철벽 방어! */
-            .main-container { display: grid; grid-template-columns: 1fr 280px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
+            /* [마법 1] 대시보드가 밑으로 안 도망가게 다시 고정! 대신 min-width: 0을 줘서 억지로라도 같이 줄어들게 만들었어! */
+            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; min-width: 0; }
             
-            /* [마법 2] 창이 950px 이하로 좁아지면 대시보드를 아래로 스르륵 내리기! (무게 0) */
-            @media (max-width: 950px) {
-                .main-container { grid-template-columns: 1fr; }
-                .side-panel { position: static; height: auto; margin-top: 20px; }
-            }
-
-            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; grid-auto-flow: dense; width: 100%; }
-            .grid-1 { grid-template-columns: minmax(300px, 450px); }
-            .grid-2 { grid-template-columns: repeat(2, minmax(300px, 450px)); }
-            .grid-3 { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
-            .grid-4 { grid-template-columns: repeat(2, minmax(220px, 1fr)); } 
-            .grid-max { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } 
+            /* [마법 2] 카드들이 안 잘리고 무한대로 쪼그라들 수 있게 최소 크기(minmax 0)로 해제! */
+            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; grid-auto-flow: dense; width: 100%; min-width: 0; }
+            .grid-1 { grid-template-columns: minmax(0, 450px); }
+            .grid-2 { grid-template-columns: repeat(2, minmax(0, 450px)); }
+            .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } 
+            .grid-max { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); } 
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
@@ -166,31 +161,31 @@ def read_root():
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; }
-            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; }
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: wrap; }
+            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; flex-grow: 1; }
 
             .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); }
+            /* 대시보드도 밖으로 안 삐져나가게 꽉 잡기 */
+            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
-            
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 5px; }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
-            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
-            .chat-input { display: flex; margin-top: 10px; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; word-break: break-all; }
+            .chat-input { display: flex; margin-top: 10px; gap: 4px; }
             .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
-            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; flex-shrink: 0; }
+            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
             
             .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             
-            .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; }
+            .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
         </style>
     </head>
     <body>
@@ -216,14 +211,14 @@ def read_root():
 
             <div class="side-panel">
                 <div class="panel-box">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 5px;">
                         <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
-                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
+                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-grow: 1;">
                             <div style="display: flex; gap: 4px;">
                                 <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리 추가</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
                             </div>
-                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold;" onclick="toggleNoticePanel()">📢 공지사항</button>
+                            <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold; margin-left: 0;" onclick="toggleNoticePanel()">📢 공지사항</button>
                         </div>
                     </div>
 
@@ -256,11 +251,11 @@ def read_root():
                 </div>
 
                 <div class="panel-box chat-box">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="font-size: 15px;">💬 실시간 채팅</h3>
-                        <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap: 4px; flex-wrap: wrap;">
+                        <h3 style="font-size: 15px; white-space: nowrap;">💬 실시간 채팅</h3>
+                        <div style="display:flex; gap: 2px;">
                             <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공복구</button>
-                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
+                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -1203,9 +1198,15 @@ def read_root():
                     ws.onclose = function() {
                         if (pingInterval) clearInterval(pingInterval);
                         const statusEl = document.getElementById('connStatus');
-                        statusEl.innerText = "연결 끊김";
-                        statusEl.className = "status-indicator status-offline";
-                        setTimeout(connectWebSocket, 2000);
+                        if (statusEl) {
+                            statusEl.innerText = "서버 업데이트 중...";
+                            statusEl.className = "status-indicator status-offline";
+                        }
+                        
+                        // [마법 3] 누나가 서버를 껐다 켜서 통신이 끊기면, 접속자들은 3초 뒤에 알아서 튕기고 화면을 새로고침해!
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 3000);
                     };
                 } catch(e) {
                     setTimeout(connectWebSocket, 2000);
