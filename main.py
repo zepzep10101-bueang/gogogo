@@ -143,7 +143,6 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            /* [마법] 전체 화면 가로 폭을 1800px로 넉넉하게 넓히고, 카드 쪽을 5배 넓게, 우측 패널을 240px로 쏙 줄여서 채팅창 공간 대확보! */
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
             .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; width: 100%; min-width: 0; }
@@ -170,7 +169,6 @@ def read_root():
             .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 2px; white-space: nowrap; }
             .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
-            /* [채팅창 쾌적화 마법] 채팅 상자를 더 길고 시원하게 늘림! */
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
             #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 13px; color: #ddd; line-height: 1.5; word-break: break-all; padding-right: 4px; }
             .chat-input { display: flex; margin-top: 8px; gap: 4px; }
