@@ -153,7 +153,6 @@ def read_root():
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
-            /* [화공/캠 우선 배치 마법] 버튼들이 좁아져도 화공/캠이 최우선으로 안 잘리게 설계 */
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; }
 
@@ -426,7 +425,9 @@ def read_root():
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
-                if (box.querySelector('video')) return; 
+
+                const existingVideo = box.querySelector('video');
+                if (existingVideo) existingVideo.remove();
 
                 const card = cardData[index];
                 if (card.stopwatch && card.stopwatch.is_active) {
@@ -602,12 +603,15 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
 
+                    const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
+
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
+                                    ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
                                 <div class="btn-group">
