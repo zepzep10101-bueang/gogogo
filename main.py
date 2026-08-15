@@ -145,11 +145,11 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [하이브리드 스크롤 마법] 빈자리를 다 켜도 찌그러짐 없이 스크롤되면서 예쁘게 배치! */
-            .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; height: 100%; overflow-y: auto; padding-right: 10px; align-content: start; }
+            /* [완벽 스크롤 마법] 화면 전체 높이에 딱 맞춰서 카드 영역 내부에 깔끔한 스크롤바가 생기도록 수정! */
+            .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; height: calc(100vh - 40px); overflow-y: auto; padding-right: 8px; align-content: start; }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; height: 300px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .timer-card.large { grid-column: span 2; grid-row: span 2; height: 615px; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; height: 280px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .timer-card.large { grid-column: span 2; grid-row: span 2; height: 575px; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
