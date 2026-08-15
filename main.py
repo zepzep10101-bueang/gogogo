@@ -153,20 +153,19 @@ def read_root():
             .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
             
-            /* [마법 1] 비율 폭발 방지! aspect-ratio 삭제하고 min-height 부여해서 삐져나감 100% 방지 */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; cursor: grab; }
+            /* 카드 스타일: 최소 높이 250px 지정으로 찌그러짐 완벽 방지! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: box-shadow 0.3s ease; }
             
-            .timer-card:active { cursor: grabbing; }
             .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
-            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
+            /* 마우스 커서를 헤더에 올렸을 때 '움직일 수 있음'을 알려주는 마법 */
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; cursor: move; }
             
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* 비디오 박스도 공간을 알맞게 늘리도록 세팅 */
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
@@ -273,65 +272,57 @@ def read_root():
 
             window.rawNotice = ""; 
 
-            // [마법 2] 드래그 변수 
-            let dragSrcEl = null;
-
-            function handleDragStart(e) {
-                // 버튼이나 인풋 클릭할 때는 드래그 방지
-                if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'button') {
-                    return;
-                }
-                dragSrcEl = this;
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', this.id);
-                this.style.opacity = '0.5';
-            }
-
-            function handleDragOver(e) {
-                if (e.preventDefault) { e.preventDefault(); }
-                e.dataTransfer.dropEffect = 'move';
-                return false;
-            }
-
-            function handleDragEnter(e) {
-                this.style.border = '2px dashed #ff7675';
-            }
-
-            function handleDragLeave(e) {
-                this.style.border = '1px solid rgba(255, 255, 255, 0.25)';
-            }
-
-            function handleDrop(e) {
-                if (e.stopPropagation) { e.stopPropagation(); }
+            // [자유 배치 마법] 카드를 그리드에서 뽑아서 마우스 위치대로 자유롭게 끌고 다니기!
+            function makeFreeDraggable(el) {
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
                 
-                if (dragSrcEl && dragSrcEl !== this) {
-                    // DOM을 건드리면 영상이 끊기니까 껍데기(CSS order)만 바꿔서 내 화면에서만 위치 이동!
-                    let srcOrder = dragSrcEl.style.order || dragSrcEl.dataset.originalIndex;
-                    let destOrder = this.style.order || this.dataset.originalIndex;
+                // 마우스로 잡을 수 있는 손잡이를 카드의 위쪽 헤더(이름 써진 부분)로 지정!
+                const header = el.querySelector('.card-header');
+                if (header) {
+                    header.onmousedown = dragMouseDown;
+                } else {
+                    el.onmousedown = dragMouseDown;
+                }
+
+                function dragMouseDown(e) {
+                    // 버튼이나 텍스트 입력창을 클릭했을 때는 드래그 취소 (클릭 방해 방지)
+                    if (['input', 'button'].includes(e.target.tagName.toLowerCase())) {
+                        return;
+                    }
+                    e.preventDefault();
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
                     
-                    dragSrcEl.style.order = destOrder;
-                    this.style.order = srcOrder;
+                    // [핵심] 카드를 마우스로 처음 잡는 순간, 바둑판에서 쏙 빼서 둥둥 띄우기 (fixed 모드)
+                    if (el.style.position !== 'fixed') {
+                        const rect = el.getBoundingClientRect();
+                        el.style.position = 'fixed';
+                        el.style.zIndex = '9999'; // 제일 위로 올리기
+                        el.style.width = rect.width + 'px';
+                        el.style.height = rect.height + 'px';
+                        el.style.left = rect.left + 'px';
+                        el.style.top = rect.top + 'px';
+                        el.style.boxShadow = '0 10px 25px rgba(0,0,0,0.8)'; // 들린 것처럼 그림자 효과
+                    }
                 }
-                
-                this.style.border = '1px solid rgba(255, 255, 255, 0.25)';
-                return false;
-            }
 
-            function handleDragEnd(e) {
-                this.style.opacity = '1';
-                let cards = document.querySelectorAll('.timer-card');
-                cards.forEach(function (card) {
-                    card.style.border = '1px solid rgba(255, 255, 255, 0.25)';
-                });
-            }
+                function elementDrag(e) {
+                    e.preventDefault();
+                    // 마우스가 이동한 거리만큼 카드의 좌표도 따라가기!
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    el.style.top = (el.offsetTop - pos2) + "px";
+                    el.style.left = (el.offsetLeft - pos1) + "px";
+                }
 
-            function makeDraggable(el) {
-                el.addEventListener('dragstart', handleDragStart, false);
-                el.addEventListener('dragenter', handleDragEnter, false);
-                el.addEventListener('dragover', handleDragOver, false);
-                el.addEventListener('dragleave', handleDragLeave, false);
-                el.addEventListener('drop', handleDrop, false);
-                el.addEventListener('dragend', handleDragEnd, false);
+                function closeDragElement() {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                }
             }
 
             function makeLinksClickable(text) {
@@ -676,7 +667,7 @@ def read_root():
                     const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
-                        <div class="timer-card" id="card-card-${index}" style="${bgStyle} order: ${index};" data-original-index="${index}" draggable="true">
+                        <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
@@ -684,7 +675,6 @@ def read_root():
                                     ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
-                                <!-- 버튼 글씨 짧게 쳐서 한 줄로 압축! 화공 공간 엄청 넓어짐! -->
                                 <div class="btn-group">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -704,9 +694,9 @@ def read_root():
                     `;
                 });
                 
-                // 마우스 드래그 이벤트 장착 마법 발동!
-                document.querySelectorAll('.timer-card').forEach(makeDraggable);
-                
+                // [마법 장착] 모든 카드에 자유 배치(드래그 앤 플로팅) 기능 달아주기!
+                document.querySelectorAll('.timer-card').forEach(makeFreeDraggable);
+
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
             }
