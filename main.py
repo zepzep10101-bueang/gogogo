@@ -147,16 +147,17 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* [수정] 자유 배치 대신 깔끔한 반응형 바둑판 그리드로 변경! 빈 공간이 생기면 알아서 채워넣음 (dense) */
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            /* [수정] 무조건 4열(바둑판) 유지, 윈도우 창이 작아지면 3열, 2열로 자연스럽게 줄어듦 */
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             
-            /* [수정] 크기 조절(resize) 제거, 트랜지션 효과 추가 */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            /* [수정] 크게 버튼 눌렀을 때 차지할 면적 (2칸x2칸) */
-            @media (min-width: 700px) {
-                .card-large { grid-column: span 2; grid-row: span 2; min-height: 500px; }
-            }
+            /* [수정] 상자 기본 크기 고정 및 둥근 테두리 (예전 감성) */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            
+            /* [수정] '크게' 눌렀을 때 차지할 면적 (가로 2칸, 세로 2칸) */
+            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
@@ -164,7 +165,6 @@ def read_root():
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
-            /* [수정] 영상이 안 짤리고 화면 상자 안에 가득 예쁘게 나오게 보존 */
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -316,14 +316,11 @@ def read_root():
             }
 
             function applyEmptySlotVisibility() {
+                // [수정] 빈자리 숨기지 않고 16개 상자 모두 띄워둠! (바둑판 유지)
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
-                        if (card.user.startsWith("자리")) {
-                            cardEl.style.display = "none";
-                        } else {
-                            cardEl.style.display = "flex";
-                        }
+                        cardEl.style.display = "flex";
                     }
                 });
             }
@@ -594,7 +591,6 @@ def read_root():
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크';
                     
-                    // [추가] 사이즈 버튼 텍스트 및 클래스
                     let sizeBtnText = card.is_large ? '작게' : '크게';
                     let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12';
                     let largeClass = card.is_large ? ' card-large' : '';
@@ -629,7 +625,6 @@ def read_root():
                     `;
                 });
                 
-                // 드래그 기능 완전 삭제 (더 이상 상자가 이탈하지 않음)
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
             }
