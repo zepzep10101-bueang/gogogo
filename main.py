@@ -20,10 +20,11 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            if len(cards) > 12:
-                data["cards"] = cards[:12]
-            elif len(cards) < 12:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 12)]
+            # 최대 인원을 16명으로 넉넉하게 확장
+            if len(cards) > 16:
+                data["cards"] = cards[:16]
+            elif len(cards) < 16:
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
@@ -43,7 +44,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(12)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
@@ -145,7 +146,13 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
-            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
+            /* 사람 수에 따라 카드가 화면 중앙에서부터 예쁘게 늘어나는 동적 그리드 마법 */
+            .card-grid { display: grid; gap: 15px; align-content: start; justify-content: center; grid-auto-flow: dense; width: 100%; }
+            .grid-1 { grid-template-columns: minmax(300px, 450px); }
+            .grid-2 { grid-template-columns: repeat(2, minmax(300px, 450px)); }
+            .grid-3 { grid-template-columns: repeat(3, minmax(250px, 1fr)); }
+            .grid-4 { grid-template-columns: repeat(2, minmax(250px, 1fr)); } /* 4명일 땐 2x2가 예뻐요 */
+            .grid-max { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* 5명 이상은 최대 4열 유지 */
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
@@ -153,6 +160,7 @@ def read_root():
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
             
+            /* 화공/캠 우선 배치 및 콤팩트 버튼 유지 */
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; text-align: center; }
 
@@ -207,7 +215,6 @@ def read_root():
                         <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
                             <div style="display: flex; gap: 4px;">
-                                <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold;" onclick="toggleNoticePanel()">📢 공지사항</button>
@@ -263,7 +270,6 @@ def read_root():
             const ROOM_PASSWORD = "7777"; 
             const ADMIN_NICKNAME = "부엉";
 
-            let hideEmptySlots = false;
             window.rawNotice = ""; 
 
             function makeLinksClickable(text) {
@@ -289,9 +295,13 @@ def read_root():
             function addNotice() {
                 const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
                 if (newVal !== null && newVal.trim() !== "") {
+                    // 기존 공지사항에 새 글을 누적시킴
                     const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: combined }));
+                        // 누나 화면에 즉시 띄워주기 마법!
+                        window.rawNotice = combined;
+                        document.getElementById('noticeText').innerHTML = formatNotice(combined);
                     }
                 }
             }
@@ -301,55 +311,39 @@ def read_root():
                 if (newVal !== null) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
+                        // 즉시 수정 반영
+                        window.rawNotice = newVal;
+                        document.getElementById('noticeText').innerHTML = formatNotice(newVal);
                     }
                 }
             }
 
-            function toggleEmptySlots() {
-                hideEmptySlots = !hideEmptySlots;
-                const btn = document.getElementById('hide-empty-btn');
-                if (hideEmptySlots) {
-                    btn.innerText = "🐵 빈자리 켜기";
-                    btn.style.background = "#0984e3";
-                } else {
-                    btn.innerText = "🙈 빈자리 끄기";
-                    btn.style.background = "#636e72";
-                    cardData.forEach((card, index) => {
-                        const cardEl = document.getElementById(`card-card-${index}`);
-                        const sizeBtn = document.getElementById(`size-btn-${index}`);
-                        if (cardEl && cardEl.classList.contains('large')) {
-                            cardEl.classList.remove('large');
-                            if (sizeBtn) {
-                                sizeBtn.innerText = "크게";
-                                sizeBtn.style.background = "#fdcb6e";
-                            }
-                        }
-                    });
-                }
-                applyEmptySlotVisibility();
-            }
-
+            // 진짜 유저만 남기고 가짜 빈자리는 싹 지워버리는 핵심 마법 함수!
             function applyEmptySlotVisibility() {
+                let visibleCount = 0;
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
-                    const sizeBtn = document.getElementById(`size-btn-${index}`);
                     if (cardEl) {
-                        if (hideEmptySlots && card.user.startsWith("자리")) {
+                        if (card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
+                            cardEl.classList.remove('large'); // 숨길 땐 혹시 모를 큰 크기도 리셋
                         } else {
                             cardEl.style.display = "flex";
-                            if (hideEmptySlots && !card.user.startsWith("자리")) {
-                                if (!cardEl.classList.contains('large')) {
-                                    cardEl.classList.add('large');
-                                    if (sizeBtn) {
-                                        sizeBtn.innerText = "작게";
-                                        sizeBtn.style.background = "#e17055";
-                                    }
-                                }
-                            }
+                            visibleCount++;
                         }
                     }
                 });
+
+                // 사람 수에 맞춰 바둑판이 예쁘게 모양을 잡도록 클래스 변경
+                const grid = document.getElementById('cardGrid');
+                if (grid) {
+                    grid.className = 'card-grid';
+                    if (visibleCount === 1) grid.classList.add('grid-1');
+                    else if (visibleCount === 2) grid.classList.add('grid-2');
+                    else if (visibleCount === 3) grid.classList.add('grid-3');
+                    else if (visibleCount === 4) grid.classList.add('grid-4');
+                    else grid.classList.add('grid-max');
+                }
             }
 
             function toggleSettingsPanel() {
@@ -395,7 +389,8 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            // 16자리로 확장 완료!
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -411,6 +406,7 @@ def read_root():
             };
 
             function getEmptySlotHTML(username) {
+                // 이제 빈자리는 화면에 아예 안 뜰 거지만, 에러 방지용으로 남겨둠
                 if (!username || username.startsWith("자리")) {
                     return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
                 } else {
@@ -611,7 +607,6 @@ def read_root():
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
-                                    ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>` : ''}
                                 </div>
                                 
                                 <div class="btn-group">
@@ -634,6 +629,8 @@ def read_root():
                 });
                 
                 cardData.forEach((_, i) => renderBox(i));
+                
+                // 처음 로딩될 때 바로 빈자리들을 싹 청소해서 배경을 보여줘!
                 applyEmptySlotVisibility();
             }
 
@@ -708,6 +705,9 @@ def read_root():
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 }
+                
+                // 닉네임이 지워지거나 생길 때마다 카드를 보여주고 숨기는 마법!
+                applyEmptySlotVisibility();
             }
 
             function setCardBackground(index, event) {
@@ -1020,7 +1020,7 @@ def read_root():
                                 
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
-                                    renderBox(index);
+                                    renderBox(data.index);
                                 }
                                 
                                 applyEmptySlotVisibility();
@@ -1291,7 +1291,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 recovered = False
                 if owned:
                     for idx in owned:
-                        if 0 <= idx < 12:
+                        if 0 <= idx < 16:
                             current_user = server_state["cards"][idx]["user"]
                             if current_user.startswith("자리") or current_user == nickname:
                                 if idx not in manager.active_slots[client_id]:
