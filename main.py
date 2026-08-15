@@ -46,8 +46,6 @@ def load_data():
     initial_data = {
         "_id": "main_state",
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
-        "global_bg": None,
-        "global_bg_type": None,
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!"
     }
@@ -214,10 +212,9 @@ def read_root():
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-grow: 1;">
                             <div style="display: flex; gap: 3px;">
-                                <!-- [추가] 빈자리 보이기/숨기기 토글 버튼 -->
                                 <button class="settings-toggle-btn" style="background:#27ae60; font-weight:bold;" onclick="toggleEmptySlots()">👀 빈자리</button>
                                 <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리</button>
-                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경</button>
+                                <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 내 배경</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold; margin-left: 0;" onclick="toggleNoticePanel()">📢 공지</button>
                         </div>
@@ -237,7 +234,7 @@ def read_root():
                     </div>
                     
                     <div class="settings-dropdown" id="settingsDropdown">
-                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 배경 꾸미기</div>
+                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 나만의 배경 (나에게만 보여요)</div>
                         <div class="bg-control">
                             <div style="font-size: 10px; color: #aaa;">일반 사진 (움짤X):</div>
                             <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%;" onchange="setLocalBackground(event)">
@@ -273,7 +270,18 @@ def read_root():
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
-            window.isHideEmpty = false; // [추가] 빈자리 숨기기 상태 (기본: 모두 보임)
+            window.isHideEmpty = false; 
+
+            // [추가] 브라우저에 저장된 내 배경 불러오기
+            function loadLocalBackground() {
+                const bgType = localStorage.getItem('myBgType');
+                const bgData = localStorage.getItem('myBgData');
+                if (bgType === 'image' && bgData) {
+                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${bgData}" alt="Full Background">`;
+                } else if (bgType === 'youtube' && bgData) {
+                    document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${bgData}?autoplay=1&mute=1&loop=1&playlist=${bgData}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                }
+            }
 
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -318,14 +326,12 @@ def read_root():
                 }
             }
 
-            // [추가] 빈자리 숨기기/보이기 토글 함수
             function toggleEmptySlots() {
                 window.isHideEmpty = !window.isHideEmpty;
                 applyEmptySlotVisibility();
             }
 
             function applyEmptySlotVisibility() {
-                // 상태에 따라 빈자리를 숨기거나 보여줌
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
@@ -391,6 +397,7 @@ def read_root():
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
+                    loadLocalBackground(); // [추가] 로그인 성공 시 내 배경 불러오기
                 } else {
                     alert("비밀번호가 틀렸어! 다시 확인해봐.");
                 }
@@ -765,6 +772,7 @@ def read_root():
                 reader.readAsDataURL(file);
             }
 
+            // [수정] 서버로 보내지 않고 내 브라우저(localStorage)에만 저장하는 기능
             function setLocalBackground(event) {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -780,11 +788,26 @@ def read_root():
                     const dataUrl = e.target.result;
                     document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
                     
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: dataUrl }));
+                    localStorage.setItem('myBgType', 'image');
+                    try {
+                        localStorage.setItem('myBgData', dataUrl);
+                    } catch (err) {
+                        alert("사진 용량이 너무 커서 다음 접속 시엔 풀릴 수 있어! 가급적 작은 용량의 사진을 써줘!");
                     }
                 };
                 reader.readAsDataURL(file);
+            }
+
+            // [수정] 유튜브도 서버로 안 보내고 내 브라우저에만 저장
+            function setYoutubeBackground() {
+                const inputVal = document.getElementById('bgYoutubeInput').value;
+                const videoId = extractYoutubeId(inputVal);
+                if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; }
+
+                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                
+                localStorage.setItem('myBgType', 'youtube');
+                localStorage.setItem('myBgData', videoId);
             }
 
             async function toggleShare(index, type) {
@@ -912,18 +935,6 @@ def read_root():
                 return (match && match[2].length === 11) ? match[2] : null;
             }
 
-            function setYoutubeBackground() {
-                const inputVal = document.getElementById('bgYoutubeInput').value;
-                const videoId = extractYoutubeId(inputVal);
-                if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; }
-
-                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "global_bg_youtube", videoId: videoId }));
-                }
-            }
-
             function connectWebSocket() {
                 const loc = window.location;
                 let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://";
@@ -1038,12 +1049,6 @@ def read_root():
                                         }
                                     });
                                 }
-                                
-                                if (state.global_bg_type === "image" && state.global_bg) {
-                                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${state.global_bg}" alt="Full Background">`;
-                                } else if (state.global_bg_type === "youtube" && state.global_bg) {
-                                    document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                                }
 
                                 if (state.chat_history) {
                                     const historyEl = document.getElementById('chatHistory');
@@ -1080,10 +1085,6 @@ def read_root():
                                 cardData[data.index].card_bg = data.dataUrl;
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
                                 if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; }
-                            } else if (data.type === "global_bg_image") {
-                                document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
-                            } else if (data.type === "global_bg_youtube") {
-                                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                             } 
                             else if (data.type === "toggle_mosaic") {
                                 if (cardData[data.index]) {
@@ -1431,14 +1432,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "card_bg_change":
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "global_bg_image":
-                    server_state["global_bg"] = packet.get("dataUrl")
-                    server_state["global_bg_type"] = "image"
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "global_bg_youtube":
-                    server_state["global_bg"] = packet.get("videoId")
-                    server_state["global_bg_type"] = "youtube"
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
