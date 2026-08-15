@@ -994,6 +994,15 @@ def read_root():
                             }
                             else if (data.type === "set_work_time") {
                                 cardData[data.index].work_start_time = data.time;
+                                // [수정] 다른 작가님이 화공을 켰을 때 타이머 데이터가 들어오면 즉시 화면에 갱신!
+                                const wtEl = document.getElementById(`work-timer-${data.index}`);
+                                if (wtEl) {
+                                    if (data.time) {
+                                        wtEl.style.display = 'inline-block';
+                                    } else {
+                                        wtEl.style.display = 'none';
+                                    }
+                                }
                             }
                             else if (data.type === "init_state") {
                                 const state = data.state;
