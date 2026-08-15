@@ -145,16 +145,16 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 15px; padding: 15px; height: 100vh; color: white; position: relative; z-index: 2; align-items: center; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [신축성 오리지널 레이아웃] 창을 줄이면 박스들도 같이 줄어들며 꽉 차게 조절 */
+            /* [철벽 찌그러짐 방지 그리드] 카드 비율이 깨지지 않도록 minmax로 엄격하게 통제 */
             .card-grid { display: grid; gap: 10px; width: 100%; height: 100%; max-height: calc(100vh - 30px); min-height: 0; align-content: center; justify-items: center; align-items: center; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
-            .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-            .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-            .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
-            .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+            .grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .grid-12 { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; aspect-ratio: auto; }
             
             .timer-card.large { grid-column: span 2; grid-row: span 2; height: 100%; max-height: 100%; }
 
