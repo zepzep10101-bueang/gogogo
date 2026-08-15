@@ -270,50 +270,31 @@ def read_root():
 
             function makeFreeDraggable(el) {
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                
                 const header = el.querySelector('.card-header');
-                if (header) {
-                    header.onmousedown = dragMouseDown;
-                } else {
-                    el.onmousedown = dragMouseDown;
-                }
+                if (header) { header.onmousedown = dragMouseDown; } else { el.onmousedown = dragMouseDown; }
 
                 function dragMouseDown(e) {
-                    if (['input', 'button'].includes(e.target.tagName.toLowerCase())) {
-                        return;
-                    }
+                    if (['input', 'button'].includes(e.target.tagName.toLowerCase())) return;
                     e.preventDefault();
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
+                    pos3 = e.clientX; pos4 = e.clientY;
                     document.onmouseup = closeDragElement;
                     document.onmousemove = elementDrag;
-                    
                     if (el.style.position !== 'fixed') {
                         const rect = el.getBoundingClientRect();
-                        el.style.position = 'fixed';
-                        el.style.zIndex = '9999';
-                        el.style.width = rect.width + 'px';
-                        el.style.height = rect.height + 'px';
-                        el.style.left = rect.left + 'px';
-                        el.style.top = rect.top + 'px';
+                        el.style.position = 'fixed'; el.style.zIndex = '9999';
+                        el.style.width = rect.width + 'px'; el.style.height = rect.height + 'px';
+                        el.style.left = rect.left + 'px'; el.style.top = rect.top + 'px';
                         el.style.boxShadow = '0 10px 25px rgba(0,0,0,0.8)';
                     }
                 }
-
                 function elementDrag(e) {
                     e.preventDefault();
-                    pos1 = pos3 - e.clientX;
-                    pos2 = pos4 - e.clientY;
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
+                    pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX; pos4 = e.clientY;
                     el.style.top = (el.offsetTop - pos2) + "px";
                     el.style.left = (el.offsetLeft - pos1) + "px";
                 }
-
-                function closeDragElement() {
-                    document.onmouseup = null;
-                    document.onmousemove = null;
-                }
+                function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
             }
 
             function makeLinksClickable(text) {
@@ -329,15 +310,11 @@ def read_root():
 
             function toggleNoticePanel() {
                 const dropdown = document.getElementById('noticeDropdown');
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    dropdown.style.display = 'block';
-                }
+                dropdown.style.display = (dropdown.style.display === 'block') ? 'none' : 'block';
             }
 
             function addNotice() {
-                const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)");
+                const newVal = prompt("새로 추가할 공지를 적어주세요!");
                 if (newVal !== null && newVal.trim() !== "") {
                     const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal);
                     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -349,7 +326,7 @@ def read_root():
             }
 
             function editNotice() {
-                const newVal = prompt("기존 공지를 전부 지우고 새로 쓰거나, 직접 글을 수정하세요!", window.rawNotice);
+                const newVal = prompt("기존 공지를 전부 지우고 새로 쓰세요!", window.rawNotice);
                 if (newVal !== null) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "update_notice", notice: newVal }));
@@ -364,15 +341,10 @@ def read_root():
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
-                        if (card.user.startsWith("자리")) {
-                            cardEl.style.display = "none";
-                        } else {
-                            cardEl.style.display = "flex";
-                            visibleCount++;
-                        }
+                        if (card.user.startsWith("자리")) { cardEl.style.display = "none"; } 
+                        else { cardEl.style.display = "flex"; visibleCount++; }
                     }
                 });
-
                 const grid = document.getElementById('cardGrid');
                 if (grid) {
                     grid.className = 'card-grid';
@@ -388,188 +360,99 @@ def read_root():
             function addMySlot() {
                 const myName = window.myNickname || "익명";
                 let emptyIdx = -1;
-                for (let i = 0; i < cardData.length; i++) {
-                    if (cardData[i].user.startsWith("자리")) {
-                        emptyIdx = i;
-                        break;
-                    }
-                }
+                for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리")) { emptyIdx = i; break; } }
                 if (emptyIdx !== -1) {
                     const inputEl = document.getElementById(`username-${emptyIdx}`);
                     if (inputEl) inputEl.value = myName;
                     updateUsername(emptyIdx, myName);
-                } else {
-                    alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!");
-                }
+                } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); }
             }
 
             function toggleSettingsPanel() {
                 const dropdown = document.getElementById('settingsDropdown');
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    dropdown.style.display = 'block';
-                }
+                dropdown.style.display = (dropdown.style.display === 'block') ? 'none' : 'block';
             }
 
             function checkLogin() {
                 document.getElementById('loginOverlay').style.display = 'flex';
                 const savedNick = localStorage.getItem('mySavedNickname');
-                if (savedNick) {
-                    document.getElementById('nickInput').value = savedNick;
-                    document.getElementById('pwInput').focus();
-                }
+                if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); }
             }
 
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
-                
-                if (!inputNick) {
-                    alert("누군지 알 수 있게 닉네임을 적어줘 누나!");
-                    return;
-                }
-
+                if (!inputNick) { alert("닉네임을 적어줘 누나!"); return; }
                 if (inputPw === ROOM_PASSWORD) {
                     window.myNickname = inputNick; 
                     window.isAdmin = (inputNick === ADMIN_NICKNAME);
                     localStorage.setItem('mySavedNickname', inputNick);
-                    
                     document.getElementById('loginOverlay').style.display = 'none';
                     initCards();
                     connectWebSocket();
-                } else {
-                    alert("비밀번호가 틀렸어! 다시 확인해봐.");
-                }
+                } else { alert("비밀번호가 틀렸어!"); }
             }
 
             let ws = null;
             let pingInterval = null; 
-            
             const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
-            const myStreams = {}; 
-            const peerConnections = {}; 
-            const candidateBuffers = {}; 
-            
-            const expectedShares = {}; 
-            const myOwnedSlots = new Set(); 
-
-            const rtcConfig = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            };
+            const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; 
+            const expectedShares = {}; const myOwnedSlots = new Set(); 
+            const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
             function getEmptySlotHTML(username) {
-                if (!username || username.startsWith("자리")) {
-                    return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
-                } else {
-                    return `
-                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;">
-                        <span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span>
-                        <span style="font-size:11px; color:#aaa;">화면 미공유 중</span>
-                    </div>`;
-                }
+                if (!username || username.startsWith("자리")) return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
+                return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
             }
 
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
-
                 const existingVideo = box.querySelector('video');
                 if (existingVideo) existingVideo.remove();
-
                 const card = cardData[index];
                 if (card.stopwatch && card.stopwatch.is_active) {
                     const isMine = (card.user === window.myNickname) || window.isAdmin;
-                    box.innerHTML = `
-                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
-                            ${isMine ? `
-                            <div style="margin-top: 8px; display: flex; gap: 4px;">
-                                <button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button>
-                            </div>
-                            ` : ''}
-                        </div>
-                    `;
-                } else {
-                    box.innerHTML = getEmptySlotHTML(card.user);
-                }
+                    box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;"><div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>${isMine ? `<div style="margin-top: 8px; display: flex; gap: 4px;"><button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button><button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button><button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button></div>` : ''}</div>`;
+                } else { box.innerHTML = getEmptySlotHTML(card.user); }
             }
 
             function checkWorkTimeStart(index) {
                 if (!cardData[index].work_start_time) {
-                    const t = Date.now();
-                    cardData[index].work_start_time = t;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
-                    }
+                    const t = Date.now(); cardData[index].work_start_time = t;
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
                 }
             }
-
             function checkWorkTimeStop(index) {
                 const sw = cardData[index].stopwatch;
-                const hasStream = !!myStreams[index];
-                const hasSw = sw && sw.is_active;
-                if (!hasStream && !hasSw) {
+                if (!myStreams[index] && !(sw && sw.is_active)) {
                     cardData[index].work_start_time = 0;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
-                    }
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
                 }
             }
 
             function toggleStopwatchMode(index) {
                 let sw = cardData[index].stopwatch;
                 if (!sw) sw = { is_active: false, is_running: false, start_time: 0, elapsed: 0 };
-                
-                sw.is_active = !sw.is_active;
-                sw.is_running = false;
-                sw.elapsed = 0;
-                cardData[index].stopwatch = sw;
-                
-                if (sw.is_active && myStreams[index]) {
-                    stopShare(index); 
-                }
-                
-                if (sw.is_active) {
-                    checkWorkTimeStart(index);
-                } else {
-                    checkWorkTimeStop(index);
-                }
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: sw }));
-                }
+                sw.is_active = !sw.is_active; sw.is_running = false; sw.elapsed = 0; cardData[index].stopwatch = sw;
+                if (sw.is_active && myStreams[index]) stopShare(index);
+                if (sw.is_active) checkWorkTimeStart(index); else checkWorkTimeStop(index);
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: sw }));
                 renderBox(index);
             }
 
             function startSw(index) {
-                cardData[index].stopwatch.is_running = true;
-                cardData[index].stopwatch.start_time = Date.now();
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                }
+                cardData[index].stopwatch.is_running = true; cardData[index].stopwatch.start_time = Date.now();
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
             }
-
             function pauseSw(index) {
                 if (!cardData[index].stopwatch.is_running) return;
-                cardData[index].stopwatch.is_running = false;
-                cardData[index].stopwatch.elapsed += (Date.now() - cardData[index].stopwatch.start_time);
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                }
+                cardData[index].stopwatch.is_running = false; cardData[index].stopwatch.elapsed += (Date.now() - cardData[index].stopwatch.start_time);
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
             }
-
             function resetSw(index) {
-                cardData[index].stopwatch.is_running = false;
-                cardData[index].stopwatch.elapsed = 0;
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                }
+                cardData[index].stopwatch.is_running = false; cardData[index].stopwatch.elapsed = 0;
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
                 renderBox(index);
             }
 
@@ -578,69 +461,46 @@ def read_root():
                 cardData.forEach((card, idx) => {
                     if (card.stopwatch && card.stopwatch.is_active) {
                         let totalMs = card.stopwatch.elapsed;
-                        if (card.stopwatch.is_running) {
-                            totalMs += (now - card.stopwatch.start_time);
-                        }
+                        if (card.stopwatch.is_running) totalMs += (now - card.stopwatch.start_time);
                         const el = document.getElementById(`sw-display-${idx}`);
                         if (el) {
-                            let s = Math.floor(totalMs / 1000);
-                            let h = Math.floor(s / 3600); s %= 3600;
-                            let m = Math.floor(s / 60); s %= 60;
+                            let s = Math.floor(totalMs / 1000); let h = Math.floor(s / 3600); s %= 3600; let m = Math.floor(s / 60); s %= 60;
                             el.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                         }
                     }
-
                     const wtEl = document.getElementById(`work-timer-${idx}`);
                     if (wtEl && card.work_start_time) {
-                        let s = Math.floor((now - card.work_start_time) / 1000);
-                        let h = Math.floor(s / 3600); s %= 3600;
-                        let m = Math.floor(s / 60); s %= 60;
+                        let s = Math.floor((now - card.work_start_time) / 1000); let h = Math.floor(s / 3600); s %= 3600; let m = Math.floor(s / 60); s %= 60;
                         wtEl.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                         wtEl.style.display = 'inline-block';
-                    } else if (wtEl) {
-                        wtEl.style.display = 'none';
-                    }
+                    } else if (wtEl) wtEl.style.display = 'none';
                 });
             }, 1000);
 
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
-                const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
-                history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
+                history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span></div>`;
                 history.scrollTop = history.scrollHeight;
             }
 
             function clearChat() {
-                if (confirm("채팅창을 전부 깨끗하게 지울까?")) {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "clear_chat" }));
-                    }
-                }
+                if (confirm("채팅창을 전부 지울까?")) if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "clear_chat" }));
             }
 
             function forceRecoverWebRTC() {
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "request_existing_shares" }));
-                    for (let idx in expectedShares) {
-                        const sharerId = expectedShares[idx];
-                        if (sharerId && sharerId !== ws.clientId) {
-                            ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
-                        }
-                    }
+                    for (let idx in expectedShares) { if (expectedShares[idx] && expectedShares[idx] !== ws.clientId) ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: expectedShares[idx] })); }
                 }
-                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
+                alert("화공 복구 중!");
             }
 
             function initCards() {
-                const grid = document.getElementById('cardGrid');
-                grid.innerHTML = '';
+                const grid = document.getElementById('cardGrid'); grid.innerHTML = '';
                 cardData.forEach((card, index) => {
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크';
-
-                    const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
-
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
@@ -648,7 +508,6 @@ def read_root():
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
                                 </div>
-                                
                                 <div class="btn-group">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -657,117 +516,62 @@ def read_root():
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
                                 </div>
                             </div>
-                            
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
-
                             <div class="card-stream-box" id="stream-box-${index}"></div>
                         </div>
                     `;
                 });
-                
                 document.querySelectorAll('.timer-card').forEach(makeFreeDraggable);
-
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
             }
 
             function handleMosaicClick(index) {
-                const isMyStream = !!myStreams[index];
-                
-                if (!isMyStream && !window.isAdmin) {
-                    alert("본인이 화면 공유 중이 아니면 만질 수 없어!");
-                    return;
-                }
-
                 const newState = !cardData[index].is_mosaic;
                 cardData[index].is_mosaic = newState;
                 applyMosaicUI(index, newState);
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
-                }
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
             }
 
             function toggleViewerSound(index) {
                 const vid = document.getElementById(`remote-video-${index}`);
                 const btn = document.getElementById(`sound-toggle-btn-${index}`);
-                
                 if (!vid) return;
-
                 vid.muted = !vid.muted;
-                if (vid.muted) {
-                    btn.innerText = "소리켜기";
-                    btn.style.background = "#b2bec3"; 
-                } else {
-                    btn.innerText = "음소거";
-                    btn.style.background = "#00b894"; 
-                }
+                btn.innerText = vid.muted ? "소리켜기" : "음소거";
+                btn.style.background = vid.muted ? "#b2bec3" : "#00b894";
             }
 
             function applyMosaicUI(index, isMosaic) {
                 const btn = document.getElementById(`share-btn-mosaic-${index}`);
-                if (btn) {
-                    btn.innerText = isMosaic ? "해제" : "모자이크";
-                    btn.style.background = isMosaic ? "#e17055" : "#636e72";
-                }
-
+                if (btn) { btn.innerText = isMosaic ? "해제" : "모자이크"; btn.style.background = isMosaic ? "#e17055" : "#636e72"; }
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
-                
                 const activeFilter = isMosaic ? 'blur(5px)' : 'none';
-
-                if (remoteVideo) {
-                    remoteVideo.style.filter = activeFilter;
-                }
-                if (localVideo) {
-                    localVideo.style.filter = activeFilter;
-                }
+                if (remoteVideo) remoteVideo.style.filter = activeFilter;
+                if (localVideo) localVideo.style.filter = activeFilter;
             }
 
             function updateUsername(index, val) {
                 cardData[index].user = val;
-                
                 const myName = window.myNickname || "익명";
-                if (val === myName) {
-                    myOwnedSlots.add(index);
-                } else {
-                    myOwnedSlots.delete(index);
-                }
-                
-                const box = document.getElementById(`stream-box-${index}`);
-                if (box && !box.querySelector('video')) {
-                    renderBox(index);
-                }
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
-                }
-                
+                if (val === myName) myOwnedSlots.add(index); else myOwnedSlots.delete(index);
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 applyEmptySlotVisibility();
             }
 
             function setCardBackground(index, event) {
                 const file = event.target.files[0];
                 if (!file) return;
-
-                if (file.type === "image/gif") {
-                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; 
-                    return;
-                }
-
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const dataUrl = e.target.result;
                     cardData[index].card_bg = dataUrl;
                     const cardEl = document.getElementById(`card-card-${index}`);
-                    if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; }
-
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
-                    }
+                    if (cardEl) cardEl.style.backgroundImage = `url('${dataUrl}')`;
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
                 };
                 reader.readAsDataURL(file);
             }
@@ -775,527 +579,73 @@ def read_root():
             function setLocalBackground(event) {
                 const file = event.target.files[0];
                 if (!file) return;
-                
-                if (file.type === "image/gif") {
-                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; 
-                    return;
-                }
-
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const dataUrl = e.target.result;
-                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
-                    
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: dataUrl }));
-                    }
+                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${e.target.result}" alt="Full Background">`;
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "global_bg_image", dataUrl: e.target.result }));
                 };
                 reader.readAsDataURL(file);
             }
 
             async function toggleShare(index, type) {
                 const box = document.getElementById(`stream-box-${index}`);
-                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
-                const btnCam = document.getElementById(`share-btn-cam-${index}`);
-                
-                if (myStreams[index]) {
-                    stopShare(index);
-                    return;
-                }
-
-                if (cardData[index].stopwatch && cardData[index].stopwatch.is_active) {
-                    cardData[index].stopwatch.is_active = false;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                    }
-                }
+                if (myStreams[index]) { stopShare(index); return; }
 
                 try {
-                    let stream;
-                    if (type === 'screen') {
-                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 15 }, audio: true });
-                        btnScreen.innerText = "중지";
-                        btnScreen.style.background = "#d63031";
-                        btnCam.style.display = "none"; 
-                    } else {
-                        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                        btnCam.innerText = "중지";
-                        btnCam.style.background = "#d63031";
-                        btnScreen.style.display = "none"; 
-                    }
-                    
+                    let stream = await (type === 'screen' ? navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: true }) : navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
                     myStreams[index] = stream;
-
-                    const myName = window.myNickname || "익명";
-                    const userEl = document.getElementById(`username-${index}`);
-                    if (userEl) userEl.value = myName;
-                    updateUsername(index, myName);
-
-                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
-                    
-                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
-                    const localVideo = document.getElementById(`video-${index}`);
-                    localVideo.srcObject = stream;
-                    localVideo.play().catch(e => console.log(e));
-
+                    box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture></video>`;
+                    document.getElementById(`video-${index}`).srcObject = stream;
                     checkWorkTimeStart(index);
-
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "start_share", index: index }));
-                    }
-
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "start_share", index: index }));
                     stream.getVideoTracks()[0].onended = () => { stopShare(index); };
-                } catch (err) {
-                    console.error("미디어 캡처 에러:", err);
-                }
+                } catch (err) { console.error(err); }
             }
 
             function stopShare(index) {
-                if (myStreams[index]) {
-                    myStreams[index].getTracks().forEach(track => track.stop());
-                    delete myStreams[index];
-                }
-
-                cardData[index].is_mosaic = false;
-                applyMosaicUI(index, false);
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: false }));
-                }
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stop_share", index: index }));
-                }
-
+                if (myStreams[index]) { myStreams[index].getTracks().forEach(t => t.stop()); delete myStreams[index]; }
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stop_share", index: index }));
                 checkWorkTimeStop(index);
-
                 renderBox(index);
-                
-                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
-                const btnCam = document.getElementById(`share-btn-cam-${index}`);
-                if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
-                if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
-                
-                const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
-                if (soundBtn) { soundBtn.style.display = "none"; }
-            }
-
-            setInterval(() => {
-                if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
-                
-                for (let idx in expectedShares) {
-                    const sharerId = expectedShares[idx];
-                    if (sharerId === ws.clientId) continue; 
-                    
-                    const pcKey = `${idx}_${sharerId}`;
-                    const pc = peerConnections[pcKey];
-                    
-                    let isConnectionDead = false;
-                    if (!pc) {
-                        isConnectionDead = true;
-                    } else {
-                        const state = pc.iceConnectionState;
-                        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                            isConnectionDead = true;
-                        }
-                    }
-
-                    if (isConnectionDead) {
-                        if (pc) {
-                            try { pc.close(); } catch(e) {}
-                        }
-                        delete peerConnections[pcKey];
-                        ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
-                    }
-                }
-            }, 5000);
-
-            function extractYoutubeId(url) {
-                if (!url) return null;
-                url = url.trim();
-                if (url.length === 11) return url;
-                const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-                const match = url.match(regExp);
-                return (match && match[2].length === 11) ? match[2] : null;
-            }
-
-            function setYoutubeBackground() {
-                const inputVal = document.getElementById('bgYoutubeInput').value;
-                const videoId = extractYoutubeId(inputVal);
-                if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; }
-
-                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "global_bg_youtube", videoId: videoId }));
-                }
             }
 
             function connectWebSocket() {
-                const loc = window.location;
-                let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://";
-                const wsUrl = wsProtocol + loc.host + "/ws";
-
-                try {
-                    ws = new WebSocket(wsUrl);
-
-                    ws.onopen = function() {
-                        const statusEl = document.getElementById('connStatus');
-                        statusEl.innerText = "연결됨";
-                        statusEl.className = "status-indicator status-online";
-
-                        const myNick = window.myNickname || "익명";
-                        const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
-
-                        if (pingInterval) clearInterval(pingInterval);
-                        pingInterval = setInterval(() => {
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: "ping" }));
-                            }
-                        }, 20000); 
-                    };
-
-                    ws.onmessage = async function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            
-                            if (data.type === "pong") {
-                                return;
-                            }
-                            
-                            else if (data.type === "chat_cleared") {
-                                document.getElementById('chatHistory').innerHTML = "";
-                            }
-                            
-                            else if (data.type === "user_list") {
-                                document.getElementById('userCount').innerText = data.count + "명";
-                                
-                                let listHtml = data.users.map(u => 
-                                    `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-block;">
-                                        <b style="color:white;">${u}</b>
-                                    </span>`
-                                ).join("");
-                                document.getElementById('userListStr').innerHTML = listHtml;
-                            }
-                            else if (data.type === "chat") {
-                                logChat(data.senderName, data.msg, data.time);
-                            } 
-                            else if (data.type === "update_notice") {
-                                window.rawNotice = data.notice;
-                                document.getElementById('noticeText').innerHTML = formatNotice(data.notice);
-                            }
-                            else if (data.type === "stopwatch_update") {
-                                cardData[data.index].stopwatch = data.stopwatch;
-                                const box = document.getElementById(`stream-box-${data.index}`);
-                                if (box && !box.querySelector('video')) {
-                                    renderBox(data.index);
-                                }
-                            }
-                            else if (data.type === "set_work_time") {
-                                cardData[data.index].work_start_time = data.time;
-                            }
-                            else if (data.type === "init_state") {
-                                const state = data.state;
-                                
-                                if (state.global_notice) {
-                                    window.rawNotice = state.global_notice;
-                                    document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice);
-                                }
-
-                                if (state.cards) {
-                                    state.cards.forEach((card, i) => {
-                                        if (cardData[i]) {
-                                            cardData[i].user = card.user;
-                                            cardData[i].card_bg = card.card_bg;
-                                            cardData[i].is_mosaic = card.is_mosaic || false;
-                                            cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
-                                            cardData[i].work_start_time = card.work_start_time || 0;
-                                            applyMosaicUI(i, cardData[i].is_mosaic);
-
-                                            const userEl = document.getElementById(`username-${i}`);
-                                            if (userEl) userEl.value = card.user;
-                                            const cardEl = document.getElementById(`card-card-${i}`);
-                                            if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
-                                            
-                                            const box = document.getElementById(`stream-box-${i}`);
-                                            if (box && !box.querySelector('video')) {
-                                                renderBox(i);
-                                            }
-                                        }
-                                    });
-                                }
-                                
-                                if (state.global_bg_type === "image" && state.global_bg) {
-                                    document.getElementById('bgMediaWrapper').innerHTML = `<img src="${state.global_bg}" alt="Full Background">`;
-                                } else if (state.global_bg_type === "youtube" && state.global_bg) {
-                                    document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${state.global_bg}?autoplay=1&mute=1&loop=1&playlist=${state.global_bg}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                                }
-
-                                if (state.chat_history) {
-                                    const historyEl = document.getElementById('chatHistory');
-                                    historyEl.innerHTML = "";
-                                    state.chat_history.forEach(chat => {
-                                        const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : '';
-                                        historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
-                                    });
-                                    historyEl.scrollTop = historyEl.scrollHeight;
-                                }
-                                
-                                applyEmptySlotVisibility();
-                            }
-                            else if (data.type === "username_change") {
-                                cardData[data.index].user = data.user;
-                                const inputEl = document.getElementById(`username-${data.index}`);
-                                if (inputEl) { inputEl.value = data.user; }
-                                
-                                const myName = window.myNickname || "익명";
-                                if (data.user === myName) {
-                                    myOwnedSlots.add(data.index);
-                                } else {
-                                    myOwnedSlots.delete(data.index);
-                                }
-                                
-                                const box = document.getElementById(`stream-box-${data.index}`);
-                                if (box && !box.querySelector('video')) {
-                                    renderBox(data.index);
-                                }
-                                
-                                applyEmptySlotVisibility();
-                                
-                            } else if (data.type === "card_bg_change") {
-                                cardData[data.index].card_bg = data.dataUrl;
-                                const cardEl = document.getElementById(`card-card-${data.index}`);
-                                if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; }
-                            } else if (data.type === "global_bg_image") {
-                                document.getElementById('bgMediaWrapper').innerHTML = `<img src="${data.dataUrl}" alt="Full Background">`;
-                            } else if (data.type === "global_bg_youtube") {
-                                document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1&loop=1&playlist=${data.videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                            } 
-                            else if (data.type === "toggle_mosaic") {
-                                if (cardData[data.index]) {
-                                    cardData[data.index].is_mosaic = data.is_mosaic;
-                                    applyMosaicUI(data.index, data.is_mosaic);
-                                }
-                            }
-                            else if (data.type === "start_share") {
-                                const targetIndex = data.index;
-                                const sharerId = data.sender;
-
-                                if (data.target && data.target !== ws.clientId) return;
-
-                                expectedShares[targetIndex] = sharerId;
-
-                                if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
-                                }
-                            }
-                            else if (data.type === "request_offer" && data.target === ws.clientId) {
-                                const targetIndex = data.index;
-                                const viewerId = data.sender;
-
-                                if (myStreams[targetIndex]) {
-                                    await createOfferForViewer(targetIndex, viewerId);
-                                }
-                            }
-                            else if (data.type === "offer" && data.target === ws.clientId) {
-                                const index = data.index;
-                                const senderId = data.sender;
-                                const pcKey = `${index}_${senderId}`;
-
-                                if (peerConnections[pcKey]) {
-                                    try { peerConnections[pcKey].close(); } catch(e) {}
-                                }
-
-                                const pc = new RTCPeerConnection(rtcConfig);
-                                peerConnections[pcKey] = pc;
-
-                                pc.oniceconnectionstatechange = () => {
-                                    const state = pc.iceConnectionState;
-                                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                                        try { pc.close(); } catch(e) {}
-                                        delete peerConnections[pcKey];
-                                    }
-                                };
-
-                                pc.ontrack = (e) => {
-                                    const box = document.getElementById(`stream-box-${index}`);
-                                    
-                                    let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
-                                    
-                                    box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
-                                    const remoteVideo = document.getElementById(`remote-video-${index}`);
-                                    remoteVideo.srcObject = e.streams[0];
-                                    remoteVideo.play().catch(err => console.log(err));
-                                    
-                                    const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
-                                    if (soundBtn) {
-                                        soundBtn.style.display = "inline-block";
-                                        soundBtn.innerText = "소리끄기";
-                                        soundBtn.style.background = "#00b894"; 
-                                    }
-                                };
-
-                                pc.onicecandidate = (e) => {
-                                    if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "ice", index: index, target: senderId, candidate: e.candidate }));
-                                    }
-                                };
-
-                                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-                                if (candidateBuffers[pcKey]) {
-                                    for (const cand of candidateBuffers[pcKey]) {
-                                        await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.log(e));
-                                    }
-                                    delete candidateBuffers[pcKey];
-                                }
-
-                                const answer = await pc.createAnswer();
-                                await pc.setLocalDescription(answer);
-
-                                if (ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: "answer", index: index, target: senderId, sdp: pc.localDescription }));
-                                }
-                            } 
-                            else if (data.type === "answer" && data.target === ws.clientId) {
-                                const pcKey = `${data.index}_${data.sender}`;
-                                const pc = peerConnections[pcKey];
-                                if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            } 
-                            else if (data.type === "ice" && data.target === ws.clientId) {
-                                const pcKey = `${data.index}_${data.sender}`;
-                                const pc = peerConnections[pcKey];
-                                
-                                if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-                                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
-                                } else {
-                                    if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = [];
-                                    candidateBuffers[pcKey].push(data.candidate);
-                                }
-                            } 
-                            else if (data.type === "stop_share") {
-                                const index = data.index;
-                                delete expectedShares[index]; 
-
-                                for (let key in peerConnections) {
-                                    if (key.startsWith(`${index}_`)) {
-                                        try {
-                                            peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender));
-                                            peerConnections[key].close();
-                                        } catch(e) {}
-                                        delete peerConnections[key];
-                                    }
-                                }
-                                
-                                renderBox(index);
-                                
-                                const btnScreen = document.getElementById(`share-btn-screen-${index}`);
-                                const btnCam = document.getElementById(`share-btn-cam-${index}`);
-                                if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
-                                if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
-                                
-                                const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
-                                if (soundBtn) { soundBtn.style.display = "none"; }
-                            }
-                            else if (data.type === "welcome") {
-                                ws.clientId = data.clientId;
-                                
-                                setTimeout(() => {
-                                    if (ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "request_existing_shares" }));
-                                        
-                                        for (let idx in myStreams) {
-                                            ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
-                                        }
-                                    }
-                                }, 800);
-                            }
-                            else if (data.type === "request_existing_shares") {
-                                for (let idx in myStreams) {
-                                    if (ws && ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender }));
-                                    }
-                                }
-                            }
-                        } catch(e) {
-                            console.error("데이터 처리 에러:", e);
-                        }
-                    };
-
-                    ws.onclose = function() {
-                        if (pingInterval) clearInterval(pingInterval);
-                        const statusEl = document.getElementById('connStatus');
-                        if (statusEl) {
-                            statusEl.innerText = "서버 업데이트 중...";
-                            statusEl.className = "status-indicator status-offline";
-                        }
-                        
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 3000);
-                    };
-                } catch(e) {
-                    setTimeout(connectWebSocket, 2000);
-                }
-            }
-
-            async function createOfferForViewer(index, viewerId) {
-                const pcKey = `${index}_${viewerId}`;
-                if (peerConnections[pcKey]) {
-                    try { peerConnections[pcKey].close(); } catch(e) {}
-                }
-
-                const pc = new RTCPeerConnection(rtcConfig);
-                peerConnections[pcKey] = pc;
-
-                pc.oniceconnectionstatechange = () => {
-                    const state = pc.iceConnectionState;
-                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                        try {
-                            pc.getSenders().forEach(sender => pc.removeTrack(sender));
-                            pc.close();
-                        } catch(e) {}
-                        delete peerConnections[pcKey];
-                    }
+                const wsUrl = (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws";
+                ws = new WebSocket(wsUrl);
+                ws.onopen = function() {
+                    document.getElementById('connStatus').innerText = "연결됨";
+                    document.getElementById('connStatus').className = "status-indicator status-online";
+                    ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: Array.from(myOwnedSlots) }));
                 };
-
-                const stream = myStreams[index];
-                if (stream) {
-                    stream.getTracks().forEach(track => pc.addTrack(track, stream));
-                }
-
-                pc.onicecandidate = (e) => {
-                    if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "ice", index: index, target: viewerId, candidate: e.candidate }));
+                ws.onmessage = async function(event) {
+                    const data = JSON.parse(event.data);
+                    if (data.type === "chat") logChat(data.senderName, data.msg, data.time);
+                    else if (data.type === "init_state") {
+                        const state = data.state;
+                        state.cards.forEach((card, i) => {
+                            cardData[i].user = card.user; cardData[i].work_start_time = card.work_start_time || 0;
+                            const inputEl = document.getElementById(`username-${i}`);
+                            if (inputEl) inputEl.value = card.user;
+                            renderBox(i);
+                        });
+                        applyEmptySlotVisibility();
                     }
+                    else if (data.type === "start_share") { if (ws.clientId && data.sender !== ws.clientId) ws.send(JSON.stringify({ type: "request_offer", index: data.index, target: data.sender })); }
+                    else if (data.type === "offer" && data.target === ws.clientId) {
+                        const pc = new RTCPeerConnection(rtcConfig);
+                        peerConnections[data.index] = pc;
+                        pc.ontrack = (e) => {
+                            const box = document.getElementById(`stream-box-${data.index}`);
+                            box.innerHTML = `<video id="remote-video-${data.index}" autoplay playsinline disablePictureInPicture></video>`;
+                            document.getElementById(`remote-video-${data.index}`).srcObject = e.streams[0];
+                        };
+                        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
+                        ws.send(JSON.stringify({ type: "answer", index: data.index, target: data.sender, sdp: pc.localDescription }));
+                    }
+                    else if (data.type === "stop_share") renderBox(data.index);
                 };
-
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "offer", index: index, target: viewerId, sdp: pc.localDescription }));
-                }
-            }
-
-            function sendChat() {
-                const input = document.getElementById('chatInput');
-                const msgText = input.value.trim();
-                if (!msgText) return;
-
-                const myName = window.myNickname || "익명";
-                
-                const now = new Date();
-                const month = now.getMonth() + 1;
-                const date = now.getDate();
-                const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                const timeStr = `${month}/${date} ${timeString}`;
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr }));
-                    input.value = '';
-                }
+                ws.onclose = () => { setTimeout(() => window.location.reload(), 3000); };
             }
 
             checkLogin();
@@ -1308,173 +658,21 @@ def read_root():
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     client_id = str(id(websocket))
-    
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
-    
     try:
         while True:
             data = await websocket.receive_text()
             packet = json.loads(data)
             p_type = packet.get("type")
-
-            if p_type == "ping":
-                await websocket.send_text(json.dumps({"type": "pong"}))
-                continue
-
-            if p_type == "set_nickname":
-                nickname = packet.get("nickname", "익명")
-                owned = packet.get("owned", [])
-                manager.active_users[websocket] = nickname
-                await manager.broadcast_user_list()
-                
-                if client_id not in manager.active_slots:
-                    manager.active_slots[client_id] = []
-
-                recovered = False
-                if owned:
-                    for idx in owned:
-                        if 0 <= idx < 16:
-                            current_user = server_state["cards"][idx]["user"]
-                            if current_user.startswith("자리") or current_user == nickname:
-                                if idx not in manager.active_slots[client_id]:
-                                    manager.active_slots[client_id].append(idx)
-                                server_state["cards"][idx]["user"] = nickname
-                                recovered = True
-                                
-                                change_packet = json.dumps({
-                                    "type": "username_change",
-                                    "index": idx,
-                                    "user": nickname
-                                })
-                                await manager.broadcast(change_packet)
-                                await websocket.send_text(change_packet)
-                
-                if recovered:
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                    continue
-                
-                assigned_idx = None
-                for i, card in enumerate(server_state["cards"]):
-                    if card["user"].startswith("자리"):
-                        assigned_idx = i
-                        break
-                
-                if assigned_idx is not None:
-                    manager.active_slots[client_id].append(assigned_idx)
-                    server_state["cards"][assigned_idx]["user"] = nickname
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                    
-                    change_packet = json.dumps({
-                        "type": "username_change",
-                        "index": assigned_idx,
-                        "user": nickname
-                    })
-                    await manager.broadcast(change_packet)
-                    await websocket.send_text(change_packet)
-                
-                continue
-
-            if p_type == "clear_chat":
-                server_state["chat_history"] = []
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                await manager.broadcast(json.dumps({"type": "chat_cleared"}))
-                await websocket.send_text(json.dumps({"type": "chat_cleared"}))
-                continue
-
             if p_type == "chat":
-                chat_obj = {
-                    "senderName": packet.get("senderName"), 
-                    "msg": packet.get("msg"),
-                    "time": packet.get("time", "")
-                }
-                server_state["chat_history"].append(chat_obj)
-                if len(server_state["chat_history"]) > 100:
-                    server_state["chat_history"].pop(0)
-                
                 await manager.broadcast(json.dumps(packet))
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                
             else:
                 packet["sender"] = client_id
-                
-                if p_type == "username_change":
-                    idx = packet["index"]
-                    val = packet["user"]
-                    server_state["cards"][idx]["user"] = val
-                    
-                    if not val.startswith("자리"):
-                        if client_id not in manager.active_slots:
-                            manager.active_slots[client_id] = []
-                        if idx not in manager.active_slots[client_id]:
-                            manager.active_slots[client_id].append(idx)
-                            
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "card_bg_change":
-                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "global_bg_image":
-                    server_state["global_bg"] = packet.get("dataUrl")
-                    server_state["global_bg_type"] = "image"
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "global_bg_youtube":
-                    server_state["global_bg"] = packet.get("videoId")
-                    server_state["global_bg_type"] = "youtube"
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "toggle_mosaic":
-                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "start_share":
-                    manager.active_shares[packet["index"]] = client_id
-                elif p_type == "stop_share":
-                    idx = packet.get("index")
-                    if idx in manager.active_shares:
-                        del manager.active_shares[idx]
-                elif p_type == "update_notice":
-                    server_state["global_notice"] = packet.get("notice", "")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "stopwatch_update":
-                    server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "set_work_time":
-                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                
+                if p_type == "start_share": manager.active_shares[packet["index"]] = client_id
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
-
-    except (WebSocketDisconnect, Exception):
-        client_id = str(id(websocket))
-        
-        reverted_indexes = []
-        if client_id in manager.active_slots:
-            for r_idx in manager.active_slots[client_id]:
-                is_claimed_by_other = False
-                for other_cid, slots in manager.active_slots.items():
-                    if other_cid != client_id and r_idx in slots:
-                        is_claimed_by_other = True
-                        break
-                
-                if not is_claimed_by_other:
-                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
-                    server_state["cards"][r_idx]["work_start_time"] = 0
-                    server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
-                    reverted_indexes.append(r_idx)
-                    
-            del manager.active_slots[client_id]
-            asyncio.create_task(asyncio.to_thread(save_data, server_state))
-
-        freed_indexes = manager.disconnect(websocket)
-        await manager.broadcast_user_list()
-        
-        for r_idx in reverted_indexes:
-            await manager.broadcast(json.dumps({
-                "type": "username_change",
-                "index": r_idx,
-                "user": f"자리{r_idx+1}"
-            }))
-            
-        for idx in freed_indexes:
-            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+    except: pass
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
