@@ -147,16 +147,16 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* [수정] 무조건 4열(바둑판) 유지, 윈도우 창이 작아지면 3열, 2열로 자연스럽게 줄어듦 */
+            /* 무조건 4열(바둑판) 유지, 윈도우 창이 작아지면 3열, 2열로 자연스럽게 줄어듦 */
             .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             
             @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            /* [수정] 상자 기본 크기 고정 및 둥근 테두리 (예전 감성) */
+            /* 상자 기본 크기 고정 및 둥근 테두리 */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            /* [수정] '크게' 눌렀을 때 차지할 면적 (가로 2칸, 세로 2칸) */
+            /* '크게' 눌렀을 때 차지할 면적 (가로 2칸, 세로 2칸) */
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
@@ -214,6 +214,8 @@ def read_root():
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-grow: 1;">
                             <div style="display: flex; gap: 3px;">
+                                <!-- [추가] 빈자리 보이기/숨기기 토글 버튼 -->
+                                <button class="settings-toggle-btn" style="background:#27ae60; font-weight:bold;" onclick="toggleEmptySlots()">👀 빈자리</button>
                                 <button class="settings-toggle-btn" style="background:#0984e3; font-weight:bold;" onclick="addMySlot()">➕ 자리</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경</button>
                             </div>
@@ -271,6 +273,7 @@ def read_root():
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
+            window.isHideEmpty = false; // [추가] 빈자리 숨기기 상태 (기본: 모두 보임)
 
             function makeLinksClickable(text) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -315,12 +318,22 @@ def read_root():
                 }
             }
 
+            // [추가] 빈자리 숨기기/보이기 토글 함수
+            function toggleEmptySlots() {
+                window.isHideEmpty = !window.isHideEmpty;
+                applyEmptySlotVisibility();
+            }
+
             function applyEmptySlotVisibility() {
-                // [수정] 빈자리 숨기지 않고 16개 상자 모두 띄워둠! (바둑판 유지)
+                // 상태에 따라 빈자리를 숨기거나 보여줌
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
-                        cardEl.style.display = "flex";
+                        if (window.isHideEmpty && card.user.startsWith("자리")) {
+                            cardEl.style.display = "none";
+                        } else {
+                            cardEl.style.display = "flex";
+                        }
                     }
                 });
             }
