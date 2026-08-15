@@ -31,8 +31,8 @@ def load_data():
                 card["is_mosaic"] = False
                 if "stopwatch" not in card:
                     card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
-                if "work_timer" not in card:
-                    card["work_timer"] = {"is_running": False, "start_time": 0, "elapsed": 0}
+                if "work_start_time" not in card:
+                    card["work_start_time"] = 0
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
@@ -43,7 +43,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_timer": {"is_running": False, "start_time": 0, "elapsed": 0}} for i in range(12)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(12)],
         "global_bg": None,
         "global_bg_type": None,
         "chat_history": [],
@@ -129,7 +129,7 @@ def read_root():
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            body, html { width: 100%; height: 100%; overflow: hidden; background: #111; }
+            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
 
             .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
             .login-box { background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -143,42 +143,35 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 15px; padding: 15px; height: 100vh; color: white; position: relative; z-index: 2; align-items: center; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
+            .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; }
             
-            /* [철벽 찌그러짐 방지 그리드] 카드 비율이 깨지지 않도록 minmax로 엄격하게 통제 */
-            .card-grid { display: grid; gap: 10px; width: 100%; height: 100%; max-height: calc(100vh - 30px); min-height: 0; align-content: center; justify-items: center; align-items: center; }
-            .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-            .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
-            .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-            .grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-            .grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
-            .grid-12 { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; align-content: start; grid-auto-flow: dense; }
+            
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); aspect-ratio: 4 / 5; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            
+            .timer-card.large { grid-column: span 2; grid-row: span 2; }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; aspect-ratio: auto; }
+            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; position: relative; z-index: 3; flex-wrap: wrap; }
             
-            .timer-card.large { grid-column: span 2; grid-row: span 2; height: 100%; max-height: 100%; }
+            .card-stream-box { width: 100%; flex-grow: 1; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; }
+            
+            .share-btn { padding: 5px; font-size: 11px; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
 
-            .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
+            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); }
             
-            .card-stream-box { width: 100%; flex-grow: 1; background: transparent; border-radius: 6px; overflow: hidden; position: relative; margin-top: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; min-height: 0; }
-            .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; }
+            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
             
-            .share-btn { padding: 3px 5px; font-size: 9px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; height: fit-content; font-weight: bold; }
-
-            .side-panel { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 30px); justify-content: space-between; }
-            
-            .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
-            
-            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 4px; }
-            .settings-dropdown { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); }
+            .settings-toggle-btn { background: #636e72; color: white; border: none; border-radius: 4px; padding: 3px 7px; font-size: 11px; cursor: pointer; font-weight: normal; margin-left: 5px; }
+            .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
-            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 12px; color: #ddd; line-height: 1.4; }
-            .chat-input { display: flex; margin-top: 8px; }
-            .chat-input input { flex-grow: 1; padding: 6px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 12px; }
-            .chat-input button { padding: 6px 10px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-size: 12px; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 13px; color: #ddd; line-height: 1.4; }
+            .chat-input { display: flex; margin-top: 10px; }
+            .chat-input input { flex-grow: 1; padding: 8px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; }
+            .chat-input button { padding: 8px 12px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; margin-left: 5px; flex-shrink: 0; }
             
-            .bg-control { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+            .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
@@ -210,27 +203,27 @@ def read_root():
             <div class="side-panel">
                 <div class="panel-box">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                        <h3 style="margin: 0; font-size: 16px; line-height: 20px;">👑 대시보드</h3>
+                        <h3 style="margin: 0; font-size: 17px; line-height: 22px;">👑 대시보드</h3>
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
                             <div style="display: flex; gap: 4px;">
-                                <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리 끄기</button>
+                                <button id="hide-empty-btn" class="settings-toggle-btn" onclick="toggleEmptySlots()">🙈 빈자리</button>
                                 <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ 배경설정</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; width: 100%; text-align: center; font-weight: bold;" onclick="toggleNoticePanel()">📢 공지사항</button>
                         </div>
                     </div>
 
-                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:4px;">연결 중...</span>
-                    <p style="margin-top:6px; font-size:13px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
+                    <span id="connStatus" class="status-indicator status-offline" style="margin-top:5px;">연결 중...</span>
+                    <p style="margin-top:8px; font-size:14px;">현재 접속 인원: <span id="userCount" style="color:#ff7675; font-weight:bold;">0명</span></p>
                     
-                    <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:3px;"></span></p>
+                    <p style="margin-top:5px; font-size:12px; color:#aaa; line-height:1.6;">접속자 명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;"></span></p>
 
-                    <div id="noticeDropdown" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
-                        <div style="text-align: right; margin-bottom: 6px;">
-                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
-                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 수정/삭제</button>
+                    <div id="noticeDropdown" style="display: none; margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
+                        <div style="text-align: right; margin-bottom: 8px;">
+                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 4px;">➕ 추가</button>
+                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 전체 수정/삭제</button>
                         </div>
-                        <div id="noticeText" style="font-size: 12px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
+                        <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all;">공지사항 로딩 중...</div>
                     </div>
                     
                     <div class="settings-dropdown" id="settingsDropdown">
@@ -239,7 +232,7 @@ def read_root():
                             <div style="font-size: 10px; color: #aaa;">일반 사진 선택 (움짤X):</div>
                             <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%;" onchange="setLocalBackground(event)">
                             
-                            <div style="font-size: 10px; color: #aaa; margin-top: 2px;">유튜브 링크 입력:</div>
+                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크 입력:</div>
                             <div style="display:flex; gap:3px;">
                                 <input type="text" id="bgYoutubeInput" placeholder="유튜브 URL" style="flex-grow:1; font-size:10px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
                                 <button onclick="setYoutubeBackground()" style="font-size:10px; padding:3px 6px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
@@ -250,10 +243,10 @@ def read_root():
 
                 <div class="panel-box chat-box">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="font-size: 14px;">💬 실시간 채팅</h3>
+                        <h3 style="font-size: 15px;">💬 실시간 채팅</h3>
                         <div>
-                            <button onclick="forceRecoverWebRTC()" class="recovery-btn" style="font-size:9px; padding:2px 4px;">🔄 화공복구</button>
-                            <button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
+                            <button onclick="forceRecoverWebRTC()" class="recovery-btn">🔄 화공복구</button>
+                            <button onclick="clearChat()" style="font-size:10px; padding:3px 5px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer; margin-left:2px;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -311,6 +304,7 @@ def read_root():
                 }
             }
 
+            // [디오의 마법 1] 빈자리 버튼에 자동 확대/축소 마법을 달았어!
             function toggleEmptySlots() {
                 hideEmptySlots = !hideEmptySlots;
                 const btn = document.getElementById('hide-empty-btn');
@@ -320,48 +314,47 @@ def read_root():
                 } else {
                     btn.innerText = "🙈 빈자리 끄기";
                     btn.style.background = "#636e72";
+                    
+                    // 빈자리 보이기(끄기) 모드로 돌아가면 커진 카드를 다시 원래대로 얌전하게!
+                    cardData.forEach((card, index) => {
+                        const cardEl = document.getElementById(`card-card-${index}`);
+                        const sizeBtn = document.getElementById(`size-btn-${index}`);
+                        if (cardEl && cardEl.classList.contains('large')) {
+                            cardEl.classList.remove('large');
+                            if (sizeBtn) {
+                                sizeBtn.innerText = "크게";
+                                sizeBtn.style.background = "#fdcb6e";
+                            }
+                        }
+                    });
                 }
                 applyEmptySlotVisibility();
             }
 
+            // [디오의 마법 2] 숨길 때 사람 있는 자리는 알아서 꽉 차게 팽창시켜!
             function applyEmptySlotVisibility() {
-                let visibleCount = 0;
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     const sizeBtn = document.getElementById(`size-btn-${index}`);
                     if (cardEl) {
                         if (hideEmptySlots && card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
-                            if(cardEl.classList.contains('large')){
-                                cardEl.classList.remove('large');
-                                if(sizeBtn) { sizeBtn.innerText="크게"; sizeBtn.style.background="#fdcb6e"; }
-                            }
                         } else {
                             cardEl.style.display = "flex";
-                            visibleCount++;
+                            
+                            // 숨기기 모드일 땐 사람 있는 카드를 알아서 크게 쫙!
                             if (hideEmptySlots && !card.user.startsWith("자리")) {
-                                if (cardEl.classList.contains('large')) {
-                                    cardEl.classList.remove('large');
+                                if (!cardEl.classList.contains('large')) {
+                                    cardEl.classList.add('large');
                                     if (sizeBtn) {
-                                        sizeBtn.innerText = "크게";
-                                        sizeBtn.style.background = "#fdcb6e";
+                                        sizeBtn.innerText = "작게";
+                                        sizeBtn.style.background = "#e17055";
                                     }
                                 }
                             }
                         }
                     }
                 });
-
-                const grid = document.getElementById('cardGrid');
-                if (grid) {
-                    grid.className = 'card-grid'; 
-                    if (visibleCount === 1) grid.classList.add('grid-1');
-                    else if (visibleCount === 2) grid.classList.add('grid-2');
-                    else if (visibleCount <= 4) grid.classList.add('grid-4');
-                    else if (visibleCount <= 6) grid.classList.add('grid-6');
-                    else if (visibleCount <= 9) grid.classList.add('grid-9');
-                    else grid.classList.add('grid-12');
-                }
             }
 
             function toggleSettingsPanel() {
@@ -407,7 +400,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_timer: {is_running: false, start_time: 0, elapsed: 0} }));
+            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -428,8 +421,8 @@ def read_root():
                 } else {
                     return `
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;">
-                        <span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span>
-                        <span style="font-size:11px; color:#aaa;">화면 미공유 중</span>
+                        <span style="font-size:26px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:8px;">${username}</span>
+                        <span style="font-size:12px; color:#aaa;">화면 미공유 중</span>
                     </div>`;
                 }
             }
@@ -437,21 +430,19 @@ def read_root():
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
-
-                const existingVideo = box.querySelector('video');
-                if (existingVideo) existingVideo.remove();
+                if (box.querySelector('video')) return; 
 
                 const card = cardData[index];
                 if (card.stopwatch && card.stopwatch.is_active) {
                     const isMine = (card.user === window.myNickname) || window.isAdmin;
                     box.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 26px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
+                            <div id="sw-display-${index}" style="font-size: 34px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
                             ${isMine ? `
-                            <div style="margin-top: 6px; display: flex; gap: 4px;">
-                                <button onclick="startSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 9px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 9px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:2px 6px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 9px;">⏹ 리셋</button>
+                            <div style="margin-top: 12px; display: flex; gap: 6px;">
+                                <button onclick="startSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">▶ 시작</button>
+                                <button onclick="pauseSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 11px;">⏸ 정지</button>
+                                <button onclick="resetSw(${index})" style="padding:4px 10px; border:none; border-radius:4px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 11px;">⏹ 리셋</button>
                             </div>
                             ` : ''}
                         </div>
@@ -462,47 +453,23 @@ def read_root():
             }
 
             function checkWorkTimeStart(index) {
-                let wt = cardData[index].work_timer;
-                if (!wt) wt = {is_running: false, start_time: 0, elapsed: 0};
-                if (!wt.is_running) {
-                    wt.is_running = true;
-                    wt.start_time = Date.now();
-                    cardData[index].work_timer = wt;
+                if (!cardData[index].work_start_time) {
+                    const t = Date.now();
+                    cardData[index].work_start_time = t;
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
+                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
                     }
                 }
             }
 
             function checkWorkTimeStop(index) {
-                let wt = cardData[index].work_timer;
-                if (!wt) return;
                 const sw = cardData[index].stopwatch;
                 const hasStream = !!myStreams[index];
                 const hasSw = sw && sw.is_active;
-                
                 if (!hasStream && !hasSw) {
-                    if (wt.is_running) {
-                        wt.is_running = false;
-                        wt.elapsed += (Date.now() - wt.start_time);
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
-                        }
-                    }
-                }
-            }
-            
-            function resetWorkTimer(index) {
-                let wt = cardData[index].work_timer;
-                if (!wt) return;
-                
-                if (confirm("작업시간을 0초로 다시 초기화할까요?")) {
-                    wt.elapsed = 0;
-                    if (wt.is_running) {
-                        wt.start_time = Date.now();
-                    }
+                    cardData[index].work_start_time = 0;
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "work_timer_update", index: index, timer: wt }));
+                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
                     }
                 }
             }
@@ -575,30 +542,23 @@ def read_root():
                         }
                     }
 
-                    const wt = card.work_timer;
-                    const wtContainer = document.getElementById(`work-timer-container-${idx}`);
-                    const wtDisplay = document.getElementById(`work-timer-display-${idx}`);
-                    
-                    if (wt && (wt.is_running || wt.elapsed > 0)) {
-                        let totalMs = wt.elapsed;
-                        if (wt.is_running) {
-                            totalMs += (now - wt.start_time);
-                        }
-                        let s = Math.floor(totalMs / 1000);
+                    const wtEl = document.getElementById(`work-timer-${idx}`);
+                    if (wtEl && card.work_start_time) {
+                        let s = Math.floor((now - card.work_start_time) / 1000);
                         let h = Math.floor(s / 3600); s %= 3600;
                         let m = Math.floor(s / 60); s %= 60;
-                        if (wtDisplay) wtDisplay.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                        if (wtContainer) wtContainer.style.display = 'flex';
-                    } else {
-                        if (wtContainer) wtContainer.style.display = 'none';
+                        wtEl.innerText = `⏱ 작업 시간: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        wtEl.style.display = 'block';
+                    } else if (wtEl) {
+                        wtEl.style.display = 'none';
                     }
                 });
             }, 1000);
 
             function logChat(sender, msg, timeStr) {
                 const history = document.getElementById('chatHistory');
-                const tSpan = timeStr ? `<span style="font-size:9px; color:#636e72; margin-left:4px;">${timeStr}</span>` : '';
-                history.innerHTML += `<div style="margin-bottom: 4px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
+                const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : '';
+                history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`;
                 history.scrollTop = history.scrollHeight;
             }
 
@@ -624,21 +584,17 @@ def read_root():
             }
             
             function toggleCardSize(index) {
-                const targetCard = document.getElementById(`card-card-${index}`);
-                const targetBtn = document.getElementById(`size-btn-${index}`);
+                const card = document.getElementById(`card-card-${index}`);
+                const btn = document.getElementById(`size-btn-${index}`);
                 
-                const isCurrentlyLarge = targetCard.classList.contains('large');
-
-                document.querySelectorAll('.timer-card').forEach(card => card.classList.remove('large'));
-                document.querySelectorAll('.share-btn[id^="size-btn"]').forEach(btn => {
+                if (card.classList.contains('large')) {
+                    card.classList.remove('large');
                     btn.innerText = "크게";
                     btn.style.background = "#fdcb6e";
-                });
-
-                if (!isCurrentlyLarge) {
-                    targetCard.classList.add('large');
-                    targetBtn.innerText = "작게";
-                    targetBtn.style.background = "#e17055";
+                } else {
+                    card.classList.add('large');
+                    btn.innerText = "작게";
+                    btn.style.background = "#e17055";
                 }
             }
 
@@ -649,33 +605,27 @@ def read_root():
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '모자이크 해제' : '모자이크';
-                    
-                    const isMyCard = ((card.user === window.myNickname) && window.myNickname) || window.isAdmin;
 
                     grid.innerHTML += `
                         <div class="timer-card" id="card-card-${index}" style="${bgStyle}">
-                            <div class="card-header" style="flex-direction: column; gap: 3px;">
-                                <div style="width: 100%; display: flex; gap: 3px; align-items: center;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 2px; font-size: 10px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
-                                    
-                                    <div id="work-timer-container-${index}" style="display:${(card.work_timer && (card.work_timer.is_running || card.work_timer.elapsed > 0)) ? 'flex' : 'none'}; align-items:center; gap:2px;">
-                                        <span id="work-timer-display-${index}" style="font-size:9px; color:#ffeaa7; font-weight:bold; white-space:nowrap;">⏱ 00:00:00</span>
-                                        ${isMyCard ? `<button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 3px; font-size:8px; cursor:pointer;" title="초기화">🔄</button>` : ''}
-                                    </div>
+                            <div class="card-header" style="flex-direction: column; gap: 6px;">
+                                <div style="width: 100%;">
+                                    <input type="text" id="username-${index}" value="${card.user}" style="width:100%; padding:5px; font-size:12px; font-weight:bold; text-align:center; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); color:white; border-radius:3px; box-sizing:border-box;" oninput="updateUsername(${index}, this.value)">
+                                    <div id="work-timer-${index}" style="font-size:11px; color:#ffeaa7; text-align:center; font-weight:bold; margin-top:3px; display:${card.work_start_time ? 'block' : 'none'};">⏱ 00:00:00</div>
                                 </div>
                                 
-                                <div style="display:flex; flex-wrap:nowrap; gap:2px; justify-content:center; width:100%;">
-                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
-                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
-                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1.4; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="flex:1; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
-                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리</button>
+                                <div style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; width:100%;">
+                                    <button class="share-btn" id="share-btn-screen-${index}" style="flex:1 1 30%; background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
+                                    <button class="share-btn" id="share-btn-cam-${index}" style="flex:1 1 30%; background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
+                                    <button class="share-btn" id="share-btn-sw-${index}" style="flex:1 1 30%; background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    <button class="share-btn" id="share-btn-mosaic-${index}" style="flex:1 1 50%; background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
+                                    <button class="share-btn" id="size-btn-${index}" style="flex:1 1 30%; background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
+                                    <button class="share-btn" id="sound-toggle-btn-${index}" style="flex:1 1 100%; background:#00b894; display:none;" onclick="toggleViewerSound(${index})">소리끄기</button>
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:1px;">
-                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:8px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:4px;">
+                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:10px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
                             <div class="card-stream-box" id="stream-box-${index}"></div>
@@ -881,9 +831,6 @@ def read_root():
 
                 checkWorkTimeStop(index);
 
-                const box = document.getElementById(`stream-box-${index}`);
-                if (box) box.innerHTML = '';
-
                 renderBox(index);
                 
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
@@ -987,7 +934,7 @@ def read_root():
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
                                 let listHtml = data.users.map(u => 
-                                    `<span style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; display:inline-block;">
+                                    `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-block;">
                                         <b style="color:white;">${u}</b>
                                     </span>`
                                 ).join("");
@@ -1007,8 +954,8 @@ def read_root():
                                     renderBox(data.index);
                                 }
                             }
-                            else if (data.type === "work_timer_update") {
-                                cardData[data.index].work_timer = data.timer;
+                            else if (data.type === "set_work_time") {
+                                cardData[data.index].work_start_time = data.time;
                             }
                             else if (data.type === "init_state") {
                                 const state = data.state;
@@ -1025,7 +972,7 @@ def read_root():
                                             cardData[i].card_bg = card.card_bg;
                                             cardData[i].is_mosaic = card.is_mosaic || false;
                                             cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
-                                            cardData[i].work_timer = card.work_timer || {is_running: false, start_time: 0, elapsed: 0};
+                                            cardData[i].work_start_time = card.work_start_time || 0;
                                             applyMosaicUI(i, cardData[i].is_mosaic);
 
                                             const userEl = document.getElementById(`username-${i}`);
@@ -1051,8 +998,8 @@ def read_root():
                                     const historyEl = document.getElementById('chatHistory');
                                     historyEl.innerHTML = "";
                                     state.chat_history.forEach(chat => {
-                                        const tSpan = chat.time ? `<span style="font-size:9px; color:#636e72; margin-left:4px;">${chat.time}</span>` : '';
-                                        historyEl.innerHTML += `<div style="margin-bottom: 4px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
+                                        const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : '';
+                                        historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`;
                                     });
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
@@ -1073,7 +1020,7 @@ def read_root():
                                 
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
-                                    renderBox(index);
+                                    renderBox(data.index);
                                 }
                                 
                                 applyEmptySlotVisibility();
@@ -1202,10 +1149,6 @@ def read_root():
                                         delete peerConnections[key];
                                     }
                                 }
-                                
-                                const box = document.getElementById(`stream-box-${index}`);
-                                if (box) box.innerHTML = '';
-                                
                                 renderBox(index);
                                 
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
@@ -1449,8 +1392,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "stopwatch_update":
                     server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "work_timer_update":
-                    server_state["cards"][packet["index"]]["work_timer"] = packet.get("timer")
+                elif p_type == "set_work_time":
+                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
@@ -1469,8 +1412,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    server_state["cards"][r_idx]["work_start_time"] = 0
                     server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
-                    server_state["cards"][r_idx]["work_timer"] = {"is_running": False, "start_time": 0, "elapsed": 0}
                     reverted_indexes.append(r_idx)
                     
             del manager.active_slots[client_id]
