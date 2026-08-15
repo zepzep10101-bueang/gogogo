@@ -145,8 +145,8 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 4fr 1fr; gap: 20px; padding: 20px; height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1600px; margin: 0 auto; box-sizing: border-box; }
             
-            /* [원래의 완벽한 바둑판 배열 복구] 스크롤 없이 인원수에 맞춰 화면 안에 쏙 들어오게 자동 조절! */
-            .card-grid { display: grid; gap: 12px; height: 100%; min-height: 0; align-content: center; justify-items: center; align-items: center; }
+            /* [원래 완벽한 오리지널 그리드 레이아웃] */
+            .card-grid { display: grid; gap: 10px; height: 100%; min-height: 0; align-content: center; justify-items: center; align-items: center; }
             .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
             .grid-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
             .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
@@ -154,8 +154,9 @@ def read_root():
             .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
             .grid-12 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); }
 
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 1 / 1; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .timer-card.large { grid-column: span 2; grid-row: span 2; aspect-ratio: 1 / 1; max-height: 100%; }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 6px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); width: 100%; max-width: 100%; height: 100%; max-height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; min-height: 0; }
+            
+            .timer-card.large { grid-column: span 2; grid-row: span 2; height: 100%; max-height: 100%; }
 
             .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; position: relative; z-index: 3; flex-wrap: wrap; }
             
