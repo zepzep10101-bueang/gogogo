@@ -39,7 +39,6 @@ def load_data():
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
             
-            # [추가] 출석체크 데이터베이스 초기화
             if "attendance" not in data:
                 data["attendance"] = {}
                 
@@ -52,7 +51,7 @@ def load_data():
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
-        "attendance": {} # [추가]
+        "attendance": {} 
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -167,9 +166,13 @@ def read_root():
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
-            /* [수정] 버튼 스타일: 여백을 꽉 채우도록 flex 속성 사용 */
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
-            .settings-dropdown { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); }
+
+            /* [추가] 팝업창(모달) 스타일 */
+            .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; }
+            .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
+            .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+            .close-btn:hover { color: #ff7675; }
 
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
             #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 13px; color: #ddd; line-height: 1.5; word-break: break-all; padding-right: 4px; }
@@ -177,23 +180,16 @@ def read_root():
             .chat-input input { flex-grow: 1; padding: 7px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 12px; }
             .chat-input button { padding: 7px 10px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; flex-shrink: 0; font-size: 12px; }
             
-            .bg-control { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
-            
-            /* [추가] 달력 디자인 */
-            .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
-            .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
-            .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
-            .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
-            .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
         </style>
     </head>
     <body>
 
+        <!-- 로그인 모달 -->
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -202,6 +198,56 @@ def read_root():
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
                 <br>
                 <button onclick="login()">입장하기</button>
+            </div>
+        </div>
+
+        <!-- [추가] 공지사항 모달 -->
+        <div id="noticeModal" class="modal-overlay" onclick="if(event.target===this) closeModal('noticeModal')">
+            <div class="modal-box">
+                <button class="close-btn" onclick="closeModal('noticeModal')">❌</button>
+                <h3 style="margin-bottom: 15px; font-size: 16px;">📢 공지사항</h3>
+                <div style="text-align: right; margin-bottom: 10px;">
+                    <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:4px 8px; font-size:10px; cursor:pointer; font-weight:bold; margin-right: 3px;">➕ 추가</button>
+                    <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:4px 8px; font-size:10px; cursor:pointer; font-weight:bold;">✏️ 수정/삭제</button>
+                </div>
+                <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px;">공지사항 로딩 중...</div>
+            </div>
+        </div>
+
+        <!-- [추가] 출석현황 모달 -->
+        <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
+            <div class="modal-box">
+                <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
+                <h3 style="margin-bottom: 15px; font-size: 16px; text-align: center;">🏆 출석 현황</h3>
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <button onclick="stampMyAttendance()" style="background:#27ae60; color:white; border:none; border-radius:5px; padding:10px 20px; font-weight:bold; cursor:pointer; width:100%; font-size:14px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">🍀 오늘 출석 도장 찍기!</button>
+                </div>
+                <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 달 출석 랭킹</div>
+                    <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6;">랭킹 로딩 중...</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;">
+                    <div style="font-size: 13px; font-weight: bold; color: #81ecec; margin-bottom: 8px;">✅ 오늘 출석한 사람</div>
+                    <div id="attTodayList" style="font-size: 12px; color: #ddd; line-height: 1.6; display: flex; flex-wrap: wrap; gap: 4px;">대기 중...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- [추가] 배경설정 모달 -->
+        <div id="settingsModal" class="modal-overlay" onclick="if(event.target===this) closeModal('settingsModal')">
+            <div class="modal-box">
+                <button class="close-btn" onclick="closeModal('settingsModal')">❌</button>
+                <h3 style="margin-bottom: 15px; font-size: 16px;">🖼️ 나만의 배경 (나에게만 보여요)</h3>
+                <div>
+                    <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">일반 사진 (움짤X):</div>
+                    <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:11px; width:100%; margin-bottom: 15px;" onchange="setLocalBackground(event)">
+                    
+                    <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">유튜브 링크:</div>
+                    <div style="display:flex; gap:5px;">
+                        <input type="text" id="bgYoutubeInput" placeholder="URL 입력" style="flex-grow:1; font-size:11px; padding:5px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
+                        <button onclick="setYoutubeBackground()" style="font-size:11px; padding:5px 10px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -218,17 +264,17 @@ def read_root():
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
                         
-                        <!-- [수정] 버튼들이 공간을 예쁘게 채우도록 레이아웃 수정 -->
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
                                 <button class="settings-toggle-btn" style="background:#0984e3; color:white; flex: 1; padding: 6px 0;" onclick="addMySlot()">➕ 자리</button>
                             </div>
                             <div style="display: flex; gap: 4px; width: 100%;">
-                                <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="toggleSettingsPanel()">⚙️ 내 배경</button>
-                                <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="toggleAttendancePanel()">📅 출석체크</button>
+                                <!-- [수정] 팝업 열기 함수 연결 -->
+                                <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="openModal('settingsModal')">⚙️ 내 배경</button>
+                                <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
-                            <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="toggleNoticePanel()">📢 공지</button>
+                            <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
                         </div>
                     </div>
 
@@ -239,36 +285,7 @@ def read_root():
                         </div>
                     </div>
                     
-                    <p style="margin-top:6px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
-
-                    <div id="noticeDropdown" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px; border: 1px solid rgba(255, 118, 117, 0.4);">
-                        <div style="text-align: right; margin-bottom: 6px;">
-                            <button onclick="addNotice()" style="background:#0984e3; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:9px; cursor:pointer; font-weight:bold; margin-right: 3px;">➕ 추가</button>
-                            <button onclick="editNotice()" style="background:#ff7675; color:white; border:none; border-radius:3px; padding:2px 6px; font-size:9px; cursor:pointer; font-weight:bold;">✏️ 수정/삭제</button>
-                        </div>
-                        <div id="noticeText" style="font-size: 12px; color: #fff; line-height: 1.5; word-break: break-all;">공지사항 로딩 중...</div>
-                    </div>
-                    
-                    <!-- [추가] 출석체크 달력 패널 -->
-                    <div id="attendanceDropdown" class="settings-dropdown">
-                        <div style="font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 8px; text-align: center;" id="calMonthTitle">내 출석부</div>
-                        <div class="calendar-grid" id="calendarGrid"></div>
-                        <div style="font-size: 10px; color: #ffeaa7; text-align: center; margin-top: 6px;">오늘 날짜를 눌러서 🍀 도장을 찍어봐!</div>
-                    </div>
-
-                    <div class="settings-dropdown" id="settingsDropdown">
-                        <div style="font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px;">🖼️ 나만의 배경 (나에게만 보여요)</div>
-                        <div class="bg-control">
-                            <div style="font-size: 10px; color: #aaa;">일반 사진 (움짤X):</div>
-                            <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%;" onchange="setLocalBackground(event)">
-                            
-                            <div style="font-size: 10px; color: #aaa; margin-top: 3px;">유튜브 링크:</div>
-                            <div style="display:flex; gap:3px;">
-                                <input type="text" id="bgYoutubeInput" placeholder="URL" style="flex-grow:1; font-size:9px; padding:3px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
-                                <button onclick="setYoutubeBackground()" style="font-size:9px; padding:3px 5px; background:#ff7675; border:none; color:white; border-radius:3px; cursor:pointer;">적용</button>
-                            </div>
-                        </div>
-                    </div>
+                    <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
                 </div>
 
                 <div class="panel-box chat-box">
@@ -294,87 +311,88 @@ def read_root():
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
-            window.attendanceData = {}; // [추가] 전역 출석 데이터
+            window.attendanceData = {}; 
 
-            // [추가] 달력 렌더링 함수
-            function renderCalendar() {
-                const grid = document.getElementById('calendarGrid');
-                if (!grid) return;
-                
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = now.getMonth() + 1;
-                const today = now.getDate();
-                const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-                
-                document.getElementById('calMonthTitle').innerText = `${year}년 ${month}월 출석부`;
-                
-                const firstDay = new Date(year, month - 1, 1).getDay();
-                const daysInMonth = new Date(year, month, 0).getDate();
-                
-                let html = '';
-                const daysOfWeek = ['일','월','화','수','목','금','토'];
-                daysOfWeek.forEach(d => { 
-                    html += `<div style="text-align:center; font-size:10px; color:#ffeaa7; margin-bottom: 4px;">${d}</div>`; 
-                });
-                
-                for(let i=0; i<firstDay; i++) {
-                    html += `<div></div>`;
+            // [추가] 모달 제어 함수
+            function openModal(modalId) {
+                document.getElementById(modalId).style.display = 'flex';
+                if (modalId === 'attendanceModal') {
+                    renderAttendanceBoard();
                 }
-                
-                const myName = window.myNickname || "익명";
-                const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
-                
-                for(let i=1; i<=daysInMonth; i++) {
-                    const isToday = (i === today);
-                    const isStamped = myAtt.includes(i);
-                    
-                    let cls = "cal-day";
-                    if (isToday && !isStamped) cls += " today";
-                    if (isStamped) cls += " stamped";
-                    
-                    const content = isStamped ? '🍀' : i;
-                    
-                    if (isToday && !isStamped) {
-                        html += `<div class="${cls}" onclick="stampAttendance(${year}, ${month}, ${i})" title="도장 찍기!">${content}</div>`;
-                    } else {
-                        html += `<div class="${cls}">${content}</div>`;
-                    }
-                }
-                grid.innerHTML = html;
+            }
+            function closeModal(modalId) {
+                document.getElementById(modalId).style.display = 'none';
             }
 
-            // [추가] 도장 찍기 서버 전송 함수
-            function stampAttendance(y, m, d) {
+            function renderAttendanceBoard() {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth() + 1;
+                const d = now.getDate();
+                const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+                
+                const titleEl = document.getElementById('rankTitle');
+                if (titleEl) titleEl.innerText = `🏆 ${m}월 출석 랭킹`;
+
+                const monthData = window.attendanceData[monthStr] || {};
+                
+                let rankArr = [];
+                let todayAttendees = [];
+                
+                for (let user in monthData) {
+                    const stamps = monthData[user];
+                    rankArr.push({ name: user, count: stamps.length });
+                    if (stamps.includes(d)) {
+                        todayAttendees.push(user);
+                    }
+                }
+                
+                rankArr.sort((a, b) => b.count - a.count);
+                
+                let rankHtml = '';
+                if (rankArr.length === 0) {
+                    rankHtml = '아직 이번 달 출석한 사람이 없어!';
+                } else {
+                    rankArr.forEach((item, idx) => {
+                        let medal = '🏅';
+                        if (idx === 0) medal = '🥇';
+                        else if (idx === 1) medal = '🥈';
+                        else if (idx === 2) medal = '🥉';
+                        
+                        let emphasis = (idx < 3) ? 'font-weight:bold; color:#fff;' : '';
+                        rankHtml += `<div style="${emphasis} margin-bottom: 4px;">${medal} ${item.name} : ${item.count}일</div>`;
+                    });
+                }
+                
+                let todayHtml = '';
+                if (todayAttendees.length === 0) {
+                    todayHtml = '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!';
+                } else {
+                    todayHtml = todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${u}</span>`).join('');
+                }
+                
+                const rankEl = document.getElementById('attRankingList');
+                const todayEl = document.getElementById('attTodayList');
+                if (rankEl) rankEl.innerHTML = rankHtml;
+                if (todayEl) todayEl.innerHTML = todayHtml;
+            }
+
+            function stampMyAttendance() {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth() + 1;
+                const d = now.getDate();
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
+                
+                if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) {
+                    alert("누나(작가님)! 오늘은 이미 클로버 도장을 꾹 찍었어! 내일 또 찍으러 와 🍀");
+                    return;
+                }
+
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName }));
                 }
-            }
-
-            function toggleAttendancePanel() {
-                const d = document.getElementById('attendanceDropdown');
-                // 다른 패널 닫기
-                document.getElementById('settingsDropdown').style.display = 'none';
-                document.getElementById('noticeDropdown').style.display = 'none';
-                
-                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
-                if (d.style.display === 'block') renderCalendar();
-            }
-
-            function toggleSettingsPanel() {
-                const d = document.getElementById('settingsDropdown');
-                document.getElementById('attendanceDropdown').style.display = 'none';
-                document.getElementById('noticeDropdown').style.display = 'none';
-                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
-            }
-
-            function toggleNoticePanel() {
-                const d = document.getElementById('noticeDropdown');
-                document.getElementById('attendanceDropdown').style.display = 'none';
-                document.getElementById('settingsDropdown').style.display = 'none';
-                d.style.display = (d.style.display === 'block') ? 'none' : 'block';
             }
 
             function loadLocalBackground() {
@@ -1097,7 +1115,6 @@ def read_root():
                                     document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice);
                                 }
                                 
-                                // [추가] 초기 상태에서 출석 데이터 받아오기
                                 if (state.attendance) {
                                     window.attendanceData = state.attendance;
                                 }
@@ -1149,11 +1166,10 @@ def read_root():
                                 
                                 applyEmptySlotVisibility();
                             }
-                            // [추가] 출석 데이터 업데이트 수신
                             else if (data.type === "attendance_update") {
                                 window.attendanceData = data.attendance;
-                                if (document.getElementById('attendanceDropdown').style.display === 'block') {
-                                    renderCalendar();
+                                if (document.getElementById('attendanceModal').style.display === 'flex') {
+                                    renderAttendanceBoard();
                                 }
                             }
                             else if (data.type === "username_change") {
@@ -1509,7 +1525,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet))
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
-            # [추가] 서버에서 출석체크 정보 받아서 저장하기
             elif p_type == "attendance":
                 month = packet.get("month")
                 day = packet.get("day")
