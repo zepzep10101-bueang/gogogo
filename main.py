@@ -153,11 +153,8 @@ def read_root():
             .grid-5-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .grid-max { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
             
-            /* 기본 카드 스타일 */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: box-shadow 0.3s ease; }
-            
-            /* '크게' 눌렀을 때 작동하는 거대화 스타일 */
-            .timer-card.large { width: 550px !important; height: 450px !important; z-index: 99999 !important; }
+            /* [마법] 카드 모서리를 마우스로 잡고 자유롭게 늘릴 수 있는 resize 기능 탑재! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-width: 250px; min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: box-shadow 0.3s ease; resize: both; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; cursor: move; }
             
@@ -272,7 +269,6 @@ def read_root():
 
             window.rawNotice = ""; 
 
-            // [완벽한 자유 배치 드래그] 1번 카드 포함 모든 카드를 어디든 슥슥 끌고 다니기!
             function makeFreeDraggable(el) {
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
                 
@@ -371,7 +367,6 @@ def read_root():
                     if (cardEl) {
                         if (card.user.startsWith("자리")) {
                             cardEl.style.display = "none";
-                            cardEl.classList.remove('large'); 
                         } else {
                             cardEl.style.display = "flex";
                             visibleCount++;
@@ -452,7 +447,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -636,26 +631,6 @@ def read_root():
                 }
                 alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
-            
-            // [크게/작게 기능 완전 부활] 둥둥 떠 있는 상태에서도 큼직하게 뻥튀기!
-            function toggleCardSize(index) {
-                const card = document.getElementById(`card-card-${index}`);
-                const btn = document.getElementById(`size-btn-${index}`);
-                
-                if (card.classList.contains('large')) {
-                    card.classList.remove('large');
-                    btn.innerText = "크게";
-                    btn.style.background = "#fdcb6e";
-                    card.style.width = "";
-                    card.style.height = "";
-                } else {
-                    card.classList.add('large');
-                    btn.innerText = "작게";
-                    btn.style.background = "#e17055";
-                    card.style.width = "550px";
-                    card.style.height = "450px";
-                }
-            }
 
             function initCards() {
                 const grid = document.getElementById('cardGrid');
@@ -681,7 +656,6 @@ def read_root():
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
-                                    <button class="share-btn" id="size-btn-${index}" style="background:#fdcb6e; color:black;" onclick="toggleCardSize(${index})">크게</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
                                 </div>
                             </div>
