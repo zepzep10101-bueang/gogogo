@@ -23,7 +23,7 @@ def load_data():
             if len(cards) > 16:
                 data["cards"] = cards[:16]
             elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False} for i in range(len(cards), 16)]
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
@@ -31,8 +31,8 @@ def load_data():
                 card["is_mosaic"] = False
                 if "is_large" not in card:
                     card["is_large"] = False
-                if "stopwatch" not in card:
-                    card["stopwatch"] = {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}
+                if "status" not in card:
+                    card["status"] = 0
                 if "work_start_time" not in card:
                     card["work_start_time"] = 0
             
@@ -48,7 +48,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "stopwatch": {"is_active": False, "is_running": False, "start_time": 0, "elapsed": 0}, "work_start_time": 0} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
         "attendance": {} 
@@ -157,7 +157,7 @@ def read_root():
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
-            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; }
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
@@ -168,7 +168,6 @@ def read_root():
             
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
 
-            /* 팝업창(모달) 스타일 */
             .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; }
             .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
             .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; }
@@ -186,7 +185,6 @@ def read_root():
             
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
 
-            /* 달력 디자인 */
             .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
             .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
             .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
@@ -221,26 +219,23 @@ def read_root():
             </div>
         </div>
 
-        <!-- 출석현황 모달 (달력 + 랭킹 합침) -->
+        <!-- 출석현황 모달 -->
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
                 <h3 style="margin-bottom: 15px; font-size: 16px; text-align: center;">🏆 출석 현황</h3>
                 
-                <!-- 1. 개인 달력 -->
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; text-align: center;" id="calMonthTitle">🍀 내 출석부</div>
                     <div class="calendar-grid" id="calendarGrid"></div>
                     <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">빨간 테두리(오늘)를 눌러서 도장을 찍어봐!</div>
                 </div>
 
-                <!-- 2. 모두의 랭킹 -->
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 달 출석 랭킹</div>
                     <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6; max-height: 100px; overflow-y: auto;">랭킹 로딩 중...</div>
                 </div>
 
-                <!-- 3. 오늘 출석자 -->
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;">
                     <div style="font-size: 13px; font-weight: bold; color: #81ecec; margin-bottom: 8px;">✅ 오늘 출석한 사람</div>
                     <div id="attTodayList" style="font-size: 12px; color: #ddd; line-height: 1.6; display: flex; flex-wrap: wrap; gap: 4px;">대기 중...</div>
@@ -576,7 +571,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, stopwatch: {is_active: false, is_running: false, start_time: 0, elapsed: 0}, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -611,18 +606,16 @@ def read_root():
                 if (existingVideo) existingVideo.remove();
 
                 const card = cardData[index];
-                if (card.stopwatch && card.stopwatch.is_active) {
-                    const isMine = (card.user === window.myNickname) || window.isAdmin;
+                
+                if (card.status > 0) {
+                    let textMsg = "";
+                    if (card.status === 1) textMsg = "🍽️ 식사중";
+                    else if (card.status === 2) textMsg = "☕ 휴식중";
+                    else if (card.status === 3) textMsg = "💤 수면중";
+
                     box.innerHTML = `
-                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%;">
-                            <div id="sw-display-${index}" style="font-size: 30px; font-weight: 900; font-family: monospace; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">00:00:00</div>
-                            ${isMine ? `
-                            <div style="margin-top: 8px; display: flex; gap: 4px;">
-                                <button onclick="startSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#00b894; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">▶ 시작</button>
-                                <button onclick="pauseSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#fdcb6e; color:black; font-weight:bold; cursor:pointer; font-size: 10px;">⏸ 정지</button>
-                                <button onclick="resetSw(${index})" style="padding:3px 8px; border:none; border-radius:3px; background:#d63031; color:white; font-weight:bold; cursor:pointer; font-size: 10px;">⏹ 리셋</button>
-                            </div>
-                            ` : ''}
+                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;">
+                            <div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div>
                         </div>
                     `;
                 } else {
@@ -641,10 +634,9 @@ def read_root():
             }
 
             function checkWorkTimeStop(index) {
-                const sw = cardData[index].stopwatch;
                 const hasStream = !!myStreams[index];
-                const hasSw = sw && sw.is_active;
-                if (!hasStream && !hasSw) {
+                const hasStatus = cardData[index].status > 0;
+                if (!hasStream && !hasStatus) {
                     cardData[index].work_start_time = 0;
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
@@ -664,74 +656,60 @@ def read_root():
                 }
             }
 
-            function toggleStopwatchMode(index) {
-                let sw = cardData[index].stopwatch;
-                if (!sw) sw = { is_active: false, is_running: false, start_time: 0, elapsed: 0 };
-                
-                sw.is_active = !sw.is_active;
-                sw.is_running = false;
-                sw.elapsed = 0;
-                cardData[index].stopwatch = sw;
-                
-                if (sw.is_active && myStreams[index]) {
-                    stopShare(index); 
+            function toggleStatusMenu(index) {
+                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
+                if (!isMine) {
+                    alert("자기 자리 상태만 바꿀 수 있어 누나!");
+                    return;
                 }
-                
-                if (sw.is_active) {
+
+                for(let i=0; i<16; i++) {
+                    if (i !== index) {
+                        const m = document.getElementById(`status-menu-${i}`);
+                        if (m) m.style.display = 'none';
+                    }
+                }
+
+                const menu = document.getElementById(`status-menu-${index}`);
+                if (menu) {
+                    menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+                }
+            }
+
+            function setStatus(index, s) {
+                const menu = document.getElementById(`status-menu-${index}`);
+                if(menu) menu.style.display = 'none';
+
+                cardData[index].status = s;
+
+                if (s !== 0 && myStreams[index]) {
+                    stopShare(index);
+                }
+
+                if (s !== 0) {
                     checkWorkTimeStart(index);
                 } else {
                     checkWorkTimeStop(index);
                 }
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: sw }));
+                    ws.send(JSON.stringify({ type: "status_update", index: index, status: s }));
                 }
                 renderBox(index);
             }
 
-            function startSw(index) {
-                cardData[index].stopwatch.is_running = true;
-                cardData[index].stopwatch.start_time = Date.now();
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+            document.addEventListener('click', function(event) {
+                if (!event.target.closest('.status-wrap')) {
+                    for(let i=0; i<16; i++) {
+                        const m = document.getElementById(`status-menu-${i}`);
+                        if(m) m.style.display = 'none';
+                    }
                 }
-            }
-
-            function pauseSw(index) {
-                if (!cardData[index].stopwatch.is_running) return;
-                cardData[index].stopwatch.is_running = false;
-                cardData[index].stopwatch.elapsed += (Date.now() - cardData[index].stopwatch.start_time);
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                }
-            }
-
-            function resetSw(index) {
-                cardData[index].stopwatch.is_running = false;
-                cardData[index].stopwatch.elapsed = 0;
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
-                }
-                renderBox(index);
-            }
+            });
 
             setInterval(() => {
                 const now = Date.now();
                 cardData.forEach((card, idx) => {
-                    if (card.stopwatch && card.stopwatch.is_active) {
-                        let totalMs = card.stopwatch.elapsed;
-                        if (card.stopwatch.is_running) {
-                            totalMs += (now - card.stopwatch.start_time);
-                        }
-                        const el = document.getElementById(`sw-display-${idx}`);
-                        if (el) {
-                            let s = Math.floor(totalMs / 1000);
-                            let h = Math.floor(s / 3600); s %= 3600;
-                            let m = Math.floor(s / 60); s %= 60;
-                            el.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                        }
-                    }
-
                     const wtEl = document.getElementById(`work-timer-${idx}`);
                     if (wtEl && card.work_start_time) {
                         let s = Math.floor((now - card.work_start_time) / 1000);
@@ -797,7 +775,17 @@ def read_root():
                                 <div class="btn-group">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <button class="share-btn" id="share-btn-sw-${index}" style="background:#8e44ad;" onclick="toggleStopwatchMode(${index})">시계</button>
+                                    
+                                    <div style="position:relative; display:flex; flex-grow:1;" class="status-wrap">
+                                        <button class="share-btn" id="share-btn-status-${index}" style="background:#8e44ad; width:100%;" onclick="toggleStatusMenu(${index})">상태</button>
+                                        <div id="status-menu-${index}" style="display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); background:rgba(30,30,40,0.95); border:1px solid #8e44ad; border-radius:4px; flex-direction:column; z-index:100; min-width:70px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding: 4px; margin-top: 2px;">
+                                            <button onclick="setStatus(${index}, 1)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🍽️ 식사</button>
+                                            <button onclick="setStatus(${index}, 2)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">☕ 휴식</button>
+                                            <button onclick="setStatus(${index}, 3)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">💤 수면</button>
+                                            <button onclick="setStatus(${index}, 0)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px; margin-top:2px; border-top: 1px solid rgba(255,255,255,0.1);" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🔄 원래대로</button>
+                                        </div>
+                                    </div>
+                                    
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
@@ -817,13 +805,10 @@ def read_root():
                 applyEmptySlotVisibility();
             }
 
-            // [수정] 서버 전송 로직 삭제, 개인 화면에서만 크기 조절 작동
             function toggleSize(index) {
                 const newState = !cardData[index].is_large;
                 cardData[index].is_large = newState;
                 applySizeUI(index, newState);
-
-                // 서버 전송 코드 삭제 완료!
             }
 
             function applySizeUI(index, isLarge) {
@@ -985,10 +970,10 @@ def read_root():
                     return;
                 }
 
-                if (cardData[index].stopwatch && cardData[index].stopwatch.is_active) {
-                    cardData[index].stopwatch.is_active = false;
+                if (cardData[index].status > 0) {
+                    cardData[index].status = 0;
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "stopwatch_update", index: index, stopwatch: cardData[index].stopwatch }));
+                        ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 }));
                     }
                 }
 
@@ -1038,11 +1023,12 @@ def read_root():
                     delete myStreams[index];
                 }
 
-                cardData[index].is_mosaic = false;
-                applyMosaicUI(index, false);
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: false }));
-                }
+                // [수정] 모자이크 강제 해제 로직 완전 삭제 (안전을 위해 유지)
+                // cardData[index].is_mosaic = false;
+                // applyMosaicUI(index, false);
+                // if (ws && ws.readyState === WebSocket.OPEN) {
+                //     ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: false }));
+                // }
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
@@ -1162,8 +1148,8 @@ def read_root():
                                 window.rawNotice = data.notice;
                                 document.getElementById('noticeText').innerHTML = formatNotice(data.notice);
                             }
-                            else if (data.type === "stopwatch_update") {
-                                cardData[data.index].stopwatch = data.stopwatch;
+                            else if (data.type === "status_update") {
+                                cardData[data.index].status = data.status;
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
                                     renderBox(data.index);
@@ -1199,7 +1185,7 @@ def read_root():
                                             cardData[i].card_bg = card.card_bg;
                                             cardData[i].is_mosaic = card.is_mosaic || false;
                                             cardData[i].is_large = card.is_large || false;
-                                            cardData[i].stopwatch = card.stopwatch || {is_active: false, is_running: false, start_time: 0, elapsed: 0};
+                                            cardData[i].status = card.status || 0;
                                             cardData[i].work_start_time = card.work_start_time || 0;
                                             
                                             applyMosaicUI(i, cardData[i].is_mosaic);
@@ -1274,10 +1260,6 @@ def read_root():
                                     cardData[data.index].is_mosaic = data.is_mosaic;
                                     applyMosaicUI(data.index, data.is_mosaic);
                                 }
-                            }
-                            // [수정] 다른 사람이 보낸 toggle_size 브로드캐스트는 완전히 무시!
-                            else if (data.type === "toggle_size") {
-                                // 아무 일도 하지 않음 (개인 전용)
                             }
                             else if (data.type === "start_share") {
                                 const targetIndex = data.index;
@@ -1645,10 +1627,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                # [수정] 서버에서 토글 사이즈 패킷 저장하는 로직 아예 제거
-                # elif p_type == "toggle_size":
-                #     server_state["cards"][packet["index"]]["is_large"] = packet.get("is_large", False)
-                #     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
@@ -1658,8 +1636,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "update_notice":
                     server_state["global_notice"] = packet.get("notice", "")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "stopwatch_update":
-                    server_state["cards"][packet["index"]]["stopwatch"] = packet.get("stopwatch")
+                elif p_type == "status_update":
+                    server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "set_work_time":
                     server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
@@ -1683,7 +1661,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     server_state["cards"][r_idx]["work_start_time"] = 0
                     server_state["cards"][r_idx]["is_large"] = False
-                    server_state["cards"][r_idx]["stopwatch"]["is_active"] = False
+                    server_state["cards"][r_idx]["status"] = 0
                     reverted_indexes.append(r_idx)
                     
             del manager.active_slots[client_id]
