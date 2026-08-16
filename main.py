@@ -157,14 +157,18 @@ def read_root():
             @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
+            /* [수정] 억지 비율을 없애고, 기본 키를 250px에서 280px로 살짝 늘려서 더 쾌적하게 보이도록 설정! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 280px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            
+            /* [핵심] 크게 버튼을 눌렀을 때만 모니터 바닥을 뚫지 않도록 max-height 방어막 추가! */
+            .card-large { grid-column: span 2; grid-row: span 2; max-height: calc(100vh - 60px); }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            /* [복구 및 최적화] 원래의 예쁜 반투명 배경(0.15) 복구, 빈 공간이 안 생기게 flex-grow: 1, min-height: 0 적용! */
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -265,7 +269,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- [추가] 방장 전용 출입 기록 모달 -->
+        <!-- 방장 전용 출입 기록 모달 -->
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -333,13 +337,13 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "4717"; // [수정] 방장 비밀번호 4717로 변경
+            const ADMIN_PASSWORD = "4717"; 
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
-            window.adminLogData = []; // [추가] 방장 전용 로그 데이터
+            window.adminLogData = []; 
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
@@ -354,7 +358,6 @@ def read_root():
                 document.getElementById(modalId).style.display = 'none';
             }
 
-            // [추가] 출입 기록 시간 포맷 함수
             function formatLogTime(ts) {
                 const now = new Date(ts * 1000);
                 const m = now.getMonth() + 1;
@@ -363,7 +366,6 @@ def read_root():
                 return `${m}/${d} ${timeString}`;
             }
 
-            // [추가] 출입 기록 렌더링 함수
             function renderAdminLog() {
                 const container = document.getElementById('adminLogContent');
                 if (!window.adminLogData || window.adminLogData.length === 0) {
@@ -586,7 +588,6 @@ def read_root():
                         return;
                     }
                     window.isAdmin = true;
-                    // [추가] 방장이면 출입 기록 버튼 짠! 하고 보여줌
                     document.getElementById('adminLogBtn').style.display = 'block';
                 } else {
                     if (inputPw !== ROOM_PASSWORD) {
