@@ -153,27 +153,18 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* [수정] 빈자리 없앨 때 공간 낭비 없이 알아서 꽉꽉 차게 auto-fit 적용! (최소 320px 보장) */
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            /* [핵심수정] 와이드 16:10 비율 + 화면 뚫림 방지(max-height) 완벽 세팅 */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; aspect-ratio: 16 / 10; max-height: calc(100vh - 60px); position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            
-            .card-large { grid-column: span 2; grid-row: span 2; }
-            
-            /* [방어막] 모바일이나 세로로 긴 좁은 창에서는 무조건 1칸으로 줄여서 잘림 방지! */
-            @media (max-width: 800px) {
-                .card-large { grid-column: span 1; grid-row: span 1; }
-            }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [대수술] 화공 박스의 고집불통 비율(aspect-ratio) 삭제! 남는 공간을 무조건 100% 꽉 채우도록 flex-grow:1 적용 & 배경을 딥블랙(#000)으로! */
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: #000; border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
-            
-            /* 비디오는 잘림 방지를 위해 contain 유지! 남는 여백은 위 블랙박스에 자연스럽게 흡수됨! */
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -274,7 +265,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- 방장 전용 출입 기록 모달 -->
+        <!-- [추가] 방장 전용 출입 기록 모달 -->
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -308,6 +299,7 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
+                            <!-- [추가] 방장 전용 출입기록 버튼 (기본 숨김) -->
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
@@ -341,13 +333,13 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "4717"; 
+            const ADMIN_PASSWORD = "4717"; // [수정] 방장 비밀번호 4717로 변경
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
-            window.adminLogData = []; 
+            window.adminLogData = []; // [추가] 방장 전용 로그 데이터
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
@@ -362,6 +354,7 @@ def read_root():
                 document.getElementById(modalId).style.display = 'none';
             }
 
+            // [추가] 출입 기록 시간 포맷 함수
             function formatLogTime(ts) {
                 const now = new Date(ts * 1000);
                 const m = now.getMonth() + 1;
@@ -370,6 +363,7 @@ def read_root():
                 return `${m}/${d} ${timeString}`;
             }
 
+            // [추가] 출입 기록 렌더링 함수
             function renderAdminLog() {
                 const container = document.getElementById('adminLogContent');
                 if (!window.adminLogData || window.adminLogData.length === 0) {
@@ -592,6 +586,7 @@ def read_root():
                         return;
                     }
                     window.isAdmin = true;
+                    // [추가] 방장이면 출입 기록 버튼 짠! 하고 보여줌
                     document.getElementById('adminLogBtn').style.display = 'block';
                 } else {
                     if (inputPw !== ROOM_PASSWORD) {
@@ -820,7 +815,7 @@ def read_root():
                         }
                     }
                 }
-                alert("화 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
+                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
 
             function initCards() {
@@ -1247,6 +1242,7 @@ def read_root():
                                     window.attendanceData = state.attendance;
                                 }
 
+                                // [추가] 초기 로딩 시 관리자 로그 데이터 복원
                                 if (state.admin_log) {
                                     window.adminLogData = state.admin_log;
                                     if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
@@ -1308,6 +1304,7 @@ def read_root():
                                     renderAttendanceBoard();
                                 }
                             }
+                            // [추가] 누군가 들어오거나 나갈 때 방장 화면에만 기록 렌더링
                             else if (data.type === "admin_log_update") {
                                 if (!window.adminLogData) window.adminLogData = [];
                                 window.adminLogData.push(data.log);
@@ -1599,6 +1596,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
 
+                # [추가] 방장이 볼 수 있게 누군가 접속하면 로그 생성
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
                 server_state.setdefault("admin_log", []).append(log_entry)
                 if len(server_state["admin_log"]) > 100:
@@ -1740,6 +1738,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
         
+        # [추가] 브라우저 종료 등 통신 단절 시 퇴장 로그 기록
         nickname = manager.active_users.get(websocket, "")
         
         reverted_indexes = []
@@ -1764,6 +1763,7 @@ async def websocket_endpoint(websocket: WebSocket):
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
         
+        # [추가] 방장이 볼 수 있게 누군가 나가면 로그 생성 및 전송
         if nickname and nickname != "연결중...":
             log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
