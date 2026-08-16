@@ -158,7 +158,9 @@ def read_root():
             @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
+            
+            /* [수정됨] 화면 밖으로 뚫고 나가는 것을 막기 위해 max-height 추가 및 min-height 조절! */
+            .card-large { grid-column: span 2; grid-row: span 2; min-height: 260px; max-height: calc(100vh - 60px); }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
