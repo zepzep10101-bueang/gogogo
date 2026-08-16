@@ -26,7 +26,6 @@ def load_data():
         "admin_log": []
     }
     
-    # [수정] 데이터베이스 연결 실패 시 뻗지 않고 기본 데이터로 서버 실행 보장!
     if collection is None:
         return initial_data
         
@@ -34,7 +33,7 @@ def load_data():
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # [수정] 16칸에서 12칸으로 완벽 축소!
+            # [유지] 12칸 쾌적 세팅
             if len(cards) > 12:
                 data["cards"] = cards[:12]
             elif len(cards) < 12:
@@ -42,7 +41,6 @@ def load_data():
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
-                # [수정] 서버 재시작 시 닉네임이 날아가지 않도록 보호!
                 if "user" not in card or not card["user"]: 
                     card["user"] = f"자리{i+1}"
                 if "is_mosaic" not in card: card["is_mosaic"] = False
@@ -164,29 +162,26 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
+            /* [해결 1] 완벽한 3열 배치 테트리스! */
             .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             @media (max-width: 800px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 280px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [해결 2] 카드의 기본 높이를 쾌적하게(250px) 설정. 너무 크면 2배 됐을 때 잘리니까 황금 비율로! */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            .card-large { 
-                grid-column: span 2; 
-                grid-row: span 2; 
-                aspect-ratio: 16 / 11; 
-                max-height: calc(100vh - 60px); 
-                height: auto; 
-                max-width: 100%; 
-                justify-self: center; 
-            }
+            /* [해결 3] 억지 마법(aspect-ratio, justify-self, max-height) 싹 다 제거! 
+               이제 순수하게 2칸x2칸만 차지하니까 밑동 잘릴 일도 없고 혼자 붕 뜰 일도 없음! */
+            .card-large { grid-column: span 2; grid-row: span 2; }
             @media (max-width: 800px) {
-                .card-large { grid-column: span 1; grid-row: span 1; aspect-ratio: auto; }
+                .card-large { grid-column: span 1; grid-row: span 1; }
             }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
+            /* [해결 4] 반투명 배경(rgba 0.15) 복구! 큰 카드 안에서 알아서 100% 꽉꽉 채워짐! */
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
@@ -322,7 +317,6 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
-                            <!-- 방장 전용 출입기록 버튼 (기본 숨김) -->
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
@@ -1624,7 +1618,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 recovered = False
                 if owned:
                     for idx in owned:
-                        # [수정] 악성 폭탄 제거! 16이 아니라 12까지만 검사하도록 방어!
                         if 0 <= idx < 12:  
                             current_user = server_state["cards"][idx]["user"]
                             if current_user.startswith("자리") or current_user == nickname:
@@ -1717,7 +1710,6 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 packet["sender"] = client_id
                 
-                # [수정] 비정상적인 범위 신호가 오면 무시해서 서버 크래시 2차 방어!
                 p_idx = packet.get("index")
                 if p_idx is not None and not (0 <= p_idx < 12):
                     continue
