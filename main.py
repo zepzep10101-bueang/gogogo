@@ -153,15 +153,15 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            /* [수정] 빈자리 없앨 때 공간 낭비 없이 알아서 꽉꽉 차게 auto-fit 적용! (최소 320px 보장) */
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             
-            /* [수정] 와이드 16:11 비율로 변경! 화공이 훨씬 넓고 시원하게 보임! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 220px; aspect-ratio: 16 / 11; height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [핵심수정] 와이드 16:10 비율 + 화면 뚫림 방지(max-height) 완벽 세팅 */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; aspect-ratio: 16 / 10; max-height: calc(100vh - 60px); position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            /* [수정] 큰 카드 높이 억지 제한 삭제! */
             .card-large { grid-column: span 2; grid-row: span 2; }
             
-            /* [방어막] 창이 좁아지면(스마트폰/세로창) 큰 카드 모드 자동 해제해서 뚫림 방지! */
+            /* [방어막] 모바일이나 세로로 긴 좁은 창에서는 무조건 1칸으로 줄여서 잘림 방지! */
             @media (max-width: 800px) {
                 .card-large { grid-column: span 1; grid-row: span 1; }
             }
@@ -170,8 +170,10 @@ def read_root():
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [핵심수정] 딥블랙 배경 적용 및 빈 공간 자동 채우기! 파란색/노란색 카드 빈틈 완벽 삭제! */
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: #050505; border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            /* [대수술] 화공 박스의 고집불통 비율(aspect-ratio) 삭제! 남는 공간을 무조건 100% 꽉 채우도록 flex-grow:1 적용 & 배경을 딥블랙(#000)으로! */
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: #000; border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            
+            /* 비디오는 잘림 방지를 위해 contain 유지! 남는 여백은 위 블랙박스에 자연스럽게 흡수됨! */
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -818,7 +820,7 @@ def read_root():
                         }
                     }
                 }
-                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
+                alert("화 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!");
             }
 
             function initCards() {
