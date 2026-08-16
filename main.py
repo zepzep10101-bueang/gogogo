@@ -8,6 +8,7 @@ asyncio = __import__('asyncio')
 from pymongo import MongoClient
 
 MONGO_URI = "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0"
+collection = None
 try:
     client = MongoClient(MONGO_URI)
     db = client["dashboard_db"]
@@ -16,6 +17,19 @@ except Exception as e:
     print("망고로드 연결 실패:", e)
 
 def load_data():
+    initial_data = {
+        "_id": "main_state",
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(12)],
+        "chat_history": [],
+        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
+        "attendance": {},
+        "admin_log": []
+    }
+    
+    # [수정] 데이터베이스 연결 실패 시 뻗지 않고 기본 데이터로 서버 실행 보장!
+    if collection is None:
+        return initial_data
+        
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
@@ -28,14 +42,13 @@ def load_data():
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
-                card["user"] = f"자리{i+1}"
-                card["is_mosaic"] = False
-                if "is_large" not in card:
-                    card["is_large"] = False
-                if "status" not in card:
-                    card["status"] = 0
-                if "work_start_time" not in card:
-                    card["work_start_time"] = 0
+                # [수정] 서버 재시작 시 닉네임이 날아가지 않도록 보호!
+                if "user" not in card or not card["user"]: 
+                    card["user"] = f"자리{i+1}"
+                if "is_mosaic" not in card: card["is_mosaic"] = False
+                if "is_large" not in card: card["is_large"] = False
+                if "status" not in card: card["status"] = 0
+                if "work_start_time" not in card: card["work_start_time"] = 0
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
@@ -50,19 +63,15 @@ def load_data():
     except Exception:
         pass
     
-    # [수정] 초기 데이터도 12칸으로!
-    initial_data = {
-        "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(12)],
-        "chat_history": [],
-        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
-        "attendance": {},
-        "admin_log": []
-    }
-    collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
+    try:
+        collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
+    except Exception:
+        pass
     return initial_data
 
 def save_data(data):
+    if collection is None:
+        return
     try:
         collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
     except Exception as e:
@@ -155,14 +164,12 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* [수정] 3열(3칸) 바둑판 테트리스 모드 적용! */
             .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             @media (max-width: 800px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 280px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            /* [핵심 마법] 황금비율 자물쇠(aspect-ratio: 16/11) + 밑동 잘림 방지(max-height) + 호떡 찢어짐 방지(justify-self: center) 완벽 적용! */
             .card-large { 
                 grid-column: span 2; 
                 grid-row: span 2; 
@@ -180,7 +187,6 @@ def read_root():
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [복구] 누나가 사랑하는 원래의 반투명(rgba 0.15) 배경 복구! 빈 공간 없이 flex-grow 꽉 채움! */
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
@@ -547,7 +553,6 @@ def read_root():
             }
 
             function applyEmptySlotVisibility() {
-                // [수정] JS 루프도 12칸에 맞춰서 12로 변경!
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
@@ -631,7 +636,6 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            // [수정] 12칸 바둑판 배열 완벽 적용!
             const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
@@ -1581,3 +1585,224 @@ def read_root():
         </script>
     </body>
     </html>
+    """
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    client_id = str(id(websocket))
+    
+    await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
+    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            packet = json.loads(data)
+            p_type = packet.get("type")
+
+            if p_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
+            if p_type == "set_nickname":
+                nickname = packet.get("nickname", "익명")
+                owned = packet.get("owned", [])
+                manager.active_users[websocket] = nickname
+                await manager.broadcast_user_list()
+                
+                if client_id not in manager.active_slots:
+                    manager.active_slots[client_id] = []
+
+                log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
+                server_state.setdefault("admin_log", []).append(log_entry)
+                if len(server_state["admin_log"]) > 100:
+                    server_state["admin_log"].pop(0)
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+
+                recovered = False
+                if owned:
+                    for idx in owned:
+                        # [수정] 악성 폭탄 제거! 16이 아니라 12까지만 검사하도록 방어!
+                        if 0 <= idx < 12:  
+                            current_user = server_state["cards"][idx]["user"]
+                            if current_user.startswith("자리") or current_user == nickname:
+                                if idx not in manager.active_slots[client_id]:
+                                    manager.active_slots[client_id].append(idx)
+                                server_state["cards"][idx]["user"] = nickname
+                                recovered = True
+                                
+                                change_packet = json.dumps({
+                                    "type": "username_change",
+                                    "index": idx,
+                                    "user": nickname
+                                })
+                                await manager.broadcast(change_packet)
+                                await websocket.send_text(change_packet)
+                
+                if recovered:
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    continue
+                
+                assigned_idx = None
+                for i, card in enumerate(server_state["cards"]):
+                    if card["user"].startswith("자리"):
+                        assigned_idx = i
+                        break
+                
+                if assigned_idx is not None:
+                    manager.active_slots[client_id].append(assigned_idx)
+                    server_state["cards"][assigned_idx]["user"] = nickname
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    
+                    change_packet = json.dumps({
+                        "type": "username_change",
+                        "index": assigned_idx,
+                        "user": nickname
+                    })
+                    await manager.broadcast(change_packet)
+                    await websocket.send_text(change_packet)
+                
+                continue
+
+            if p_type == "clear_chat":
+                server_state["chat_history"] = []
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "chat_cleared"}))
+                await websocket.send_text(json.dumps({"type": "chat_cleared"}))
+                continue
+
+            if p_type == "kick":
+                target_nick = packet.get("target_nick")
+                for ws_conn, name in list(manager.active_users.items()):
+                    if name == target_nick:
+                        try:
+                            await ws_conn.send_text(json.dumps({"type": "kicked"}))
+                        except:
+                            pass
+                continue
+
+            if p_type == "chat":
+                chat_obj = {
+                    "senderName": packet.get("senderName"), 
+                    "msg": packet.get("msg"),
+                    "time": packet.get("time", "")
+                }
+                server_state["chat_history"].append(chat_obj)
+                if len(server_state["chat_history"]) > 100:
+                    server_state["chat_history"].pop(0)
+                
+                await manager.broadcast(json.dumps(packet))
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
+            elif p_type == "attendance":
+                month = packet.get("month")
+                day = packet.get("day")
+                nickname = packet.get("nickname")
+                
+                if "attendance" not in server_state:
+                    server_state["attendance"] = {}
+                if month not in server_state["attendance"]:
+                    server_state["attendance"][month] = {}
+                if nickname not in server_state["attendance"][month]:
+                    server_state["attendance"][month][nickname] = []
+                    
+                if day not in server_state["attendance"][month][nickname]:
+                    server_state["attendance"][month][nickname].append(day)
+                    
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
+                
+            else:
+                packet["sender"] = client_id
+                
+                # [수정] 비정상적인 범위 신호가 오면 무시해서 서버 크래시 2차 방어!
+                p_idx = packet.get("index")
+                if p_idx is not None and not (0 <= p_idx < 12):
+                    continue
+                
+                if p_type == "username_change":
+                    idx = packet["index"]
+                    val = packet["user"]
+                    server_state["cards"][idx]["user"] = val
+                    
+                    if not val.startswith("자리"):
+                        if client_id not in manager.active_slots:
+                            manager.active_slots[client_id] = []
+                        if idx not in manager.active_slots[client_id]:
+                            manager.active_slots[client_id].append(idx)
+                            
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "card_bg_change":
+                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "toggle_mosaic":
+                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "start_share":
+                    manager.active_shares[packet["index"]] = client_id
+                elif p_type == "stop_share":
+                    idx = packet.get("index")
+                    if idx in manager.active_shares:
+                        del manager.active_shares[idx]
+                elif p_type == "update_notice":
+                    server_state["global_notice"] = packet.get("notice", "")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "status_update":
+                    server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "set_work_time":
+                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
+                await manager.broadcast(json.dumps(packet), exclude=websocket)
+
+    except (WebSocketDisconnect, Exception):
+        client_id = str(id(websocket))
+        
+        nickname = manager.active_users.get(websocket, "")
+        
+        reverted_indexes = []
+        if client_id in manager.active_slots:
+            for r_idx in manager.active_slots[client_id]:
+                is_claimed_by_other = False
+                for other_cid, slots in manager.active_slots.items():
+                    if other_cid != client_id and r_idx in slots:
+                        is_claimed_by_other = True
+                        break
+                
+                if not is_claimed_by_other:
+                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    server_state["cards"][r_idx]["work_start_time"] = 0
+                    server_state["cards"][r_idx]["is_large"] = False
+                    server_state["cards"][r_idx]["status"] = 0
+                    reverted_indexes.append(r_idx)
+                    
+            del manager.active_slots[client_id]
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+
+        freed_indexes = manager.disconnect(websocket)
+        await manager.broadcast_user_list()
+        
+        if nickname and nickname != "연결중...":
+            log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
+            server_state.setdefault("admin_log", []).append(log_entry)
+            if len(server_state["admin_log"]) > 100:
+                server_state["admin_log"].pop(0)
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+        
+        for r_idx in reverted_indexes:
+            await manager.broadcast(json.dumps({
+                "type": "username_change",
+                "index": r_idx,
+                "user": f"자리{r_idx+1}"
+            }))
+            
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
