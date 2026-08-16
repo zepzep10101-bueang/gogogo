@@ -8,7 +8,6 @@ asyncio = __import__('asyncio')
 from pymongo import MongoClient
 
 MONGO_URI = "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0"
-collection = None
 try:
     client = MongoClient(MONGO_URI)
     db = client["dashboard_db"]
@@ -17,36 +16,25 @@ except Exception as e:
     print("망고로드 연결 실패:", e)
 
 def load_data():
-    initial_data = {
-        "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(12)],
-        "chat_history": [],
-        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
-        "attendance": {},
-        "admin_log": []
-    }
-    
-    if collection is None:
-        return initial_data
-        
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
             cards = data.get("cards", [])
-            # [유지] 12칸 쾌적 세팅
-            if len(cards) > 12:
-                data["cards"] = cards[:12]
-            elif len(cards) < 12:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 12)]
+            if len(cards) > 16:
+                data["cards"] = cards[:16]
+            elif len(cards) < 16:
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
-                if "user" not in card or not card["user"]: 
-                    card["user"] = f"자리{i+1}"
-                if "is_mosaic" not in card: card["is_mosaic"] = False
-                if "is_large" not in card: card["is_large"] = False
-                if "status" not in card: card["status"] = 0
-                if "work_start_time" not in card: card["work_start_time"] = 0
+                card["user"] = f"자리{i+1}"
+                card["is_mosaic"] = False
+                if "is_large" not in card:
+                    card["is_large"] = False
+                if "status" not in card:
+                    card["status"] = 0
+                if "work_start_time" not in card:
+                    card["work_start_time"] = 0
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
@@ -61,15 +49,18 @@ def load_data():
     except Exception:
         pass
     
-    try:
-        collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
-    except Exception:
-        pass
+    initial_data = {
+        "_id": "main_state",
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(16)],
+        "chat_history": [],
+        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
+        "attendance": {},
+        "admin_log": []
+    }
+    collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
 
 def save_data(data):
-    if collection is None:
-        return
     try:
         collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
     except Exception as e:
@@ -162,27 +153,18 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            /* [해결 1] 완벽한 3열 배치 테트리스! */
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
-            @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-            @media (max-width: 800px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             
-            /* [해결 2] 카드의 기본 높이를 쾌적하게(250px) 설정. 너무 크면 2배 됐을 때 잘리니까 황금 비율로! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; height: 100%; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            
-            /* [해결 3] 억지 마법(aspect-ratio, justify-self, max-height) 싹 다 제거! 
-               이제 순수하게 2칸x2칸만 차지하니까 밑동 잘릴 일도 없고 혼자 붕 뜰 일도 없음! */
-            .card-large { grid-column: span 2; grid-row: span 2; }
-            @media (max-width: 800px) {
-                .card-large { grid-column: span 1; grid-row: span 1; }
-            }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [해결 4] 반투명 배경(rgba 0.15) 복구! 큰 카드 안에서 알아서 100% 꽉꽉 채워짐! */
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 0; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
@@ -283,7 +265,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- 방장 전용 출입 기록 모달 -->
+        <!-- [추가] 방장 전용 출입 기록 모달 -->
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -317,6 +299,7 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
+                            <!-- [추가] 방장 전용 출입기록 버튼 (기본 숨김) -->
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
@@ -350,13 +333,13 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "4717"; 
+            const ADMIN_PASSWORD = "4717"; // [수정] 방장 비밀번호 4717로 변경
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
-            window.adminLogData = []; 
+            window.adminLogData = []; // [추가] 방장 전용 로그 데이터
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
@@ -371,6 +354,7 @@ def read_root():
                 document.getElementById(modalId).style.display = 'none';
             }
 
+            // [추가] 출입 기록 시간 포맷 함수
             function formatLogTime(ts) {
                 const now = new Date(ts * 1000);
                 const m = now.getMonth() + 1;
@@ -379,6 +363,7 @@ def read_root():
                 return `${m}/${d} ${timeString}`;
             }
 
+            // [추가] 출입 기록 렌더링 함수
             function renderAdminLog() {
                 const container = document.getElementById('adminLogContent');
                 if (!window.adminLogData || window.adminLogData.length === 0) {
@@ -601,6 +586,7 @@ def read_root():
                         return;
                     }
                     window.isAdmin = true;
+                    // [추가] 방장이면 출입 기록 버튼 짠! 하고 보여줌
                     document.getElementById('adminLogBtn').style.display = 'block';
                 } else {
                     if (inputPw !== ROOM_PASSWORD) {
@@ -630,7 +616,7 @@ def read_root():
             let ws = null;
             let pingInterval = null; 
             
-            const cardData = Array.from({length: 12}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -743,7 +729,7 @@ def read_root():
             }
 
             function toggleStatusMenu(index) {
-                for(let i=0; i<12; i++) {
+                for(let i=0; i<16; i++) {
                     if (i !== index) {
                         const m = document.getElementById(`status-menu-${i}`);
                         if (m) m.style.display = 'none';
@@ -781,7 +767,7 @@ def read_root():
 
             document.addEventListener('click', function(event) {
                 if (!event.target.closest('.status-wrap')) {
-                    for(let i=0; i<12; i++) {
+                    for(let i=0; i<16; i++) {
                         const m = document.getElementById(`status-menu-${i}`);
                         if(m) m.style.display = 'none';
                     }
@@ -1256,6 +1242,7 @@ def read_root():
                                     window.attendanceData = state.attendance;
                                 }
 
+                                // [추가] 초기 로딩 시 관리자 로그 데이터 복원
                                 if (state.admin_log) {
                                     window.adminLogData = state.admin_log;
                                     if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
@@ -1317,6 +1304,7 @@ def read_root():
                                     renderAttendanceBoard();
                                 }
                             }
+                            // [추가] 누군가 들어오거나 나갈 때 방장 화면에만 기록 렌더링
                             else if (data.type === "admin_log_update") {
                                 if (!window.adminLogData) window.adminLogData = [];
                                 window.adminLogData.push(data.log);
@@ -1608,6 +1596,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
 
+                # [추가] 방장이 볼 수 있게 누군가 접속하면 로그 생성
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
                 server_state.setdefault("admin_log", []).append(log_entry)
                 if len(server_state["admin_log"]) > 100:
@@ -1618,7 +1607,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 recovered = False
                 if owned:
                     for idx in owned:
-                        if 0 <= idx < 12:  
+                        if 0 <= idx < 16:
                             current_user = server_state["cards"][idx]["user"]
                             if current_user.startswith("자리") or current_user == nickname:
                                 if idx not in manager.active_slots[client_id]:
@@ -1710,10 +1699,6 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 packet["sender"] = client_id
                 
-                p_idx = packet.get("index")
-                if p_idx is not None and not (0 <= p_idx < 12):
-                    continue
-                
                 if p_type == "username_change":
                     idx = packet["index"]
                     val = packet["user"]
@@ -1753,6 +1738,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
         
+        # [추가] 브라우저 종료 등 통신 단절 시 퇴장 로그 기록
         nickname = manager.active_users.get(websocket, "")
         
         reverted_indexes = []
@@ -1777,6 +1763,7 @@ async def websocket_endpoint(websocket: WebSocket):
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
         
+        # [추가] 방장이 볼 수 있게 누군가 나가면 로그 생성 및 전송
         if nickname and nickname != "연결중...":
             log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
