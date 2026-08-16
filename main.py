@@ -153,22 +153,21 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
-            @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-            @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            /* [수정] auto-fit 적용! 남는 공간 없이 화면에 꽉 차게 알아서 늘어남! (군대식 4칸 고정 삭제) */
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
             
-            /* [복구] 비율 고정(aspect-ratio)을 제거하고, 기본 상자가 구겨지지 않게 최소 높이 250px 복구! */
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            /* [수정] 억지 4:3 비율 삭제! 내용물에 맞게 자연스럽게 커짐 */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 0; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             
-            /* [유지] 큰 상자는 화면 밖으로 밑이 뚫고 나가지 못하게 max-height 쉴드 장착! */
-            .card-large { grid-column: span 2; grid-row: span 2; max-height: calc(100vh - 60px); }
+            /* [유지] '크게' 상태일 때 2칸 차지 */
+            .card-large { grid-column: span 2; grid-row: span 2; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [복구] 화면 스트림 구역도 쪼그라들지 않게 최소 높이 130px 보장! */
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 130px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            /* [수정] 까만 화공 화면에만 16:9 황금 비율 적용! 어색한 빈 공간 싹 제거! */
+            .card-stream-box { width: 100%; flex-grow: 1; aspect-ratio: 16 / 9; min-height: 120px; max-height: calc(100vh - 120px); background: rgba(0, 0, 0, 0.4); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
