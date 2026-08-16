@@ -113,7 +113,6 @@ class ConnectionManager:
                     pass
 
     async def broadcast_user_list(self):
-        # [수정] 강퇴 기능을 위해 객체 배열로 변환해서 전달
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
         msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
         for conn in self.active_connections:
@@ -222,7 +221,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- 출석현황 모달 -->
+        <!-- 출석현황 모달 (달력 + 랭킹 합침) -->
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
@@ -321,7 +320,6 @@ def read_root():
         </div>
 
         <script>
-            // [수정] 방장 전용 비밀번호(8888) 도입!
             const ROOM_PASSWORD = "7777"; 
             const ADMIN_PASSWORD = "8888"; 
             const ADMIN_NICKNAME = "부엉";
@@ -347,7 +345,6 @@ def read_root():
                 const today = now.getDate();
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 
-                // 1. 개인 달력 렌더링
                 const calTitleEl = document.getElementById('calMonthTitle');
                 if (calTitleEl) calTitleEl.innerText = `🍀 ${y}년 ${m}월 내 출석부`;
                 
@@ -388,7 +385,6 @@ def read_root():
                     grid.innerHTML = html;
                 }
 
-                // 2. 랭킹 및 오늘 출석자 렌더링
                 const titleEl = document.getElementById('rankTitle');
                 if (titleEl) titleEl.innerText = `🏆 ${m}월 모두의 랭킹`;
 
@@ -537,7 +533,6 @@ def read_root():
                 }
             }
 
-            // [수정] 닉네임 방어 및 방장 전용 로그인 로직 적용
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
@@ -570,7 +565,6 @@ def read_root():
                 loadLocalBackground(); 
             }
 
-            // [추가] 방장이 불청객 강퇴시키는 함수
             function kickUser(nickname) {
                 if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -823,14 +817,13 @@ def read_root():
                 applyEmptySlotVisibility();
             }
 
+            // [수정] 서버 전송 로직 삭제, 개인 화면에서만 크기 조절 작동
             function toggleSize(index) {
                 const newState = !cardData[index].is_large;
                 cardData[index].is_large = newState;
                 applySizeUI(index, newState);
 
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "toggle_size", index: index, is_large: newState }));
-                }
+                // 서버 전송 코드 삭제 완료!
             }
 
             function applySizeUI(index, isLarge) {
@@ -1139,7 +1132,6 @@ def read_root():
                             if (data.type === "pong") {
                                 return;
                             }
-                            // [추가] 내가 강퇴당했을 때의 처리!
                             else if (data.type === "kicked") {
                                 alert("방장에 의해 방에서 쫓겨났어!");
                                 localStorage.removeItem('mySavedNickname'); 
@@ -1152,7 +1144,6 @@ def read_root():
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 
-                                // [수정] 명단 그릴 때 방장이면 이름 옆에 강퇴 버튼 추가
                                 let listHtml = data.users.map(u => {
                                     let kickBtn = '';
                                     if (window.isAdmin && u.nickname !== window.myNickname) {
@@ -1284,11 +1275,9 @@ def read_root():
                                     applyMosaicUI(data.index, data.is_mosaic);
                                 }
                             }
+                            // [수정] 다른 사람이 보낸 toggle_size 브로드캐스트는 완전히 무시!
                             else if (data.type === "toggle_size") {
-                                if (cardData[data.index]) {
-                                    cardData[data.index].is_large = data.is_large;
-                                    applySizeUI(data.index, data.is_large);
-                                }
+                                // 아무 일도 하지 않음 (개인 전용)
                             }
                             else if (data.type === "start_share") {
                                 const targetIndex = data.index;
@@ -1594,13 +1583,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
 
-            # [추가] 서버에서 강퇴(kick) 요청을 받았을 때 처리!
             if p_type == "kick":
                 target_nick = packet.get("target_nick")
                 for ws_conn, name in list(manager.active_users.items()):
                     if name == target_nick:
                         try:
-                            # 타겟 유저에게 쫓겨났다는 신호 보내기
                             await ws_conn.send_text(json.dumps({"type": "kicked"}))
                         except:
                             pass
@@ -1658,9 +1645,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "toggle_size":
-                    server_state["cards"][packet["index"]]["is_large"] = packet.get("is_large", False)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                # [수정] 서버에서 토글 사이즈 패킷 저장하는 로직 아예 제거
+                # elif p_type == "toggle_size":
+                #     server_state["cards"][packet["index"]]["is_large"] = packet.get("is_large", False)
+                #     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
