@@ -42,6 +42,9 @@ def load_data():
             if "attendance" not in data:
                 data["attendance"] = {}
                 
+            if "admin_log" not in data:
+                data["admin_log"] = []
+                
             return data
     except Exception:
         pass
@@ -51,7 +54,8 @@ def load_data():
         "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
-        "attendance": {} 
+        "attendance": {},
+        "admin_log": []
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -156,7 +160,6 @@ def read_root():
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
-            /* z-index 3에서 20으로 올려서 메뉴가 무조건 위로 오게 수정 완료! */
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
@@ -262,6 +265,17 @@ def read_root():
             </div>
         </div>
 
+        <!-- [추가] 방장 전용 출입 기록 모달 -->
+        <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
+            <div class="modal-box" style="width: 350px;">
+                <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
+                <h3 style="margin-bottom: 15px; font-size: 16px; color: #ff7675;">👑 비밀 출입 기록</h3>
+                <div id="adminLogContent" style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 12px; color: #ddd; line-height: 1.6;">
+                    기록이 없습니다.
+                </div>
+            </div>
+        </div>
+
         <div class="video-background" id="bgContainer">
             <div id="bgMediaWrapper"></div>
         </div>
@@ -285,6 +299,8 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
+                            <!-- [추가] 방장 전용 출입기록 버튼 (기본 숨김) -->
+                            <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
 
@@ -317,21 +333,47 @@ def read_root():
 
         <script>
             const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "8888"; 
+            const ADMIN_PASSWORD = "4717"; // [수정] 방장 비밀번호 4717로 변경
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
+            window.adminLogData = []; // [추가] 방장 전용 로그 데이터
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
                 if (modalId === 'attendanceModal') {
                     renderAttendanceBoard();
                 }
+                if (modalId === 'adminLogModal') {
+                    renderAdminLog();
+                }
             }
             function closeModal(modalId) {
                 document.getElementById(modalId).style.display = 'none';
+            }
+
+            // [추가] 출입 기록 시간 포맷 함수
+            function formatLogTime(ts) {
+                const now = new Date(ts * 1000);
+                const m = now.getMonth() + 1;
+                const d = now.getDate();
+                const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                return `${m}/${d} ${timeString}`;
+            }
+
+            // [추가] 출입 기록 렌더링 함수
+            function renderAdminLog() {
+                const container = document.getElementById('adminLogContent');
+                if (!window.adminLogData || window.adminLogData.length === 0) {
+                    container.innerHTML = "기록이 없습니다.";
+                    return;
+                }
+                container.innerHTML = window.adminLogData.map(log => {
+                    return `<div style="margin-bottom: 4px;">[${formatLogTime(log.time)}] <b style="color:#ffeaa7;">${log.msg}</b></div>`;
+                }).join("");
+                container.scrollTop = container.scrollHeight;
             }
 
             function renderAttendanceBoard() {
@@ -544,6 +586,8 @@ def read_root():
                         return;
                     }
                     window.isAdmin = true;
+                    // [추가] 방장이면 출입 기록 버튼 짠! 하고 보여줌
+                    document.getElementById('adminLogBtn').style.display = 'block';
                 } else {
                     if (inputPw !== ROOM_PASSWORD) {
                         alert("비밀번호가 틀렸어! 다시 확인해봐.");
@@ -817,7 +861,6 @@ def read_root():
                                 </div>
                             </div>
                             
-                            <!-- [수정] 파일 선택 버튼 영역의 z-index를 10으로 낮춤! (메뉴에 안 겹치게) -->
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:10; margin-top:2px;">
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
@@ -1199,6 +1242,14 @@ def read_root():
                                     window.attendanceData = state.attendance;
                                 }
 
+                                // [추가] 초기 로딩 시 관리자 로그 데이터 복원
+                                if (state.admin_log) {
+                                    window.adminLogData = state.admin_log;
+                                    if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
+                                        renderAdminLog();
+                                    }
+                                }
+
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
@@ -1251,6 +1302,15 @@ def read_root():
                                 window.attendanceData = data.attendance;
                                 if (document.getElementById('attendanceModal').style.display === 'flex') {
                                     renderAttendanceBoard();
+                                }
+                            }
+                            // [추가] 누군가 들어오거나 나갈 때 방장 화면에만 기록 렌더링
+                            else if (data.type === "admin_log_update") {
+                                if (!window.adminLogData) window.adminLogData = [];
+                                window.adminLogData.push(data.log);
+                                if (window.adminLogData.length > 100) window.adminLogData.shift();
+                                if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
+                                    renderAdminLog();
                                 }
                             }
                             else if (data.type === "username_change") {
@@ -1536,6 +1596,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
 
+                # [추가] 방장이 볼 수 있게 누군가 접속하면 로그 생성
+                log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
+                server_state.setdefault("admin_log", []).append(log_entry)
+                if len(server_state["admin_log"]) > 100:
+                    server_state["admin_log"].pop(0)
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+
                 recovered = False
                 if owned:
                     for idx in owned:
@@ -1670,6 +1738,9 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
         
+        # [추가] 브라우저 종료 등 통신 단절 시 퇴장 로그 기록
+        nickname = manager.active_users.get(websocket, "")
+        
         reverted_indexes = []
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
@@ -1691,6 +1762,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
+        
+        # [추가] 방장이 볼 수 있게 누군가 나가면 로그 생성 및 전송
+        if nickname and nickname != "연결중...":
+            log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
+            server_state.setdefault("admin_log", []).append(log_entry)
+            if len(server_state["admin_log"]) > 100:
+                server_state["admin_log"].pop(0)
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
         
         for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({
