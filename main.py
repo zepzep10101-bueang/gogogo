@@ -265,7 +265,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- [추가] 방장 전용 출입 기록 모달 -->
+        <!-- 방장 전용 출입 기록 모달 -->
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -299,7 +299,6 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
-                            <!-- [추가] 방장 전용 출입기록 버튼 (기본 숨김) -->
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
@@ -332,29 +331,31 @@ def read_root():
         </div>
 
         <script>
+            // [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 자물쇠
+            document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+            document.addEventListener('keydown', function(e) {
+                if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+
             const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "4717"; // [수정] 방장 비밀번호 4717로 변경
+            const ADMIN_PASSWORD = "4717"; 
             const ADMIN_NICKNAME = "부엉";
 
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
-            window.adminLogData = []; // [추가] 방장 전용 로그 데이터
+            window.adminLogData = []; 
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
-                if (modalId === 'attendanceModal') {
-                    renderAttendanceBoard();
-                }
-                if (modalId === 'adminLogModal') {
-                    renderAdminLog();
-                }
+                if (modalId === 'attendanceModal') { renderAttendanceBoard(); }
+                if (modalId === 'adminLogModal') { renderAdminLog(); }
             }
-            function closeModal(modalId) {
-                document.getElementById(modalId).style.display = 'none';
-            }
+            function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
 
-            // [추가] 출입 기록 시간 포맷 함수
             function formatLogTime(ts) {
                 const now = new Date(ts * 1000);
                 const m = now.getMonth() + 1;
@@ -363,7 +364,6 @@ def read_root():
                 return `${m}/${d} ${timeString}`;
             }
 
-            // [추가] 출입 기록 렌더링 함수
             function renderAdminLog() {
                 const container = document.getElementById('adminLogContent');
                 if (!window.adminLogData || window.adminLogData.length === 0) {
@@ -390,30 +390,19 @@ def read_root():
                 if (grid) {
                     const firstDay = new Date(y, m - 1, 1).getDay();
                     const daysInMonth = new Date(y, m, 0).getDate();
-                    
                     let html = '';
                     const daysOfWeek = ['일','월','화','수','목','금','토'];
-                    daysOfWeek.forEach(d => { 
-                        html += `<div style="text-align:center; font-size:10px; color:#ffeaa7; margin-bottom: 4px;">${d}</div>`; 
-                    });
-                    
-                    for(let i=0; i<firstDay; i++) {
-                        html += `<div></div>`;
-                    }
-                    
+                    daysOfWeek.forEach(d => { html += `<div style="text-align:center; font-size:10px; color:#ffeaa7; margin-bottom: 4px;">${d}</div>`; });
+                    for(let i=0; i<firstDay; i++) { html += `<div></div>`; }
                     const myName = window.myNickname || "익명";
                     const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
-                    
                     for(let i=1; i<=daysInMonth; i++) {
                         const isToday = (i === today);
                         const isStamped = myAtt.includes(i);
-                        
                         let cls = "cal-day";
                         if (isToday && !isStamped) cls += " today";
                         if (isStamped) cls += " stamped";
-                        
                         const content = isStamped ? '🍀' : i;
-                        
                         if (isToday && !isStamped) {
                             html += `<div class="${cls}" onclick="stampAttendance(${y}, ${m}, ${i})" title="오늘 출석 도장 찍기!">${content}</div>`;
                         } else {
@@ -429,15 +418,11 @@ def read_root():
                 const monthData = window.attendanceData[monthStr] || {};
                 let rankArr = [];
                 let todayAttendees = [];
-                
                 for (let user in monthData) {
                     const stamps = monthData[user];
                     rankArr.push({ name: user, count: stamps.length });
-                    if (stamps.includes(today)) {
-                        todayAttendees.push(user);
-                    }
+                    if (stamps.includes(today)) { todayAttendees.push(user); }
                 }
-                
                 rankArr.sort((a, b) => b.count - a.count);
                 
                 let rankHtml = '';
@@ -449,7 +434,6 @@ def read_root():
                         if (idx === 0) medal = '🥇';
                         else if (idx === 1) medal = '🥈';
                         else if (idx === 2) medal = '🥉';
-                        
                         let emphasis = (idx < 3) ? 'font-weight:bold; color:#fff;' : '';
                         rankHtml += `<div style="${emphasis} margin-bottom: 4px;">${medal} ${item.name} : ${item.count}일</div>`;
                     });
@@ -471,12 +455,10 @@ def read_root():
             function stampAttendance(y, m, d) {
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
-                
                 if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) {
                     alert("누나(작가님)! 오늘은 이미 클로버 도장을 꾹 찍었어!");
                     return;
                 }
-
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName }));
                 }
@@ -535,11 +517,8 @@ def read_root():
                 cardData.forEach((card, index) => {
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) {
-                        if (window.isHideEmpty && card.user.startsWith("자리")) {
-                            cardEl.style.display = "none";
-                        } else {
-                            cardEl.style.display = "flex";
-                        }
+                        if (window.isHideEmpty && card.user.startsWith("자리")) { cardEl.style.display = "none"; }
+                        else { cardEl.style.display = "flex"; }
                     }
                 });
             }
@@ -548,18 +527,13 @@ def read_root():
                 const myName = window.myNickname || "익명";
                 let emptyIdx = -1;
                 for (let i = 0; i < cardData.length; i++) {
-                    if (cardData[i].user.startsWith("자리")) {
-                        emptyIdx = i;
-                        break;
-                    }
+                    if (cardData[i].user.startsWith("자리")) { emptyIdx = i; break; }
                 }
                 if (emptyIdx !== -1) {
                     const inputEl = document.getElementById(`username-${emptyIdx}`);
                     if (inputEl) inputEl.value = myName;
                     updateUsername(emptyIdx, myName);
-                } else {
-                    alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!");
-                }
+                } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); }
             }
 
             function checkLogin() {
@@ -574,31 +548,17 @@ def read_root():
             function login() {
                 const inputPw = document.getElementById('pwInput').value;
                 const inputNick = document.getElementById('nickInput').value.trim();
-                
-                if (!inputNick) {
-                    alert("누군지 알 수 있게 닉네임을 적어줘 누나!");
-                    return;
-                }
-
+                if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; }
                 if (inputNick === ADMIN_NICKNAME) {
-                    if (inputPw !== ADMIN_PASSWORD) {
-                        alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!");
-                        return;
-                    }
+                    if (inputPw !== ADMIN_PASSWORD) { alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!"); return; }
                     window.isAdmin = true;
-                    // [추가] 방장이면 출입 기록 버튼 짠! 하고 보여줌
                     document.getElementById('adminLogBtn').style.display = 'block';
                 } else {
-                    if (inputPw !== ROOM_PASSWORD) {
-                        alert("비밀번호가 틀렸어! 다시 확인해봐.");
-                        return;
-                    }
+                    if (inputPw !== ROOM_PASSWORD) { alert("비밀번호가 틀렸어! 다시 확인해봐."); return; }
                     window.isAdmin = false;
                 }
-
                 window.myNickname = inputNick; 
                 localStorage.setItem('mySavedNickname', inputNick);
-                
                 document.getElementById('loginOverlay').style.display = 'none';
                 initCards();
                 connectWebSocket();
@@ -615,12 +575,10 @@ def read_root():
 
             let ws = null;
             let pingInterval = null; 
-            
             const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
-            
             const expectedShares = {}; 
             const myOwnedSlots = new Set(); 
 
@@ -646,18 +604,14 @@ def read_root():
             function renderBox(index) {
                 const box = document.getElementById(`stream-box-${index}`);
                 if (!box) return;
-
                 const existingVideo = box.querySelector('video');
                 if (existingVideo) existingVideo.remove();
-
                 const card = cardData[index];
-                
                 if (card.status > 0) {
                     let textMsg = "";
                     if (card.status === 1) textMsg = "🍽️ 식사중";
                     else if (card.status === 2) textMsg = "☕ 휴식중";
                     else if (card.status === 3) textMsg = "💤 수면중";
-
                     box.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;">
                             <div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div>
@@ -678,23 +632,12 @@ def read_root():
                 }
             }
 
-            function checkWorkTimeStop(index) {
-                const hasStream = !!myStreams[index];
-                const hasStatus = cardData[index].status > 0;
-                if (!hasStream && !hasStatus) {
-                    cardData[index].work_start_time = 0;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: 0 }));
-                    }
-                }
-            }
+            // [수정] 휴식/끄기를 반복해도 타이머 시간이 0초로 초기화되지 않도록 철벽 방어!
+            function checkWorkTimeStop(index) {}
 
             function resetWorkTimer(index) {
                 const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
-                if (!isMine) {
-                    alert("본인 카드나 관리자만 초기화할 수 있어!");
-                    return;
-                }
+                if (!isMine) { alert("본인 카드나 관리자만 초기화할 수 있어!"); return; }
                 cardData[index].work_start_time = Date.now();
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "set_work_time", index: index, time: cardData[index].work_start_time }));
@@ -704,28 +647,16 @@ def read_root():
             function updateStatusUI(index, status) {
                 const btn = document.getElementById(`share-btn-status-${index}`);
                 if (btn) {
-                    if (status > 0) {
-                        btn.innerText = "끄기";
-                        btn.style.background = "#d63031"; 
-                    } else {
-                        btn.innerText = "상태";
-                        btn.style.background = "#8e44ad"; 
-                    }
+                    if (status > 0) { btn.innerText = "끄기"; btn.style.background = "#d63031"; }
+                    else { btn.innerText = "상태"; btn.style.background = "#8e44ad"; }
                 }
             }
 
             function handleStatusMainClick(index) {
                 const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
-                if (!isMine) {
-                    alert("자기 자리 상태만 바꿀 수 있어 누나!");
-                    return;
-                }
-
-                if (cardData[index].status > 0) {
-                    setStatus(index, 0);
-                } else {
-                    toggleStatusMenu(index);
-                }
+                if (!isMine) { alert("자기 자리 상태만 바꿀 수 있어 누나!"); return; }
+                if (cardData[index].status > 0) { setStatus(index, 0); }
+                else { toggleStatusMenu(index); }
             }
 
             function toggleStatusMenu(index) {
@@ -735,30 +666,18 @@ def read_root():
                         if (m) m.style.display = 'none';
                     }
                 }
-
                 const menu = document.getElementById(`status-menu-${index}`);
-                if (menu) {
-                    menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
-                }
+                if (menu) { menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex'; }
             }
 
             function setStatus(index, s) {
                 const menu = document.getElementById(`status-menu-${index}`);
                 if(menu) menu.style.display = 'none';
-
                 cardData[index].status = s;
                 updateStatusUI(index, s); 
-
-                if (s !== 0 && myStreams[index]) {
-                    stopShare(index);
-                }
-
-                if (s !== 0) {
-                    checkWorkTimeStart(index);
-                } else {
-                    checkWorkTimeStop(index);
-                }
-
+                if (s !== 0 && myStreams[index]) { stopShare(index); }
+                if (s !== 0) { checkWorkTimeStart(index); }
+                else { checkWorkTimeStop(index); }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "status_update", index: index, status: s }));
                 }
@@ -784,9 +703,7 @@ def read_root():
                         let m = Math.floor(s / 60); s %= 60;
                         wtEl.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                         wtEl.style.display = 'inline-block';
-                    } else if (wtEl) {
-                        wtEl.style.display = 'none';
-                    }
+                    } else if (wtEl) { wtEl.style.display = 'none'; }
                 });
             }, 1000);
 
@@ -799,9 +716,7 @@ def read_root():
 
             function clearChat() {
                 if (confirm("채팅창을 전부 깨끗하게 지울까?")) {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "clear_chat" }));
-                    }
+                    if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); }
                 }
             }
 
@@ -825,11 +740,9 @@ def read_root():
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : '';
                     let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72';
                     let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크';
-                    
                     let sizeBtnText = card.is_large ? '작게' : '크게';
                     let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12';
                     let largeClass = card.is_large ? ' card-large' : '';
-                    
                     let statusBtnText = card.status > 0 ? '끄기' : '상태';
                     let statusBtnBg = card.status > 0 ? '#d63031' : '#8e44ad';
 
@@ -841,11 +754,9 @@ def read_root():
                                     <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
                                     <button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>
                                 </div>
-                                
                                 <div class="btn-group">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    
                                     <div style="position:relative; display:flex; flex-grow:1;" class="status-wrap">
                                         <button class="share-btn" id="share-btn-status-${index}" style="background:${statusBtnBg}; width:100%;" onclick="handleStatusMainClick(${index})">${statusBtnText}</button>
                                         <div id="status-menu-${index}" style="display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); background:rgba(30,30,40,0.95); border:1px solid #8e44ad; border-radius:4px; flex-direction:column; z-index:100; min-width:80px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding: 4px; margin-top: 2px;">
@@ -854,22 +765,18 @@ def read_root():
                                             <button onclick="setStatus(${index}, 3)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">💤 수면</button>
                                         </div>
                                     </div>
-                                    
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
                                 </div>
                             </div>
-                            
                             <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:10; margin-top:2px;">
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
-
                             <div class="card-stream-box" id="stream-box-${index}"></div>
                         </div>
                     `;
                 });
-                
                 cardData.forEach((_, i) => renderBox(i));
                 applyEmptySlotVisibility();
             }
@@ -883,7 +790,6 @@ def read_root():
             function applySizeUI(index, isLarge) {
                 const cardEl = document.getElementById(`card-card-${index}`);
                 const btn = document.getElementById(`size-btn-${index}`);
-                
                 if (cardEl) {
                     if (isLarge) cardEl.classList.add('card-large');
                     else cardEl.classList.remove('card-large');
@@ -896,16 +802,10 @@ def read_root():
 
             function handleMosaicClick(index) {
                 const isMyStream = !!myStreams[index];
-                
-                if (!isMyStream && !window.isAdmin) {
-                    alert("본인이 화면 공유 중이 아니면 만질 수 없어!");
-                    return;
-                }
-
+                if (!isMyStream && !window.isAdmin) { alert("본인이 화면 공유 중이 아니면 만질 수 없어!"); return; }
                 const newState = !cardData[index].is_mosaic;
                 cardData[index].is_mosaic = newState;
                 applyMosaicUI(index, newState);
-
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState }));
                 }
@@ -914,17 +814,10 @@ def read_root():
             function toggleViewerSound(index) {
                 const vid = document.getElementById(`remote-video-${index}`);
                 const btn = document.getElementById(`sound-toggle-btn-${index}`);
-                
                 if (!vid) return;
-
                 vid.muted = !vid.muted;
-                if (vid.muted) {
-                    btn.innerText = "소리켜기";
-                    btn.style.background = "#b2bec3"; 
-                } else {
-                    btn.innerText = "음소거";
-                    btn.style.background = "#00b894"; 
-                }
+                if (vid.muted) { btn.innerText = "소리켜기"; btn.style.background = "#b2bec3"; }
+                else { btn.innerText = "음소거"; btn.style.background = "#00b894"; }
             }
 
             function applyMosaicUI(index, isMosaic) {
@@ -933,59 +826,36 @@ def read_root():
                     btn.innerText = isMosaic ? "해제" : "모자이크";
                     btn.style.background = isMosaic ? "#e17055" : "#636e72";
                 }
-
                 const remoteVideo = document.getElementById(`remote-video-${index}`);
                 const localVideo = document.getElementById(`video-${index}`);
-                
                 const activeFilter = isMosaic ? 'blur(5px)' : 'none';
-
-                if (remoteVideo) {
-                    remoteVideo.style.filter = activeFilter;
-                }
-                if (localVideo) {
-                    localVideo.style.filter = activeFilter;
-                }
+                if (remoteVideo) { remoteVideo.style.filter = activeFilter; }
+                if (localVideo) { localVideo.style.filter = activeFilter; }
             }
 
             function updateUsername(index, val) {
                 cardData[index].user = val;
-                
                 const myName = window.myNickname || "익명";
-                if (val === myName) {
-                    myOwnedSlots.add(index);
-                } else {
-                    myOwnedSlots.delete(index);
-                }
-                
+                if (val === myName) { myOwnedSlots.add(index); }
+                else { myOwnedSlots.delete(index); }
                 const box = document.getElementById(`stream-box-${index}`);
-                if (box && !box.querySelector('video')) {
-                    renderBox(index);
-                }
-
+                if (box && !box.querySelector('video')) { renderBox(index); }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "username_change", index: index, user: val }));
                 }
-                
                 applyEmptySlotVisibility();
             }
 
             function setCardBackground(index, event) {
                 const file = event.target.files[0];
                 if (!file) return;
-
-                if (file.type === "image/gif") {
-                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; 
-                    return;
-                }
-
+                if (file.type === "image/gif") { alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; }
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const dataUrl = e.target.result;
                     cardData[index].card_bg = dataUrl;
                     const cardEl = document.getElementById(`card-card-${index}`);
                     if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; }
-
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl }));
                     }
@@ -996,24 +866,14 @@ def read_root():
             function setLocalBackground(event) {
                 const file = event.target.files[0];
                 if (!file) return;
-                
-                if (file.type === "image/gif") {
-                    alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!");
-                    event.target.value = ""; 
-                    return;
-                }
-
+                if (file.type === "image/gif") { alert("데이터 폭발을 막기 위해 움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; }
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const dataUrl = e.target.result;
                     document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`;
-                    
                     localStorage.setItem('myBgType', 'image');
-                    try {
-                        localStorage.setItem('myBgData', dataUrl);
-                    } catch (err) {
-                        alert("사진 용량이 너무 커서 다음 접속 시엔 풀릴 수 있어! 가급적 작은 용량의 사진을 써줘!");
-                    }
+                    try { localStorage.setItem('myBgData', dataUrl); }
+                    catch (err) { alert("사진 용량이 너무 커서 다음 접속 시엔 풀릴 수 있어! 가급적 작은 용량의 사진을 써줘!"); }
                 };
                 reader.readAsDataURL(file);
             }
@@ -1022,9 +882,7 @@ def read_root():
                 const inputVal = document.getElementById('bgYoutubeInput').value;
                 const videoId = extractYoutubeId(inputVal);
                 if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; }
-
                 document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-                
                 localStorage.setItem('myBgType', 'youtube');
                 localStorage.setItem('myBgData', videoId);
             }
@@ -1033,12 +891,7 @@ def read_root():
                 const box = document.getElementById(`stream-box-${index}`);
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
-                
-                if (myStreams[index]) {
-                    stopShare(index);
-                    return;
-                }
-
+                if (myStreams[index]) { stopShare(index); return; }
                 if (cardData[index].status > 0) {
                     cardData[index].status = 0;
                     updateStatusUI(index, 0);
@@ -1046,7 +899,6 @@ def read_root():
                         ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 }));
                     }
                 }
-
                 try {
                     let stream;
                     if (type === 'screen') {
@@ -1060,31 +912,22 @@ def read_root():
                         btnCam.style.background = "#d63031";
                         btnScreen.style.display = "none"; 
                     }
-                    
                     myStreams[index] = stream;
-
                     const myName = window.myNickname || "익명";
                     const userEl = document.getElementById(`username-${index}`);
                     if (userEl) userEl.value = myName;
                     updateUsername(index, myName);
-
                     let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
-                    
                     box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
                     localVideo.play().catch(e => console.log(e));
-
                     checkWorkTimeStart(index);
-
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
-
                     stream.getVideoTracks()[0].onended = () => { stopShare(index); };
-                } catch (err) {
-                    console.error("미디어 캡처 에러:", err);
-                }
+                } catch (err) { console.error("미디어 캡처 에러:", err); }
             }
 
             function stopShare(index) {
@@ -1092,48 +935,34 @@ def read_root():
                     myStreams[index].getTracks().forEach(track => track.stop());
                     delete myStreams[index];
                 }
-
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
                 }
-
                 checkWorkTimeStop(index);
-
                 renderBox(index);
-                
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
-                
                 const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
                 if (soundBtn) { soundBtn.style.display = "none"; }
             }
 
             setInterval(() => {
                 if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
-                
                 for (let idx in expectedShares) {
                     const sharerId = expectedShares[idx];
                     if (sharerId === ws.clientId) continue; 
-                    
                     const pcKey = `${idx}_${sharerId}`;
                     const pc = peerConnections[pcKey];
-                    
                     let isConnectionDead = false;
-                    if (!pc) {
-                        isConnectionDead = true;
-                    } else {
+                    if (!pc) { isConnectionDead = true; }
+                    else {
                         const state = pc.iceConnectionState;
-                        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                            isConnectionDead = true;
-                        }
+                        if (state === 'disconnected' || state === 'failed' || state === 'closed') { isConnectionDead = true; }
                     }
-
                     if (isConnectionDead) {
-                        if (pc) {
-                            try { pc.close(); } catch(e) {}
-                        }
+                        if (pc) { try { pc.close(); } catch(e) {} }
                         delete peerConnections[pcKey];
                         ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
                     }
@@ -1153,60 +982,42 @@ def read_root():
                 const loc = window.location;
                 let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://";
                 const wsUrl = wsProtocol + loc.host + "/ws";
-
                 try {
                     ws = new WebSocket(wsUrl);
-
                     ws.onopen = function() {
                         const statusEl = document.getElementById('connStatus');
                         statusEl.innerText = "연결됨";
                         statusEl.className = "status-indicator status-online";
-
                         const myNick = window.myNickname || "익명";
                         const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
-
                         if (pingInterval) clearInterval(pingInterval);
                         pingInterval = setInterval(() => {
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: "ping" }));
-                            }
+                            if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); }
                         }, 20000); 
                     };
-
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
-                            
-                            if (data.type === "pong") {
-                                return;
-                            }
+                            if (data.type === "pong") { return; }
                             else if (data.type === "kicked") {
                                 alert("방장에 의해 방에서 쫓겨났어!");
                                 localStorage.removeItem('mySavedNickname'); 
                                 window.location.reload(); 
                             }
-                            else if (data.type === "chat_cleared") {
-                                document.getElementById('chatHistory').innerHTML = "";
-                            }
-                            
+                            else if (data.type === "chat_cleared") { document.getElementById('chatHistory').innerHTML = ""; }
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
-                                
                                 let listHtml = data.users.map(u => {
                                     let kickBtn = '';
                                     if (window.isAdmin && u.nickname !== window.myNickname) {
                                         kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`;
                                     }
-                                    return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;">
-                                        <b style="color:white;">${u.nickname}</b>${kickBtn}
-                                    </span>`;
+                                    return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b style="color:white;">${u.nickname}</b>${kickBtn}</span>`;
                                 }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                             }
-                            else if (data.type === "chat") {
-                                logChat(data.senderName, data.msg, data.time);
-                            } 
+                            else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time); } 
                             else if (data.type === "update_notice") {
                                 window.rawNotice = data.notice;
                                 document.getElementById('noticeText').innerHTML = formatNotice(data.notice);
@@ -1215,41 +1026,27 @@ def read_root():
                                 cardData[data.index].status = data.status;
                                 updateStatusUI(data.index, data.status);
                                 const box = document.getElementById(`stream-box-${data.index}`);
-                                if (box && !box.querySelector('video')) {
-                                    renderBox(data.index);
-                                }
+                                if (box && !box.querySelector('video')) { renderBox(data.index); }
                             }
                             else if (data.type === "set_work_time") {
                                 cardData[data.index].work_start_time = data.time;
                                 const wtEl = document.getElementById(`work-timer-${data.index}`);
                                 if (wtEl) {
-                                    if (data.time) {
-                                        wtEl.style.display = 'inline-block';
-                                    } else {
-                                        wtEl.style.display = 'none';
-                                    }
+                                    if (data.time) { wtEl.style.display = 'inline-block'; }
+                                    else { wtEl.style.display = 'none'; }
                                 }
                             }
                             else if (data.type === "init_state") {
                                 const state = data.state;
-                                
                                 if (state.global_notice) {
                                     window.rawNotice = state.global_notice;
                                     document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice);
                                 }
-                                
-                                if (state.attendance) {
-                                    window.attendanceData = state.attendance;
-                                }
-
-                                // [추가] 초기 로딩 시 관리자 로그 데이터 복원
+                                if (state.attendance) { window.attendanceData = state.attendance; }
                                 if (state.admin_log) {
                                     window.adminLogData = state.admin_log;
-                                    if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
-                                        renderAdminLog();
-                                    }
+                                    if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); }
                                 }
-
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
@@ -1259,33 +1056,23 @@ def read_root():
                                             cardData[i].is_large = card.is_large || false;
                                             cardData[i].status = card.status || 0;
                                             cardData[i].work_start_time = card.work_start_time || 0;
-                                            
                                             applyMosaicUI(i, cardData[i].is_mosaic);
                                             applySizeUI(i, cardData[i].is_large);
                                             updateStatusUI(i, cardData[i].status);
-
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
                                             if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
-                                            
                                             const wtEl = document.getElementById(`work-timer-${i}`);
                                             if (wtEl) {
-                                                if (card.work_start_time) {
-                                                    wtEl.style.display = 'inline-block';
-                                                } else {
-                                                    wtEl.style.display = 'none';
-                                                }
+                                                if (card.work_start_time) { wtEl.style.display = 'inline-block'; }
+                                                else { wtEl.style.display = 'none'; }
                                             }
-                                            
                                             const box = document.getElementById(`stream-box-${i}`);
-                                            if (box && !box.querySelector('video')) {
-                                                renderBox(i);
-                                            }
+                                            if (box && !box.querySelector('video')) { renderBox(i); }
                                         }
                                     });
                                 }
-
                                 if (state.chat_history) {
                                     const historyEl = document.getElementById('chatHistory');
                                     historyEl.innerHTML = "";
@@ -1295,43 +1082,28 @@ def read_root():
                                     });
                                     historyEl.scrollTop = historyEl.scrollHeight;
                                 }
-                                
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "attendance_update") {
                                 window.attendanceData = data.attendance;
-                                if (document.getElementById('attendanceModal').style.display === 'flex') {
-                                    renderAttendanceBoard();
-                                }
+                                if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); }
                             }
-                            // [추가] 누군가 들어오거나 나갈 때 방장 화면에만 기록 렌더링
                             else if (data.type === "admin_log_update") {
                                 if (!window.adminLogData) window.adminLogData = [];
                                 window.adminLogData.push(data.log);
                                 if (window.adminLogData.length > 100) window.adminLogData.shift();
-                                if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') {
-                                    renderAdminLog();
-                                }
+                                if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); }
                             }
                             else if (data.type === "username_change") {
                                 cardData[data.index].user = data.user;
                                 const inputEl = document.getElementById(`username-${data.index}`);
                                 if (inputEl) { inputEl.value = data.user; }
-                                
                                 const myName = window.myNickname || "익명";
-                                if (data.user === myName) {
-                                    myOwnedSlots.add(data.index);
-                                } else {
-                                    myOwnedSlots.delete(data.index);
-                                }
-                                
+                                if (data.user === myName) { myOwnedSlots.add(data.index); }
+                                else { myOwnedSlots.delete(data.index); }
                                 const box = document.getElementById(`stream-box-${data.index}`);
-                                if (box && !box.querySelector('video')) {
-                                    renderBox(data.index);
-                                }
-                                
+                                if (box && !box.querySelector('video')) { renderBox(data.index); }
                                 applyEmptySlotVisibility();
-                                
                             } else if (data.type === "card_bg_change") {
                                 cardData[data.index].card_bg = data.dataUrl;
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
@@ -1346,11 +1118,8 @@ def read_root():
                             else if (data.type === "start_share") {
                                 const targetIndex = data.index;
                                 const sharerId = data.sender;
-
                                 if (data.target && data.target !== ws.clientId) return;
-
                                 expectedShares[targetIndex] = sharerId;
-
                                 if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId }));
                                 }
@@ -1358,23 +1127,15 @@ def read_root():
                             else if (data.type === "request_offer" && data.target === ws.clientId) {
                                 const targetIndex = data.index;
                                 const viewerId = data.sender;
-
-                                if (myStreams[targetIndex]) {
-                                    await createOfferForViewer(targetIndex, viewerId);
-                                }
+                                if (myStreams[targetIndex]) { await createOfferForViewer(targetIndex, viewerId); }
                             }
                             else if (data.type === "offer" && data.target === ws.clientId) {
                                 const index = data.index;
                                 const senderId = data.sender;
                                 const pcKey = `${index}_${senderId}`;
-
-                                if (peerConnections[pcKey]) {
-                                    try { peerConnections[pcKey].close(); } catch(e) {}
-                                }
-
+                                if (peerConnections[pcKey]) { try { peerConnections[pcKey].close(); } catch(e) {} }
                                 const pc = new RTCPeerConnection(rtcConfig);
                                 peerConnections[pcKey] = pc;
-
                                 pc.oniceconnectionstatechange = () => {
                                     const state = pc.iceConnectionState;
                                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
@@ -1382,17 +1143,13 @@ def read_root():
                                         delete peerConnections[pcKey];
                                     }
                                 };
-
                                 pc.ontrack = (e) => {
                                     const box = document.getElementById(`stream-box-${index}`);
-                                    
                                     let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : '';
-                                    
                                     box.innerHTML = `<video id="remote-video-${index}" autoplay playsinline disablePictureInPicture style="${filterStyle}"></video>`;
                                     const remoteVideo = document.getElementById(`remote-video-${index}`);
                                     remoteVideo.srcObject = e.streams[0];
                                     remoteVideo.play().catch(err => console.log(err));
-                                    
                                     const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
                                     if (soundBtn) {
                                         soundBtn.style.display = "inline-block";
@@ -1400,25 +1157,20 @@ def read_root():
                                         soundBtn.style.background = "#00b894"; 
                                     }
                                 };
-
                                 pc.onicecandidate = (e) => {
                                     if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "ice", index: index, target: senderId, candidate: e.candidate }));
                                     }
                                 };
-
                                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
                                 if (candidateBuffers[pcKey]) {
                                     for (const cand of candidateBuffers[pcKey]) {
                                         await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.log(e));
                                     }
                                     delete candidateBuffers[pcKey];
                                 }
-
                                 const answer = await pc.createAnswer();
                                 await pc.setLocalDescription(answer);
-
                                 if (ws && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: "answer", index: index, target: senderId, sdp: pc.localDescription }));
                                 }
@@ -1431,7 +1183,6 @@ def read_root():
                             else if (data.type === "ice" && data.target === ws.clientId) {
                                 const pcKey = `${data.index}_${data.sender}`;
                                 const pc = peerConnections[pcKey];
-                                
                                 if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
                                 } else {
@@ -1442,7 +1193,6 @@ def read_root():
                             else if (data.type === "stop_share") {
                                 const index = data.index;
                                 delete expectedShares[index]; 
-
                                 for (let key in peerConnections) {
                                     if (key.startsWith(`${index}_`)) {
                                         try {
@@ -1452,24 +1202,19 @@ def read_root():
                                         delete peerConnections[key];
                                     }
                                 }
-                                
                                 renderBox(index);
-                                
                                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
                                 if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; }
                                 if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; }
-                                
                                 const soundBtn = document.getElementById(`sound-toggle-btn-${index}`);
                                 if (soundBtn) { soundBtn.style.display = "none"; }
                             }
                             else if (data.type === "welcome") {
                                 ws.clientId = data.clientId;
-                                
                                 setTimeout(() => {
                                     if (ws && ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({ type: "request_existing_shares" }));
-                                        
                                         for (let idx in myStreams) {
                                             ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
                                         }
@@ -1483,11 +1228,8 @@ def read_root():
                                     }
                                 }
                             }
-                        } catch(e) {
-                            console.error("데이터 처리 에러:", e);
-                        }
+                        } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
-
                     ws.onclose = function() {
                         if (pingInterval) clearInterval(pingInterval);
                         const statusEl = document.getElementById('connStatus');
@@ -1495,25 +1237,16 @@ def read_root():
                             statusEl.innerText = "서버 업데이트 중...";
                             statusEl.className = "status-indicator status-offline";
                         }
-                        
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 3000);
+                        setTimeout(() => { window.location.reload(); }, 3000);
                     };
-                } catch(e) {
-                    setTimeout(connectWebSocket, 2000);
-                }
+                } catch(e) { setTimeout(connectWebSocket, 2000); }
             }
 
             async function createOfferForViewer(index, viewerId) {
                 const pcKey = `${index}_${viewerId}`;
-                if (peerConnections[pcKey]) {
-                    try { peerConnections[pcKey].close(); } catch(e) {}
-                }
-
+                if (peerConnections[pcKey]) { try { peerConnections[pcKey].close(); } catch(e) {} }
                 const pc = new RTCPeerConnection(rtcConfig);
                 peerConnections[pcKey] = pc;
-
                 pc.oniceconnectionstatechange = () => {
                     const state = pc.iceConnectionState;
                     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
@@ -1524,21 +1257,15 @@ def read_root():
                         delete peerConnections[pcKey];
                     }
                 };
-
                 const stream = myStreams[index];
-                if (stream) {
-                    stream.getTracks().forEach(track => pc.addTrack(track, stream));
-                }
-
+                if (stream) { stream.getTracks().forEach(track => pc.addTrack(track, stream)); }
                 pc.onicecandidate = (e) => {
                     if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "ice", index: index, target: viewerId, candidate: e.candidate }));
                     }
                 };
-
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "offer", index: index, target: viewerId, sdp: pc.localDescription }));
                 }
@@ -1548,15 +1275,12 @@ def read_root():
                 const input = document.getElementById('chatInput');
                 const msgText = input.value.trim();
                 if (!msgText) return;
-
                 const myName = window.myNickname || "익명";
-                
                 const now = new Date();
                 const month = now.getMonth() + 1;
                 const date = now.getDate();
                 const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
                 const timeStr = `${month}/${date} ${timeString}`;
-
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr }));
                     input.value = '';
@@ -1573,10 +1297,8 @@ def read_root():
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     client_id = str(id(websocket))
-    
     await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
     await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
-    
     try:
         while True:
             data = await websocket.receive_text()
@@ -1592,15 +1314,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 owned = packet.get("owned", [])
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
-                
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
 
-                # [추가] 방장이 볼 수 있게 누군가 접속하면 로그 생성
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
                 server_state.setdefault("admin_log", []).append(log_entry)
-                if len(server_state["admin_log"]) > 100:
-                    server_state["admin_log"].pop(0)
+                if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
 
@@ -1614,15 +1333,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                     manager.active_slots[client_id].append(idx)
                                 server_state["cards"][idx]["user"] = nickname
                                 recovered = True
-                                
-                                change_packet = json.dumps({
-                                    "type": "username_change",
-                                    "index": idx,
-                                    "user": nickname
-                                })
+                                change_packet = json.dumps({"type": "username_change", "index": idx, "user": nickname})
                                 await manager.broadcast(change_packet)
                                 await websocket.send_text(change_packet)
-                
                 if recovered:
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     continue
@@ -1632,20 +1345,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     if card["user"].startswith("자리"):
                         assigned_idx = i
                         break
-                
                 if assigned_idx is not None:
                     manager.active_slots[client_id].append(assigned_idx)
                     server_state["cards"][assigned_idx]["user"] = nickname
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                    
-                    change_packet = json.dumps({
-                        "type": "username_change",
-                        "index": assigned_idx,
-                        "user": nickname
-                    })
+                    change_packet = json.dumps({"type": "username_change", "index": assigned_idx, "user": nickname})
                     await manager.broadcast(change_packet)
                     await websocket.send_text(change_packet)
-                
                 continue
 
             if p_type == "clear_chat":
@@ -1659,22 +1365,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 target_nick = packet.get("target_nick")
                 for ws_conn, name in list(manager.active_users.items()):
                     if name == target_nick:
-                        try:
-                            await ws_conn.send_text(json.dumps({"type": "kicked"}))
-                        except:
-                            pass
+                        try: await ws_conn.send_text(json.dumps({"type": "kicked"}))
+                        except: pass
                 continue
 
             if p_type == "chat":
-                chat_obj = {
-                    "senderName": packet.get("senderName"), 
-                    "msg": packet.get("msg"),
-                    "time": packet.get("time", "")
-                }
+                chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg"), "time": packet.get("time", "")}
                 server_state["chat_history"].append(chat_obj)
-                if len(server_state["chat_history"]) > 100:
-                    server_state["chat_history"].pop(0)
-                
+                if len(server_state["chat_history"]) > 100: server_state["chat_history"].pop(0)
                 await manager.broadcast(json.dumps(packet))
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
@@ -1682,34 +1380,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 month = packet.get("month")
                 day = packet.get("day")
                 nickname = packet.get("nickname")
-                
-                if "attendance" not in server_state:
-                    server_state["attendance"] = {}
-                if month not in server_state["attendance"]:
-                    server_state["attendance"][month] = {}
-                if nickname not in server_state["attendance"][month]:
-                    server_state["attendance"][month][nickname] = []
-                    
+                if "attendance" not in server_state: server_state["attendance"] = {}
+                if month not in server_state["attendance"]: server_state["attendance"][month] = {}
+                if nickname not in server_state["attendance"][month]: server_state["attendance"][month][nickname] = []
                 if day not in server_state["attendance"][month][nickname]:
                     server_state["attendance"][month][nickname].append(day)
-                    
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
                 
             else:
                 packet["sender"] = client_id
-                
                 if p_type == "username_change":
                     idx = packet["index"]
                     val = packet["user"]
                     server_state["cards"][idx]["user"] = val
-                    
                     if not val.startswith("자리"):
-                        if client_id not in manager.active_slots:
-                            manager.active_slots[client_id] = []
-                        if idx not in manager.active_slots[client_id]:
-                            manager.active_slots[client_id].append(idx)
-                            
+                        if client_id not in manager.active_slots: manager.active_slots[client_id] = []
+                        if idx not in manager.active_slots[client_id]: manager.active_slots[client_id].append(idx)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "card_bg_change":
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
@@ -1721,8 +1408,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
                     idx = packet.get("index")
-                    if idx in manager.active_shares:
-                        del manager.active_shares[idx]
+                    if idx in manager.active_shares: del manager.active_shares[idx]
                 elif p_type == "update_notice":
                     server_state["global_notice"] = packet.get("notice", "")
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
@@ -1737,10 +1423,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except (WebSocketDisconnect, Exception):
         client_id = str(id(websocket))
-        
-        # [추가] 브라우저 종료 등 통신 단절 시 퇴장 로그 기록
         nickname = manager.active_users.get(websocket, "")
-        
         reverted_indexes = []
         if client_id in manager.active_slots:
             for r_idx in manager.active_slots[client_id]:
@@ -1749,36 +1432,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     if other_cid != client_id and r_idx in slots:
                         is_claimed_by_other = True
                         break
-                
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     server_state["cards"][r_idx]["work_start_time"] = 0
                     server_state["cards"][r_idx]["is_large"] = False
                     server_state["cards"][r_idx]["status"] = 0
                     reverted_indexes.append(r_idx)
-                    
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
 
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
         
-        # [추가] 방장이 볼 수 있게 누군가 나가면 로그 생성 및 전송
         if nickname and nickname != "연결중...":
             log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
-            if len(server_state["admin_log"]) > 100:
-                server_state["admin_log"].pop(0)
+            if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
             await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
         
         for r_idx in reverted_indexes:
-            await manager.broadcast(json.dumps({
-                "type": "username_change",
-                "index": r_idx,
-                "user": f"자리{r_idx+1}"
-            }))
-            
+            await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
