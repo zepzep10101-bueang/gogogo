@@ -656,13 +656,38 @@ def read_root():
                 }
             }
 
-            function toggleStatusMenu(index) {
+            // 버튼 색상 및 글씨 업데이트 함수
+            function updateStatusUI(index, status) {
+                const btn = document.getElementById(`share-btn-status-${index}`);
+                if (btn) {
+                    if (status > 0) {
+                        btn.innerText = "끄기";
+                        btn.style.background = "#d63031"; // 빨간색
+                    } else {
+                        btn.innerText = "상태";
+                        btn.style.background = "#8e44ad"; // 보라색
+                    }
+                }
+            }
+
+            // 메인 [상태/끄기] 버튼을 눌렀을 때의 동작
+            function handleStatusMainClick(index) {
                 const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
                 if (!isMine) {
                     alert("자기 자리 상태만 바꿀 수 있어 누나!");
                     return;
                 }
 
+                if (cardData[index].status > 0) {
+                    // 이미 상태가 켜져 있으면, 버튼이 [끄기]이므로 즉시 상태 해제!
+                    setStatus(index, 0);
+                } else {
+                    // 상태가 꺼져 있으면, 메뉴창을 열어서 선택할 수 있게 함!
+                    toggleStatusMenu(index);
+                }
+            }
+
+            function toggleStatusMenu(index) {
                 for(let i=0; i<16; i++) {
                     if (i !== index) {
                         const m = document.getElementById(`status-menu-${i}`);
@@ -681,6 +706,7 @@ def read_root():
                 if(menu) menu.style.display = 'none';
 
                 cardData[index].status = s;
+                updateStatusUI(index, s); // 버튼 글씨와 색상 변경
 
                 if (s !== 0 && myStreams[index]) {
                     stopShare(index);
@@ -762,6 +788,9 @@ def read_root():
                     let sizeBtnText = card.is_large ? '작게' : '크게';
                     let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12';
                     let largeClass = card.is_large ? ' card-large' : '';
+                    
+                    let statusBtnText = card.status > 0 ? '끄기' : '상태';
+                    let statusBtnBg = card.status > 0 ? '#d63031' : '#8e44ad';
 
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle}">
@@ -777,12 +806,11 @@ def read_root():
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     
                                     <div style="position:relative; display:flex; flex-grow:1;" class="status-wrap">
-                                        <button class="share-btn" id="share-btn-status-${index}" style="background:#8e44ad; width:100%;" onclick="toggleStatusMenu(${index})">상태</button>
-                                        <div id="status-menu-${index}" style="display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); background:rgba(30,30,40,0.95); border:1px solid #8e44ad; border-radius:4px; flex-direction:column; z-index:100; min-width:70px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding: 4px; margin-top: 2px;">
-                                            <button onclick="setStatus(${index}, 1)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🍽️ 식사</button>
-                                            <button onclick="setStatus(${index}, 2)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">☕ 휴식</button>
-                                            <button onclick="setStatus(${index}, 3)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">💤 수면</button>
-                                            <button onclick="setStatus(${index}, 0)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:11px; width:100%; border-radius:3px; margin-top:2px; border-top: 1px solid rgba(255,255,255,0.1);" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🔄 원래대로</button>
+                                        <button class="share-btn" id="share-btn-status-${index}" style="background:${statusBtnBg}; width:100%;" onclick="handleStatusMainClick(${index})">${statusBtnText}</button>
+                                        <div id="status-menu-${index}" style="display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); background:rgba(30,30,40,0.95); border:1px solid #8e44ad; border-radius:4px; flex-direction:column; z-index:100; min-width:80px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding: 4px; margin-top: 2px;">
+                                            <button onclick="setStatus(${index}, 1)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🍽️ 식사</button>
+                                            <button onclick="setStatus(${index}, 2)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">☕ 휴식</button>
+                                            <button onclick="setStatus(${index}, 3)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">💤 수면</button>
                                         </div>
                                     </div>
                                     
@@ -972,6 +1000,7 @@ def read_root():
 
                 if (cardData[index].status > 0) {
                     cardData[index].status = 0;
+                    updateStatusUI(index, 0);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 }));
                     }
@@ -1022,13 +1051,6 @@ def read_root():
                     myStreams[index].getTracks().forEach(track => track.stop());
                     delete myStreams[index];
                 }
-
-                // [수정] 모자이크 강제 해제 로직 완전 삭제 (안전을 위해 유지)
-                // cardData[index].is_mosaic = false;
-                // applyMosaicUI(index, false);
-                // if (ws && ws.readyState === WebSocket.OPEN) {
-                //     ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: false }));
-                // }
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
@@ -1150,6 +1172,7 @@ def read_root():
                             }
                             else if (data.type === "status_update") {
                                 cardData[data.index].status = data.status;
+                                updateStatusUI(data.index, data.status);
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) {
                                     renderBox(data.index);
@@ -1190,6 +1213,7 @@ def read_root():
                                             
                                             applyMosaicUI(i, cardData[i].is_mosaic);
                                             applySizeUI(i, cardData[i].is_large);
+                                            updateStatusUI(i, cardData[i].status);
 
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
