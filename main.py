@@ -156,7 +156,8 @@ def read_root():
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
 
-            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 3; width: 100%; }
+            /* z-index 3에서 20으로 올려서 메뉴가 무조건 위로 오게 수정 완료! */
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
@@ -656,21 +657,19 @@ def read_root():
                 }
             }
 
-            // 버튼 색상 및 글씨 업데이트 함수
             function updateStatusUI(index, status) {
                 const btn = document.getElementById(`share-btn-status-${index}`);
                 if (btn) {
                     if (status > 0) {
                         btn.innerText = "끄기";
-                        btn.style.background = "#d63031"; // 빨간색
+                        btn.style.background = "#d63031"; 
                     } else {
                         btn.innerText = "상태";
-                        btn.style.background = "#8e44ad"; // 보라색
+                        btn.style.background = "#8e44ad"; 
                     }
                 }
             }
 
-            // 메인 [상태/끄기] 버튼을 눌렀을 때의 동작
             function handleStatusMainClick(index) {
                 const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
                 if (!isMine) {
@@ -679,10 +678,8 @@ def read_root():
                 }
 
                 if (cardData[index].status > 0) {
-                    // 이미 상태가 켜져 있으면, 버튼이 [끄기]이므로 즉시 상태 해제!
                     setStatus(index, 0);
                 } else {
-                    // 상태가 꺼져 있으면, 메뉴창을 열어서 선택할 수 있게 함!
                     toggleStatusMenu(index);
                 }
             }
@@ -706,7 +703,7 @@ def read_root():
                 if(menu) menu.style.display = 'none';
 
                 cardData[index].status = s;
-                updateStatusUI(index, s); // 버튼 글씨와 색상 변경
+                updateStatusUI(index, s); 
 
                 if (s !== 0 && myStreams[index]) {
                     stopShare(index);
@@ -820,7 +817,8 @@ def read_root():
                                 </div>
                             </div>
                             
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; margin-top:2px;">
+                            <!-- [수정] 파일 선택 버튼 영역의 z-index를 10으로 낮춤! (메뉴에 안 겹치게) -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:10; margin-top:2px;">
                                 <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
                             </div>
 
