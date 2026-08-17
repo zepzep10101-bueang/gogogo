@@ -134,10 +134,12 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
+        <!-- [추가] 모바일 기기 등에서 화면 줌인(확대/축소)을 원천 차단하는 메타 태그 -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: scroll; background: #111; }
+            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: scroll; background: #111; touch-action: pan-y; }
             body::-webkit-scrollbar { width: 8px; }
             body::-webkit-scrollbar-track { background: #111; }
             body::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
@@ -155,16 +157,13 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            /* [수정] 대시보드 밀림 완벽 방지! 1fr로 확실히 가둬서 화면 밖으로 튀어나가지 못하게 함 */
             .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; }
             
-            /* [수정] 누나가 원하던 4열 복구! 가로로 뚱뚱해지지 않게 갭과 크기를 콤팩트하게 조절 */
             .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
             @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             @media (max-width: 600px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
             
-            /* [수정] 한 화면에 12자리(3줄)가 쾌적하게 쏙 들어가도록 카드의 높이를 날씬하게 압축! (250px) */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
 
@@ -172,7 +171,6 @@ def read_root():
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            /* [수정] 캠이나 영상 틀었을 때 옆에 빈 공간이 덜 남게, 4열 비율에 맞춰 영상칸 높이도 컴팩트하게! (135px) */
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
@@ -207,7 +205,7 @@ def read_root():
     </head>
     <body>
 
-        <!-- [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 자물쇠 -->
+        <!-- [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 및 [추가] 줌(확대) 차단 로직 -->
         <script>
             document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
             document.addEventListener('keydown', function(e) {
@@ -216,6 +214,13 @@ def read_root():
                     return false;
                 }
             });
+            // 노트북 터치패드(Ctrl+휠)나 스마트폰의 핀치 줌을 강제로 막는 기능 추가!
+            document.addEventListener('wheel', function(e) {
+                if (e.ctrlKey) { e.preventDefault(); }
+            }, { passive: false });
+            document.addEventListener('touchstart', function(e) {
+                if (e.touches.length > 1) { e.preventDefault(); }
+            }, { passive: false });
         </script>
 
         <div class="login-overlay" id="loginOverlay">
@@ -1522,8 +1527,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         is_claimed_by_other = True
                         break
                 if not is_claimed_by_other:
+                    # [추가] 방을 나갈 때 모자이크 설정도 무조건 초기화(False)로 청소!
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     server_state["cards"][r_idx]["is_large"] = False
+                    server_state["cards"][r_idx]["is_mosaic"] = False 
                     server_state["cards"][r_idx]["status"] = 0
                     server_state["cards"][r_idx]["timer_visible"] = False
                     server_state["cards"][r_idx]["timer_running"] = False
@@ -1546,6 +1553,8 @@ async def websocket_endpoint(websocket: WebSocket):
         for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
             await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
+            # [추가] 청소된 모자이크(꺼짐) 상태를 방 안의 모든 사람에게 즉시 방송!
+            await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
