@@ -127,11 +127,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# [추가] 외부에서 인원수만 가볍게 물어보는 API 창구
-@app.get("/user_count")
-def get_user_count():
-    return {"count": len(manager.active_connections)}
-
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return r"""
@@ -139,6 +134,7 @@ def read_root():
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
+        <!-- [추가] 모바일 기기 등에서 화면 줌인(확대/축소)을 원천 차단하는 메타 태그 -->
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
@@ -209,6 +205,7 @@ def read_root():
     </head>
     <body>
 
+        <!-- [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 및 [추가] 줌(확대) 차단 로직 -->
         <script>
             document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
             document.addEventListener('keydown', function(e) {
@@ -217,6 +214,7 @@ def read_root():
                     return false;
                 }
             });
+            // 노트북 터치패드(Ctrl+휠)나 스마트폰의 핀치 줌을 강제로 막는 기능 추가!
             document.addEventListener('wheel', function(e) {
                 if (e.ctrlKey) { e.preventDefault(); }
             }, { passive: false });
@@ -228,12 +226,7 @@ def read_root():
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
-                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 10px;">닉네임은 한 번만 적으면 저장 돼!</p>
-                
-                <div id="loginUserCount" style="margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894; background: rgba(0, 184, 148, 0.15); padding: 8px; border-radius: 6px; border: 1px solid rgba(0, 184, 148, 0.4);">
-                    🔥 현재 달리고 있는 작가님: 확인 중...
-                </div>
-
+                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 15px;">닉네임은 한 번만 적으면 저장 돼!</p>
                 <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()">
                 <br>
@@ -359,31 +352,6 @@ def read_root():
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
             window.adminLogData = []; 
-
-            // [추가] 로그인 화면에 인원수를 주기적으로 업데이트하는 가벼운 함수
-            async function updateLoginUserCount() {
-                try {
-                    const res = await fetch('/user_count');
-                    const data = await res.json();
-                    const countEl = document.getElementById('loginUserCount');
-                    if(countEl) countEl.innerText = `🔥 현재 달리고 있는 작가님: ${data.count}명`;
-                } catch(e) {
-                    const countEl = document.getElementById('loginUserCount');
-                    if(countEl) countEl.innerText = `🔥 현재 달리고 있는 작가님: ?명`;
-                }
-            }
-
-            // 페이지 로드 시 바로 한 번 인원수 체크
-            updateLoginUserCount();
-
-            // 로그인 화면이 떠 있는 동안 10초마다 인원수를 가볍게 새로고침 (렉 제로!)
-            let countInterval = setInterval(() => {
-                if(document.getElementById('loginOverlay').style.display !== 'none') {
-                    updateLoginUserCount();
-                } else {
-                    clearInterval(countInterval); // 방에 들어가면 더 이상 안 물어보고 멈춤
-                }
-            }, 10000);
 
             function openModal(modalId) {
                 document.getElementById(modalId).style.display = 'flex';
@@ -1527,4 +1495,69 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 elif p_type == "start_share":
-                    manager.
+                    manager.active_shares[packet["index"]] = client_id
+                elif p_type == "stop_share":
+                    idx = packet.get("index")
+                    if idx in manager.active_shares: del manager.active_shares[idx]
+                elif p_type == "update_notice":
+                    server_state["global_notice"] = packet.get("notice", "")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "status_update":
+                    server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "sync_timer":
+                    idx = packet["index"]
+                    server_state["cards"][idx]["timer_visible"] = packet.get("visible", False)
+                    server_state["cards"][idx]["timer_running"] = packet.get("running", False)
+                    server_state["cards"][idx]["timer_elapsed"] = packet.get("elapsed", 0)
+                    server_state["cards"][idx]["timer_last_start"] = packet.get("last_start", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
+                await manager.broadcast(json.dumps(packet), exclude=websocket)
+
+    except (WebSocketDisconnect, Exception):
+        client_id = str(id(websocket))
+        nickname = manager.active_users.get(websocket, "")
+        reverted_indexes = []
+        if client_id in manager.active_slots:
+            for r_idx in manager.active_slots[client_id]:
+                is_claimed_by_other = False
+                for other_cid, slots in manager.active_slots.items():
+                    if other_cid != client_id and r_idx in slots:
+                        is_claimed_by_other = True
+                        break
+                if not is_claimed_by_other:
+                    # [추가] 방을 나갈 때 모자이크 설정도 무조건 초기화(False)로 청소!
+                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    server_state["cards"][r_idx]["is_large"] = False
+                    server_state["cards"][r_idx]["is_mosaic"] = False 
+                    server_state["cards"][r_idx]["status"] = 0
+                    server_state["cards"][r_idx]["timer_visible"] = False
+                    server_state["cards"][r_idx]["timer_running"] = False
+                    server_state["cards"][r_idx]["timer_elapsed"] = 0
+                    server_state["cards"][r_idx]["timer_last_start"] = 0
+                    reverted_indexes.append(r_idx)
+            del manager.active_slots[client_id]
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+
+        freed_indexes = manager.disconnect(websocket)
+        await manager.broadcast_user_list()
+        
+        if nickname and nickname != "연결중...":
+            log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
+            server_state.setdefault("admin_log", []).append(log_entry)
+            if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+        
+        for r_idx in reverted_indexes:
+            await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
+            await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
+            # [추가] 청소된 모자이크(꺼짐) 상태를 방 안의 모든 사람에게 즉시 방송!
+            await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
