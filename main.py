@@ -137,7 +137,6 @@ def read_root():
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            /* [수정] 쾌적하고 부드러운 스크롤바 디자인 적용 */
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: scroll; background: #111; }
             body::-webkit-scrollbar { width: 8px; }
             body::-webkit-scrollbar-track { background: #111; }
@@ -156,23 +155,28 @@ def read_root():
             
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
 
-            .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
+            /* [수정] 대시보드 밀림 완벽 방지! 1fr로 확실히 가둬서 화면 밖으로 튀어나가지 못하게 함 */
+            .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; }
             
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
-            @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-            @media (max-width: 800px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
+            /* [수정] 누나가 원하던 4열 복구! 가로로 뚱뚱해지지 않게 갭과 크기를 콤팩트하게 조절 */
+            .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
+            @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 600px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
             
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
-            .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
+            /* [수정] 한 화면에 12자리(3줄)가 쾌적하게 쏙 들어가도록 카드의 높이를 날씬하게 압축! (250px) */
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
 
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
 
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 150px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            /* [수정] 캠이나 영상 틀었을 때 옆에 빈 공간이 덜 남게, 4열 비율에 맞춰 영상칸 높이도 컴팩트하게! (135px) */
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
 
-            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 20px; height: calc(100vh - 40px); min-width: 0; }
+            .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
@@ -214,7 +218,6 @@ def read_root():
             });
         </script>
 
-        <!-- 로그인 모달 -->
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -226,7 +229,6 @@ def read_root():
             </div>
         </div>
 
-        <!-- 공지사항 모달 -->
         <div id="noticeModal" class="modal-overlay" onclick="if(event.target===this) closeModal('noticeModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('noticeModal')">❌</button>
@@ -239,7 +241,6 @@ def read_root():
             </div>
         </div>
 
-        <!-- 출석현황 모달 -->
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
@@ -260,7 +261,6 @@ def read_root():
             </div>
         </div>
 
-        <!-- 배경설정 모달 -->
         <div id="settingsModal" class="modal-overlay" onclick="if(event.target===this) closeModal('settingsModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('settingsModal')">❌</button>
@@ -277,7 +277,6 @@ def read_root():
             </div>
         </div>
 
-        <!-- 방장 전용 출입 기록 모달 -->
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -456,14 +455,13 @@ def read_root():
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
                 if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) {
-                    return; // 이미 찍혀있으면 패스
+                    return; 
                 }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName }));
                 }
             }
 
-            // [추가] 로그인 후 접속 시 오늘 날짜 출석 도장을 자동으로 쾅 찍어주는 함수!
             function autoStampToday() {
                 const now = new Date();
                 const y = now.getFullYear();
@@ -474,7 +472,6 @@ def read_root():
                 
                 if (!myName) return;
                 
-                // 이미 찍혀있는지 확인
                 const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
                 if (!myAtt.includes(d)) {
                     stampAttendance(y, m, d);
@@ -1071,7 +1068,6 @@ def read_root():
                         const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
                         
-                        // [추가] 접속 성공 시 자동으로 오늘 출석 도장 찍기 실행!
                         autoStampToday();
 
                         if (pingInterval) clearInterval(pingInterval);
@@ -1380,7 +1376,7 @@ def read_root():
         </script>
     </body>
     </html>
-    """
+"""
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
