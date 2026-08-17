@@ -23,18 +23,18 @@ def load_data():
             if len(cards) > 16:
                 data["cards"] = cards[:16]
             elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             
             for i, card in enumerate(data["cards"]):
-                card["user"] = f"자리{i+1}"
-                card["is_mosaic"] = False
-                if "is_large" not in card:
-                    card["is_large"] = False
-                if "status" not in card:
-                    card["status"] = 0
-                if "work_start_time" not in card:
-                    card["work_start_time"] = 0
+                card["user"] = card.get("user") or f"자리{i+1}"
+                card["is_mosaic"] = card.get("is_mosaic", False)
+                card["is_large"] = card.get("is_large", False)
+                card["status"] = card.get("status", 0)
+                card["timer_visible"] = card.get("timer_visible", False)
+                card["timer_running"] = card.get("timer_running", False)
+                card["timer_elapsed"] = card.get("timer_elapsed", 0)
+                card["timer_last_start"] = card.get("timer_last_start", 0)
             
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
@@ -51,7 +51,7 @@ def load_data():
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "work_start_time": 0} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
         "attendance": {},
@@ -137,7 +137,12 @@ def read_root():
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; background: #111; }
+            /* [수정] 쾌적하고 부드러운 스크롤바 디자인 적용 */
+            body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: scroll; background: #111; }
+            body::-webkit-scrollbar { width: 8px; }
+            body::-webkit-scrollbar-track { background: #111; }
+            body::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+            body::-webkit-scrollbar-thumb:hover { background: #666; }
 
             .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
             .login-box { background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -153,9 +158,9 @@ def read_root():
 
             .main-container { display: grid; grid-template-columns: 5fr 240px; gap: 20px; padding: 20px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; min-width: 0; }
             
-            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
-            @media (max-width: 1400px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-            @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            .card-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 800px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
             
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(5px); min-height: 260px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 535px; }
@@ -198,6 +203,17 @@ def read_root():
     </head>
     <body>
 
+        <!-- [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 자물쇠 -->
+        <script>
+            document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+            document.addEventListener('keydown', function(e) {
+                if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        </script>
+
         <!-- 로그인 모달 -->
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
@@ -228,18 +244,15 @@ def read_root():
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
                 <h3 style="margin-bottom: 15px; font-size: 16px; text-align: center;">🏆 출석 현황</h3>
-                
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; text-align: center;" id="calMonthTitle">🍀 내 출석부</div>
                     <div class="calendar-grid" id="calendarGrid"></div>
                     <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">빨간 테두리(오늘)를 눌러서 도장을 찍어봐!</div>
                 </div>
-
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 달 출석 랭킹</div>
                     <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6; max-height: 100px; overflow-y: auto;">랭킹 로딩 중...</div>
                 </div>
-
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;">
                     <div style="font-size: 13px; font-weight: bold; color: #81ecec; margin-bottom: 8px;">✅ 오늘 출석한 사람</div>
                     <div id="attTodayList" style="font-size: 12px; color: #ddd; line-height: 1.6; display: flex; flex-wrap: wrap; gap: 4px;">대기 중...</div>
@@ -255,7 +268,6 @@ def read_root():
                 <div>
                     <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">일반 사진 (움짤X):</div>
                     <input type="file" id="bgFileInput" accept="image/jpeg, image/png, image/webp" style="font-size:11px; width:100%; margin-bottom: 15px;" onchange="setLocalBackground(event)">
-                    
                     <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">유튜브 링크:</div>
                     <div style="display:flex; gap:5px;">
                         <input type="text" id="bgYoutubeInput" placeholder="URL 입력" style="flex-grow:1; font-size:11px; padding:5px; background:rgba(255,255,255,0.9); color:black; border:none; border-radius:3px; min-width:0;">
@@ -288,7 +300,6 @@ def read_root():
                 <div class="panel-box" style="flex-shrink: 0;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
-                        
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
@@ -302,14 +313,12 @@ def read_root():
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
                     </div>
-
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
                         <div>
                             <span id="connStatus" class="status-indicator status-offline" style="margin-left: 0;">연결 중...</span>
                             <span style="font-size:12px; margin-left: 5px;">인원: <b id="userCount" style="color:#ff7675;">0명</b></span>
                         </div>
                     </div>
-                    
                     <p style="margin-top:4px; font-size:11px; color:#aaa; line-height:1.5;">명단:<br><span id="userListStr" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;"></span></p>
                 </div>
 
@@ -331,15 +340,6 @@ def read_root():
         </div>
 
         <script>
-            // [보안] F12, 우클릭, 개발자 도구 단축키 철벽 차단 자물쇠
-            document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-            document.addEventListener('keydown', function(e) {
-                if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
-                    e.preventDefault();
-                    return false;
-                }
-            });
-
             const ROOM_PASSWORD = "7777"; 
             const ADMIN_PASSWORD = "4717"; 
             const ADMIN_NICKNAME = "부엉";
@@ -456,11 +456,28 @@ def read_root():
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const myName = window.myNickname || "익명";
                 if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) {
-                    alert("누나(작가님)! 오늘은 이미 클로버 도장을 꾹 찍었어!");
-                    return;
+                    return; // 이미 찍혀있으면 패스
                 }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName }));
+                }
+            }
+
+            // [추가] 로그인 후 접속 시 오늘 날짜 출석 도장을 자동으로 쾅 찍어주는 함수!
+            function autoStampToday() {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth() + 1;
+                const d = now.getDate();
+                const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+                const myName = window.myNickname;
+                
+                if (!myName) return;
+                
+                // 이미 찍혀있는지 확인
+                const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || [];
+                if (!myAtt.includes(d)) {
+                    stampAttendance(y, m, d);
                 }
             }
 
@@ -575,7 +592,7 @@ def read_root():
 
             let ws = null;
             let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, work_start_time: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0 }));
             const myStreams = {}; 
             const peerConnections = {}; 
             const candidateBuffers = {}; 
@@ -622,26 +639,78 @@ def read_root():
                 }
             }
 
-            function checkWorkTimeStart(index) {
-                if (!cardData[index].work_start_time) {
-                    const t = Date.now();
-                    cardData[index].work_start_time = t;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "set_work_time", index: index, time: t }));
-                    }
+            function sendTimerSync(index) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: "sync_timer",
+                        index: index,
+                        visible: cardData[index].timer_visible,
+                        running: cardData[index].timer_running,
+                        elapsed: cardData[index].timer_elapsed,
+                        last_start: cardData[index].timer_last_start
+                    }));
                 }
             }
 
-            // [수정] 휴식/끄기를 반복해도 타이머 시간이 0초로 초기화되지 않도록 철벽 방어!
-            function checkWorkTimeStop(index) {}
-
-            function resetWorkTimer(index) {
-                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
-                if (!isMine) { alert("본인 카드나 관리자만 초기화할 수 있어!"); return; }
-                cardData[index].work_start_time = Date.now();
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "set_work_time", index: index, time: cardData[index].work_start_time }));
+            function updateTimerOverlayUI(index) {
+                const card = cardData[index];
+                const overlay = document.getElementById(`timer-overlay-${index}`);
+                if (overlay) { overlay.style.display = card.timer_visible ? 'flex' : 'none'; }
+                
+                const btn = document.getElementById(`timer-toggle-btn-${index}`);
+                if (btn) {
+                    btn.innerText = card.timer_running ? '⏸ 멈춤' : '▶ 시작';
+                    btn.style.background = card.timer_running ? '#d63031' : '#00b894';
                 }
+                
+                const timerText = document.getElementById(`big-timer-text-${index}`);
+                if (timerText) {
+                    let totalSecs = card.timer_elapsed;
+                    if (card.timer_running && card.timer_last_start) {
+                        totalSecs += Math.floor((Date.now() - card.timer_last_start) / 1000);
+                    }
+                    let h = Math.floor(totalSecs / 3600);
+                    let m = Math.floor((totalSecs % 3600) / 60);
+                    let s = totalSecs % 60;
+                    timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                }
+            }
+
+            function toggleTimerOverlay(index) {
+                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
+                if (!isMine) { alert("자기 자리 타이머만 조작할 수 있어!"); return; }
+                cardData[index].timer_visible = !cardData[index].timer_visible;
+                updateTimerOverlayUI(index);
+                sendTimerSync(index);
+            }
+
+            function toggleManualTimerRunning(index) {
+                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
+                if (!isMine) { alert("본인 타이머만 조작할 수 있어!"); return; }
+                if (cardData[index].timer_running) {
+                    const now = Date.now();
+                    cardData[index].timer_elapsed += Math.floor((now - cardData[index].timer_last_start) / 1000);
+                    cardData[index].timer_running = false;
+                    cardData[index].timer_last_start = 0;
+                } else {
+                    cardData[index].timer_running = true;
+                    cardData[index].timer_last_start = Date.now();
+                }
+                updateTimerOverlayUI(index);
+                sendTimerSync(index);
+            }
+
+            function resetManualTimer(index) {
+                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
+                if (!isMine) { alert("본인 타이머만 초기화할 수 있어!"); return; }
+                cardData[index].timer_elapsed = 0;
+                if (cardData[index].timer_running) {
+                    cardData[index].timer_last_start = Date.now();
+                } else {
+                    cardData[index].timer_last_start = 0;
+                }
+                updateTimerOverlayUI(index);
+                sendTimerSync(index);
             }
 
             function updateStatusUI(index, status) {
@@ -676,8 +745,6 @@ def read_root():
                 cardData[index].status = s;
                 updateStatusUI(index, s); 
                 if (s !== 0 && myStreams[index]) { stopShare(index); }
-                if (s !== 0) { checkWorkTimeStart(index); }
-                else { checkWorkTimeStop(index); }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "status_update", index: index, status: s }));
                 }
@@ -696,14 +763,19 @@ def read_root():
             setInterval(() => {
                 const now = Date.now();
                 cardData.forEach((card, idx) => {
-                    const wtEl = document.getElementById(`work-timer-${idx}`);
-                    if (wtEl && card.work_start_time) {
-                        let s = Math.floor((now - card.work_start_time) / 1000);
-                        let h = Math.floor(s / 3600); s %= 3600;
-                        let m = Math.floor(s / 60); s %= 60;
-                        wtEl.innerText = `⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                        wtEl.style.display = 'inline-block';
-                    } else if (wtEl) { wtEl.style.display = 'none'; }
+                    if (card.timer_visible) {
+                        let totalSecs = card.timer_elapsed;
+                        if (card.timer_running && card.timer_last_start) {
+                            totalSecs += Math.floor((now - card.timer_last_start) / 1000);
+                        }
+                        const timerText = document.getElementById(`big-timer-text-${idx}`);
+                        if (timerText) {
+                            let h = Math.floor(totalSecs / 3600);
+                            let m = Math.floor((totalSecs % 3600) / 60);
+                            let s = totalSecs % 60;
+                            timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                        }
+                    }
                 });
             }, 1000);
 
@@ -750,11 +822,11 @@ def read_root():
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle}">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 3px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
-                                    <span id="work-timer-${index}" style="font-size: 10px; color: #ffeaa7; font-weight: bold; white-space: nowrap; display: ${card.work_start_time ? 'inline-block' : 'none'};">⏱ 00:00:00</span>
-                                    <button onclick="resetWorkTimer(${index})" style="background:#d63031; color:white; border:none; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer;" title="초기화">🔄</button>
+                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+                                    <button onclick="toggleTimerOverlay(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">⏱ 타이머</button>
+                                    <button onclick="resetManualTimer(${index})" class="share-btn" style="background:#d63031; flex-grow:0; padding:4px 6px;" title="시간 초기화">🔄</button>
                                 </div>
-                                <div class="btn-group">
+                                <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
                                     <div style="position:relative; display:flex; flex-grow:1;" class="status-wrap">
@@ -768,12 +840,19 @@ def read_root():
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
+                                    <button class="share-btn" style="background:#b2bec3; color:#2d3436; flex-grow:1;" onclick="document.getElementById('card-file-${index}').click()" title="카드 배경화면 변경">🖼️ 배경</button>
+                                    <input type="file" id="card-file-${index}" style="display:none;" accept="image/jpeg, image/png, image/webp" onchange="setCardBackground(${index}, event)">
                                 </div>
                             </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; position:relative; z-index:10; margin-top:2px;">
-                                <input type="file" id="card-file-${index}" accept="image/jpeg, image/png, image/webp" style="font-size:9px; width:100%; color:#ccc;" onchange="setCardBackground(${index}, event)">
+                            <div style="position: relative; flex-grow: 1; display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; margin-top: 6px;">
+                                <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0;"></div>
+                                <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(25, 42, 86, 0.85); flex-direction: column; align-items: center; justify-content: center; z-index: 25; backdrop-filter: blur(2px);">
+                                    <div id="big-timer-text-${index}" style="font-size: 34px; font-weight: 900; color: #74b9ff; text-shadow: 0px 0px 15px rgba(116, 185, 255, 0.6); font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; line-height: 1;">00:00:00</div>
+                                    <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" style="margin-top: 15px; padding: 6px 22px; font-size: 13px; font-weight: bold; border: none; border-radius: 20px; cursor: pointer; background: ${card.timer_running ? '#d63031' : '#00b894'}; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.2s;">
+                                        ${card.timer_running ? '⏸ 멈춤' : '▶ 시작'}
+                                    </button>
+                                </div>
                             </div>
-                            <div class="card-stream-box" id="stream-box-${index}"></div>
                         </div>
                     `;
                 });
@@ -922,7 +1001,7 @@ def read_root():
                     const localVideo = document.getElementById(`video-${index}`);
                     localVideo.srcObject = stream;
                     localVideo.play().catch(e => console.log(e));
-                    checkWorkTimeStart(index);
+                    
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "start_share", index: index }));
                     }
@@ -938,7 +1017,7 @@ def read_root():
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "stop_share", index: index }));
                 }
-                checkWorkTimeStop(index);
+                
                 renderBox(index);
                 const btnScreen = document.getElementById(`share-btn-screen-${index}`);
                 const btnCam = document.getElementById(`share-btn-cam-${index}`);
@@ -991,6 +1070,10 @@ def read_root():
                         const myNick = window.myNickname || "익명";
                         const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
+                        
+                        // [추가] 접속 성공 시 자동으로 오늘 출석 도장 찍기 실행!
+                        autoStampToday();
+
                         if (pingInterval) clearInterval(pingInterval);
                         pingInterval = setInterval(() => {
                             if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); }
@@ -1028,12 +1111,14 @@ def read_root():
                                 const box = document.getElementById(`stream-box-${data.index}`);
                                 if (box && !box.querySelector('video')) { renderBox(data.index); }
                             }
-                            else if (data.type === "set_work_time") {
-                                cardData[data.index].work_start_time = data.time;
-                                const wtEl = document.getElementById(`work-timer-${data.index}`);
-                                if (wtEl) {
-                                    if (data.time) { wtEl.style.display = 'inline-block'; }
-                                    else { wtEl.style.display = 'none'; }
+                            else if (data.type === "sync_timer") {
+                                const idx = data.index;
+                                if (cardData[idx]) {
+                                    cardData[idx].timer_visible = data.visible;
+                                    cardData[idx].timer_running = data.running;
+                                    cardData[idx].timer_elapsed = data.elapsed;
+                                    cardData[idx].timer_last_start = data.last_start;
+                                    updateTimerOverlayUI(idx);
                                 }
                             }
                             else if (data.type === "init_state") {
@@ -1055,19 +1140,23 @@ def read_root():
                                             cardData[i].is_mosaic = card.is_mosaic || false;
                                             cardData[i].is_large = card.is_large || false;
                                             cardData[i].status = card.status || 0;
-                                            cardData[i].work_start_time = card.work_start_time || 0;
+                                            
+                                            cardData[i].timer_visible = card.timer_visible || false;
+                                            cardData[i].timer_running = card.timer_running || false;
+                                            cardData[i].timer_elapsed = card.timer_elapsed || 0;
+                                            cardData[i].timer_last_start = card.timer_last_start || 0;
+
                                             applyMosaicUI(i, cardData[i].is_mosaic);
                                             applySizeUI(i, cardData[i].is_large);
                                             updateStatusUI(i, cardData[i].status);
+                                            
                                             const userEl = document.getElementById(`username-${i}`);
                                             if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`);
                                             if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
-                                            const wtEl = document.getElementById(`work-timer-${i}`);
-                                            if (wtEl) {
-                                                if (card.work_start_time) { wtEl.style.display = 'inline-block'; }
-                                                else { wtEl.style.display = 'none'; }
-                                            }
+                                            
+                                            updateTimerOverlayUI(i);
+
                                             const box = document.getElementById(`stream-box-${i}`);
                                             if (box && !box.querySelector('video')) { renderBox(i); }
                                         }
@@ -1415,8 +1504,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "status_update":
                     server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "set_work_time":
-                    server_state["cards"][packet["index"]]["work_start_time"] = packet.get("time", 0)
+                elif p_type == "sync_timer":
+                    idx = packet["index"]
+                    server_state["cards"][idx]["timer_visible"] = packet.get("visible", False)
+                    server_state["cards"][idx]["timer_running"] = packet.get("running", False)
+                    server_state["cards"][idx]["timer_elapsed"] = packet.get("elapsed", 0)
+                    server_state["cards"][idx]["timer_last_start"] = packet.get("last_start", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
@@ -1434,9 +1527,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         break
                 if not is_claimed_by_other:
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
-                    server_state["cards"][r_idx]["work_start_time"] = 0
                     server_state["cards"][r_idx]["is_large"] = False
                     server_state["cards"][r_idx]["status"] = 0
+                    server_state["cards"][r_idx]["timer_visible"] = False
+                    server_state["cards"][r_idx]["timer_running"] = False
+                    server_state["cards"][r_idx]["timer_elapsed"] = 0
+                    server_state["cards"][r_idx]["timer_last_start"] = 0
                     reverted_indexes.append(r_idx)
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
@@ -1453,6 +1549,7 @@ async def websocket_endpoint(websocket: WebSocket):
         
         for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
+            await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
