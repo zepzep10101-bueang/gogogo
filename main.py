@@ -117,7 +117,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# [추가] 외부에서 인원수를 가볍게 물어보는 API 창구
 @app.get("/user_count")
 def get_user_count():
     return {"count": len(manager.active_connections)}
@@ -179,6 +178,37 @@ def read_root():
             .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
+            
+            /* 이모티콘 통통 튀는 애니메이션 및 투명 버튼 스타일 */
+            @keyframes bounceFast { 
+                0% { transform: translateY(0px); } 
+                100% { transform: translateY(-7px); } 
+            }
+            @keyframes bounceSlow { 
+                0% { transform: translateY(0px); } 
+                100% { transform: translateY(-4px); } 
+            }
+            .emoji-fast { 
+                display: inline-block; 
+                animation: bounceFast 0.25s infinite alternate ease-in-out; 
+            }
+            .emoji-slow { 
+                display: inline-block; 
+                animation: bounceSlow 0.8s infinite alternate ease-in-out; 
+            }
+            .timer-plain-btn {
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                cursor: pointer;
+                font-size: 26px;
+                margin-top: 12px;
+                padding: 4px 12px;
+                transition: transform 0.2s;
+            }
+            .timer-plain-btn:hover {
+                transform: scale(1.15);
+            }
         </style>
     </head>
     <body>
@@ -187,7 +217,6 @@ def read_root():
             document.addEventListener('keydown', function(e) {
                 if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) { e.preventDefault(); return false; }
             });
-            // [추가] 터치패드/스마트폰 두 손가락 줌인 차단
             document.addEventListener('wheel', function(e) { if (e.ctrlKey) { e.preventDefault(); } }, { passive: false });
             document.addEventListener('touchstart', function(e) { if (e.touches.length > 1) { e.preventDefault(); } }, { passive: false });
         </script>
@@ -308,7 +337,6 @@ def read_root():
             window.attendanceData = {}; 
             window.adminLogData = []; 
 
-            // [추가] 로그인 화면 인원수 업데이트 함수
             async function updateLoginUserCount() {
                 try {
                     const res = await fetch('/user_count');
@@ -380,7 +408,28 @@ def read_root():
             function getEmptySlotHTML(username) { if (!username || username.startsWith("자리")) { return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } else { return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } }
             function renderBox(index) { const box = document.getElementById(`stream-box-${index}`); if (!box) return; const existingVideo = box.querySelector('video'); if (existingVideo) existingVideo.remove(); const card = cardData[index]; if (card.status > 0) { let textMsg = ""; if (card.status === 1) textMsg = "🍽️ 식사중"; else if (card.status === 2) textMsg = "☕ 휴식중"; else if (card.status === 3) textMsg = "💤 수면중"; box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;"><div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div></div>`; } else { box.innerHTML = getEmptySlotHTML(card.user); } }
             function sendTimerSync(index) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "sync_timer", index: index, visible: cardData[index].timer_visible, running: cardData[index].timer_running, elapsed: cardData[index].timer_elapsed, last_start: cardData[index].timer_last_start })); } }
-            function updateTimerOverlayUI(index) { const card = cardData[index]; const overlay = document.getElementById(`timer-overlay-${index}`); if (overlay) { overlay.style.display = card.timer_visible ? 'flex' : 'none'; } const btn = document.getElementById(`timer-toggle-btn-${index}`); if (btn) { btn.innerText = card.timer_running ? '⏸ 멈춤' : '▶ 시작'; btn.style.background = card.timer_running ? '#d63031' : '#00b894'; } const timerText = document.getElementById(`big-timer-text-${index}`); if (timerText) { let totalSecs = card.timer_elapsed; if (card.timer_running && card.timer_last_start) { totalSecs += Math.floor((Date.now() - card.timer_last_start) / 1000); } let h = Math.floor(totalSecs / 3600); let m = Math.floor((totalSecs % 3600) / 60); let s = totalSecs % 60; timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; } }
+            
+            function updateTimerOverlayUI(index) { 
+                const card = cardData[index]; const overlay = document.getElementById(`timer-overlay-${index}`); 
+                if (overlay) { overlay.style.display = card.timer_visible ? 'flex' : 'none'; } 
+                const btn = document.getElementById(`timer-toggle-btn-${index}`); 
+                if (btn) { 
+                    if(card.timer_running) {
+                        btn.innerHTML = '<span class="emoji-fast">🦉</span> <span class="emoji-fast" style="animation-delay: 0.15s;">🖥️</span>';
+                    } else {
+                        btn.innerHTML = '<span class="emoji-slow">🐠</span> <span class="emoji-slow" style="animation-delay: 0.3s;">💤</span>';
+                    }
+                } 
+                const timerText = document.getElementById(`big-timer-text-${index}`); 
+                if (timerText) { 
+                    timerText.style.color = card.timer_running ? '#ffffff' : '#f1c40f'; 
+                    let totalSecs = card.timer_elapsed; 
+                    if (card.timer_running && card.timer_last_start) { totalSecs += Math.floor((Date.now() - card.timer_last_start) / 1000); } 
+                    let h = Math.floor(totalSecs / 3600); let m = Math.floor((totalSecs % 3600) / 60); let s = totalSecs % 60; 
+                    timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; 
+                } 
+            }
+            
             function toggleTimerOverlay(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("자기 자리 타이머만 조작할 수 있어!"); return; } cardData[index].timer_visible = !cardData[index].timer_visible; updateTimerOverlayUI(index); sendTimerSync(index); }
             function toggleManualTimerRunning(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("본인 타이머만 조작할 수 있어!"); return; } if (cardData[index].timer_running) { cardData[index].timer_elapsed += Math.floor((Date.now() - cardData[index].timer_last_start) / 1000); cardData[index].timer_running = false; cardData[index].timer_last_start = 0; } else { cardData[index].timer_running = true; cardData[index].timer_last_start = Date.now(); } updateTimerOverlayUI(index); sendTimerSync(index); }
             function resetManualTimer(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("본인 타이머만 초기화할 수 있어!"); return; } cardData[index].timer_elapsed = 0; if (cardData[index].timer_running) { cardData[index].timer_last_start = Date.now(); } else { cardData[index].timer_last_start = 0; } updateTimerOverlayUI(index); sendTimerSync(index); }
@@ -426,9 +475,11 @@ def read_root():
                             </div>
                             <div style="position: relative; flex-grow: 1; display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; margin-top: 6px;">
                                 <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0;"></div>
-                                <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(25, 42, 86, 0.85); flex-direction: column; align-items: center; justify-content: center; z-index: 25; backdrop-filter: blur(2px);">
-                                    <div id="big-timer-text-${index}" style="font-size: 34px; font-weight: 900; color: #74b9ff; text-shadow: 0px 0px 15px rgba(116, 185, 255, 0.6); font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; line-height: 1;">00:00:00</div>
-                                    <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" style="margin-top: 15px; padding: 6px 22px; font-size: 13px; font-weight: bold; border: none; border-radius: 20px; cursor: pointer; background: ${card.timer_running ? '#d63031' : '#00b894'}; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.2s;">${card.timer_running ? '⏸ 멈춤' : '▶ 시작'}</button>
+                                <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 15, 30, 0.35); flex-direction: column; align-items: center; justify-content: center; z-index: 25; backdrop-filter: blur(1px);">
+                                    <div id="big-timer-text-${index}" style="font-size: 38px; font-weight: 900; color: ${card.timer_running ? '#ffffff' : '#f1c40f'}; -webkit-text-stroke: 1.5px #000; text-shadow: 3px 3px 8px rgba(0,0,0,0.8); font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px; line-height: 1;">00:00:00</div>
+                                    <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" class="timer-plain-btn" title="클릭하면 시작/정지 토글">
+                                        ${card.timer_running ? '<span class="emoji-fast">🦉</span> <span class="emoji-fast" style="animation-delay: 0.15s;">🖥️</span>' : '<span class="emoji-slow">🐠</span> <span class="emoji-slow" style="animation-delay: 0.3s;">💤</span>'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -555,7 +606,19 @@ def read_root():
                             else if (data.type === "request_existing_shares") { for (let idx in myStreams) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender })); } } }
                         } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
-                    ws.onclose = function() { if (pingInterval) clearInterval(pingInterval); const statusEl = document.getElementById('connStatus'); if (statusEl) { statusEl.innerText = "서버 업데이트 중..."; statusEl.className = "status-indicator status-offline"; } setTimeout(() => { window.location.reload(); }, 3000); };
+                    
+                    // [수정] 연결 끊김 시, 새로고침(reload)을 지우고 백그라운드 재연결 로직 적용!
+                    ws.onclose = function() { 
+                        if (pingInterval) clearInterval(pingInterval); 
+                        const statusEl = document.getElementById('connStatus'); 
+                        if (statusEl) { 
+                            statusEl.innerText = "서버 재연결 중..."; 
+                            statusEl.className = "status-indicator status-offline"; 
+                        } 
+                        for (let key in peerConnections) { try { peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; }
+                        for (let k in expectedShares) delete expectedShares[k];
+                        setTimeout(connectWebSocket, 3000); // 로그인 창 띄우지 않고 몰래 다시 접속 시도!
+                    };
                 } catch(e) { setTimeout(connectWebSocket, 2000); }
             }
 
@@ -716,7 +779,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         is_claimed_by_other = True
                         break
                 if not is_claimed_by_other:
-                    # [추가] 방 나갈 때 모자이크 강제 초기화(False)
                     server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
                     server_state["cards"][r_idx]["is_large"] = False
                     server_state["cards"][r_idx]["is_mosaic"] = False 
@@ -742,7 +804,6 @@ async def websocket_endpoint(websocket: WebSocket):
         for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
             await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
-            # [추가] 청소된 모자이크(꺼짐) 상태 방송
             await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
