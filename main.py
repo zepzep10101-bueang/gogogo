@@ -150,7 +150,6 @@ def read_root():
             @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             @media (max-width: 600px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
-            /* [수정] 쿨링 최적화: backdrop-filter 제거 */
             .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
@@ -159,11 +158,9 @@ def read_root():
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
-            /* [수정] 쿨링 최적화: backdrop-filter 제거 */
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
             .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; }
-            /* [수정] 쿨링 최적화: backdrop-filter 제거 */
             .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
             .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; }
             .close-btn:hover { color: #ff7675; }
@@ -478,7 +475,6 @@ def read_root():
                             </div>
                             <div style="position: relative; flex-grow: 1; display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; margin-top: 6px;">
                                 <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0;"></div>
-                                <!-- [수정] 쿨링 최적화: backdrop-filter 제거, 단색 반투명(rgba 0.5)으로 글씨 가독성 유지 -->
                                 <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 15, 30, 0.5); flex-direction: column; align-items: center; justify-content: center; z-index: 25;">
                                     <div id="big-timer-text-${index}" style="font-size: 38px; font-weight: 900; color: ${card.timer_running ? '#ffffff' : '#f1c40f'}; -webkit-text-stroke: 1.5px #000; text-shadow: 3px 3px 8px rgba(0,0,0,0.8); font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px; line-height: 1;">00:00:00</div>
                                     <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" class="timer-plain-btn" title="클릭하면 시작/정지 토글">
@@ -640,3 +636,177 @@ def read_root():
         </script>
     </body>
     </html>
+"""
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    client_id = str(id(websocket))
+    await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
+    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+    try:
+        while True:
+            data = await websocket.receive_text()
+            packet = json.loads(data)
+            p_type = packet.get("type")
+
+            if p_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
+            if p_type == "set_nickname":
+                nickname = packet.get("nickname", "익명")
+                owned = packet.get("owned", [])
+                manager.active_users[websocket] = nickname
+                await manager.broadcast_user_list()
+                if client_id not in manager.active_slots:
+                    manager.active_slots[client_id] = []
+                log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
+                server_state.setdefault("admin_log", []).append(log_entry)
+                if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+                recovered = False
+                if owned:
+                    for idx in owned:
+                        if 0 <= idx < 16:
+                            current_user = server_state["cards"][idx]["user"]
+                            if current_user.startswith("자리") or current_user == nickname:
+                                if idx not in manager.active_slots[client_id]:
+                                    manager.active_slots[client_id].append(idx)
+                                server_state["cards"][idx]["user"] = nickname
+                                recovered = True
+                                change_packet = json.dumps({"type": "username_change", "index": idx, "user": nickname})
+                                await manager.broadcast(change_packet)
+                                await websocket.send_text(change_packet)
+                if recovered:
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    continue
+                assigned_idx = None
+                for i, card in enumerate(server_state["cards"]):
+                    if card["user"].startswith("자리"):
+                        assigned_idx = i
+                        break
+                if assigned_idx is not None:
+                    manager.active_slots[client_id].append(assigned_idx)
+                    server_state["cards"][assigned_idx]["user"] = nickname
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    change_packet = json.dumps({"type": "username_change", "index": assigned_idx, "user": nickname})
+                    await manager.broadcast(change_packet)
+                    await websocket.send_text(change_packet)
+                continue
+
+            if p_type == "clear_chat":
+                server_state["chat_history"] = []
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "chat_cleared"}))
+                await websocket.send_text(json.dumps({"type": "chat_cleared"}))
+                continue
+
+            if p_type == "kick":
+                target_nick = packet.get("target_nick")
+                for ws_conn, name in list(manager.active_users.items()):
+                    if name == target_nick:
+                        try: await ws_conn.send_text(json.dumps({"type": "kicked"}))
+                        except: pass
+                continue
+
+            if p_type == "chat":
+                chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg"), "time": packet.get("time", "")}
+                server_state["chat_history"].append(chat_obj)
+                if len(server_state["chat_history"]) > 100: server_state["chat_history"].pop(0)
+                await manager.broadcast(json.dumps(packet))
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
+            elif p_type == "attendance":
+                month = packet.get("month")
+                day = packet.get("day")
+                nickname = packet.get("nickname")
+                if "attendance" not in server_state: server_state["attendance"] = {}
+                if month not in server_state["attendance"]: server_state["attendance"][month] = {}
+                if nickname not in server_state["attendance"][month]: server_state["attendance"][month][nickname] = []
+                if day not in server_state["attendance"][month][nickname]:
+                    server_state["attendance"][month][nickname].append(day)
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
+                
+            else:
+                packet["sender"] = client_id
+                if p_type == "username_change":
+                    idx = packet["index"]
+                    val = packet["user"]
+                    server_state["cards"][idx]["user"] = val
+                    if not val.startswith("자리"):
+                        if client_id not in manager.active_slots: manager.active_slots[client_id] = []
+                        if idx not in manager.active_slots[client_id]: manager.active_slots[client_id].append(idx)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "card_bg_change":
+                    server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "toggle_mosaic":
+                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "start_share":
+                    manager.active_shares[packet["index"]] = client_id
+                elif p_type == "stop_share":
+                    idx = packet.get("index")
+                    if idx in manager.active_shares: del manager.active_shares[idx]
+                elif p_type == "update_notice":
+                    server_state["global_notice"] = packet.get("notice", "")
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "status_update":
+                    server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                elif p_type == "sync_timer":
+                    idx = packet["index"]
+                    server_state["cards"][idx]["timer_visible"] = packet.get("visible", False)
+                    server_state["cards"][idx]["timer_running"] = packet.get("running", False)
+                    server_state["cards"][idx]["timer_elapsed"] = packet.get("elapsed", 0)
+                    server_state["cards"][idx]["timer_last_start"] = packet.get("last_start", 0)
+                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps(packet), exclude=websocket)
+
+    except (WebSocketDisconnect, Exception):
+        client_id = str(id(websocket))
+        nickname = manager.active_users.get(websocket, "")
+        reverted_indexes = []
+        if client_id in manager.active_slots:
+            for r_idx in manager.active_slots[client_id]:
+                is_claimed_by_other = False
+                for other_cid, slots in manager.active_slots.items():
+                    if other_cid != client_id and r_idx in slots:
+                        is_claimed_by_other = True
+                        break
+                if not is_claimed_by_other:
+                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
+                    server_state["cards"][r_idx]["is_large"] = False
+                    server_state["cards"][r_idx]["is_mosaic"] = False 
+                    server_state["cards"][r_idx]["status"] = 0
+                    server_state["cards"][r_idx]["timer_visible"] = False
+                    server_state["cards"][r_idx]["timer_running"] = False
+                    server_state["cards"][r_idx]["timer_elapsed"] = 0
+                    server_state["cards"][r_idx]["timer_last_start"] = 0
+                    reverted_indexes.append(r_idx)
+            del manager.active_slots[client_id]
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+
+        freed_indexes = manager.disconnect(websocket)
+        await manager.broadcast_user_list()
+        
+        if nickname and nickname != "연결중...":
+            log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
+            server_state.setdefault("admin_log", []).append(log_entry)
+            if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
+            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+        
+        for r_idx in reverted_indexes:
+            await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
+            await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
+            await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
