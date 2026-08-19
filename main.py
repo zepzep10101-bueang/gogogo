@@ -446,8 +446,9 @@ def read_root():
                 const grid = document.getElementById('cardGrid'); grid.innerHTML = '';
                 cardData.forEach((card, index) => {
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = card.status > 0 ? '끄기' : '상태'; let statusBtnBg = card.status > 0 ? '#d63031' : '#8e44ad';
+                    let myOrder = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                     grid.innerHTML += `
-                        <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle}">
+                        <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
@@ -492,7 +493,21 @@ def read_root():
             function handleMosaicClick(index) { const isMyStream = !!myStreams[index]; if (!isMyStream && !window.isAdmin) { alert("본인이 화면 공유 중이 아니면 만질 수 없어!"); return; } const newState = !cardData[index].is_mosaic; cardData[index].is_mosaic = newState; applyMosaicUI(index, newState); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState })); } }
             function toggleViewerSound(index) { const vid = document.getElementById(`remote-video-${index}`); const btn = document.getElementById(`sound-toggle-btn-${index}`); if (!vid) return; vid.muted = !vid.muted; if (vid.muted) { btn.innerText = "소리켜기"; btn.style.background = "#b2bec3"; } else { btn.innerText = "음소거"; btn.style.background = "#00b894"; } }
             function applyMosaicUI(index, isMosaic) { const btn = document.getElementById(`share-btn-mosaic-${index}`); if (btn) { btn.innerText = isMosaic ? "해제" : "모자이크"; btn.style.background = isMosaic ? "#e17055" : "#636e72"; } const remoteVideo = document.getElementById(`remote-video-${index}`); const localVideo = document.getElementById(`video-${index}`); const activeFilter = isMosaic ? 'blur(5px)' : 'none'; if (remoteVideo) { remoteVideo.style.filter = activeFilter; } if (localVideo) { localVideo.style.filter = activeFilter; } }
-            function updateUsername(index, val) { cardData[index].user = val; const myName = window.myNickname || "익명"; if (val === myName) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } const box = document.getElementById(`stream-box-${index}`); if (box && !box.querySelector('video')) { renderBox(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } applyEmptySlotVisibility(); }
+            function updateUsername(index, val) { 
+                cardData[index].user = val; 
+                const myName = window.myNickname || "익명"; 
+                if (val === myName) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } 
+                
+                const cardEl = document.getElementById(`card-card-${index}`);
+                if (cardEl) {
+                    cardEl.style.order = (val === myName && myName) ? -1 : 0;
+                }
+                
+                const box = document.getElementById(`stream-box-${index}`); 
+                if (box && !box.querySelector('video')) { renderBox(index); } 
+                if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
+                applyEmptySlotVisibility(); 
+            }
             function setCardBackground(index, event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; cardData[index].card_bg = dataUrl; const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl })); } }; reader.readAsDataURL(file); }
             function setLocalBackground(event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`; localStorage.setItem('myBgType', 'image'); try { localStorage.setItem('myBgData', dataUrl); } catch (err) { alert("사진 용량이 커서 다음 접속 시 풀릴 수 있어!"); } }; reader.readAsDataURL(file); }
             function setYoutubeBackground() { const inputVal = document.getElementById('bgYoutubeInput').value; const videoId = extractYoutubeId(inputVal); if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; } document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; localStorage.setItem('myBgType', 'youtube'); localStorage.setItem('myBgData', videoId); }
@@ -577,7 +592,11 @@ def read_root():
                                             cardData[i].timer_visible = card.timer_visible || false; cardData[i].timer_running = card.timer_running || false; cardData[i].timer_elapsed = card.timer_elapsed || 0; cardData[i].timer_last_start = card.timer_last_start || 0;
                                             applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status);
                                             const userEl = document.getElementById(`username-${i}`); if (userEl) userEl.value = card.user;
-                                            const cardEl = document.getElementById(`card-card-${i}`); if (cardEl && card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
+                                            const cardEl = document.getElementById(`card-card-${i}`); 
+                                            if (cardEl) {
+                                                if (card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
+                                                cardEl.style.order = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
+                                            }
                                             updateTimerOverlayUI(i); const box = document.getElementById(`stream-box-${i}`); if (box && !box.querySelector('video')) { renderBox(i); }
                                         }
                                     });
@@ -587,7 +606,18 @@ def read_root():
                             }
                             else if (data.type === "attendance_update") { window.attendanceData = data.attendance; if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
-                            else if (data.type === "username_change") { cardData[data.index].user = data.user; const inputEl = document.getElementById(`username-${data.index}`); if (inputEl) { inputEl.value = data.user; } const myName = window.myNickname || "익명"; if (data.user === myName) { myOwnedSlots.add(data.index); } else { myOwnedSlots.delete(data.index); } const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } applyEmptySlotVisibility(); } 
+                            else if (data.type === "username_change") { 
+                                cardData[data.index].user = data.user; 
+                                const inputEl = document.getElementById(`username-${data.index}`); 
+                                if (inputEl) { inputEl.value = data.user; } 
+                                const myName = window.myNickname || "익명"; 
+                                if (data.user === myName) { myOwnedSlots.add(data.index); } else { myOwnedSlots.delete(data.index); } 
+                                const cardEl = document.getElementById(`card-card-${data.index}`);
+                                if (cardEl) { cardEl.style.order = (data.user === myName && myName) ? -1 : 0; }
+                                const box = document.getElementById(`stream-box-${data.index}`); 
+                                if (box && !box.querySelector('video')) { renderBox(data.index); } 
+                                applyEmptySlotVisibility(); 
+                            } 
                             else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
                             else if (data.type === "toggle_mosaic") { if (cardData[data.index]) { cardData[data.index].is_mosaic = data.is_mosaic; applyMosaicUI(data.index, data.is_mosaic); } }
                             else if (data.type === "start_share") { const targetIndex = data.index; const sharerId = data.sender; if (data.target && data.target !== ws.clientId) return; expectedShares[targetIndex] = sharerId; if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId })); } }
