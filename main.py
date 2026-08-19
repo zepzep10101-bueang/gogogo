@@ -145,7 +145,10 @@ def read_root():
             #bgMediaWrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
             #bgMediaWrapper img, #bgMediaWrapper iframe { width: 100vw; height: 100vh; object-fit: cover; display: block; border: none; pointer-events: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
-            .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; }
+            
+            /* 그리드 레이아웃 설정 (transition 추가로 접고 펼 때 부드럽게) */
+            .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
+            
             .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
             @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -283,12 +286,19 @@ def read_root():
         </div>
         <div class="video-background" id="bgContainer"><div id="bgMediaWrapper"></div></div>
         <div class="overlay"></div>
+        
+        <!-- 패널 복구용 떠 있는 버튼 (초기엔 숨김) -->
+        <button id="restorePanelBtn" onclick="toggleSidePanel()" style="display:none; position:fixed; right:20px; bottom:20px; z-index:9999; background:#6c5ce7; color:white; border:none; border-radius:50px; padding:12px 18px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;">💬 패널 열기</button>
+
         <div class="main-container">
             <div class="card-grid" id="cardGrid"></div>
             <div class="side-panel">
                 <div class="panel-box" style="flex-shrink: 0;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
-                        <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
+                            <button onclick="toggleSidePanel()" style="background:#636e72; color:white; border:none; border-radius:3px; padding:3px 6px; font-size:10px; cursor:pointer; font-weight:bold;" title="집중 모드: 패널 숨기기">➡️ 접기</button>
+                        </div>
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
@@ -335,6 +345,23 @@ def read_root():
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
             window.adminLogData = []; 
+
+            // 대시보드 및 채팅창 숨기기/열기 기능 (프론트엔드 전용)
+            function toggleSidePanel() {
+                const container = document.querySelector('.main-container');
+                const panel = document.querySelector('.side-panel');
+                const restoreBtn = document.getElementById('restorePanelBtn');
+                
+                if (panel.style.display === 'none') {
+                    panel.style.display = 'flex';
+                    container.style.gridTemplateColumns = 'minmax(0, 1fr) 240px';
+                    restoreBtn.style.display = 'none';
+                } else {
+                    panel.style.display = 'none';
+                    container.style.gridTemplateColumns = '1fr'; // 패널 공간 없애기
+                    restoreBtn.style.display = 'block';
+                }
+            }
 
             async function updateLoginUserCount() {
                 try {
