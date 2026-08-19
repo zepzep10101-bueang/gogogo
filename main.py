@@ -179,7 +179,6 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* 이모티콘 통통 튀는 애니메이션 및 투명 버튼 스타일 유지 */
             @keyframes bounceFast { 
                 0% { transform: translateY(0px); } 
                 100% { transform: translateY(-7px); } 
@@ -493,7 +492,7 @@ def read_root():
             function handleMosaicClick(index) { const isMyStream = !!myStreams[index]; if (!isMyStream && !window.isAdmin) { alert("본인이 화면 공유 중이 아니면 만질 수 없어!"); return; } const newState = !cardData[index].is_mosaic; cardData[index].is_mosaic = newState; applyMosaicUI(index, newState); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "toggle_mosaic", index: index, is_mosaic: newState })); } }
             function toggleViewerSound(index) { const vid = document.getElementById(`remote-video-${index}`); const btn = document.getElementById(`sound-toggle-btn-${index}`); if (!vid) return; vid.muted = !vid.muted; if (vid.muted) { btn.innerText = "소리켜기"; btn.style.background = "#b2bec3"; } else { btn.innerText = "음소거"; btn.style.background = "#00b894"; } }
             function applyMosaicUI(index, isMosaic) { const btn = document.getElementById(`share-btn-mosaic-${index}`); if (btn) { btn.innerText = isMosaic ? "해제" : "모자이크"; btn.style.background = isMosaic ? "#e17055" : "#636e72"; } const remoteVideo = document.getElementById(`remote-video-${index}`); const localVideo = document.getElementById(`video-${index}`); const activeFilter = isMosaic ? 'blur(5px)' : 'none'; if (remoteVideo) { remoteVideo.style.filter = activeFilter; } if (localVideo) { localVideo.style.filter = activeFilter; } }
-            function updateUsername(index, val) { cardData[index].user = val; const myName = window.myNickname || "익명"; if (val === myName) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } const box = document.getElementById(`stream-box-${index}`); if (box && !box.querySelector('video')) { renderBox(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } applyEmptySlotVisibility(); }
+            function updateUsername(index, val) { cardData[index].user = val; const myName = window.myNickname || "익명"; if (val === myName || (window.isAdmin && (val === ADMIN_NICKNAME || val.startsWith(ADMIN_NICKNAME)))) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } const box = document.getElementById(`stream-box-${index}`); if (box && !box.querySelector('video')) { renderBox(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } applyEmptySlotVisibility(); }
             function setCardBackground(index, event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; cardData[index].card_bg = dataUrl; const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl })); } }; reader.readAsDataURL(file); }
             function setLocalBackground(event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`; localStorage.setItem('myBgType', 'image'); try { localStorage.setItem('myBgData', dataUrl); } catch (err) { alert("사진 용량이 커서 다음 접속 시 풀릴 수 있어!"); } }; reader.readAsDataURL(file); }
             function setYoutubeBackground() { const inputVal = document.getElementById('bgYoutubeInput').value; const videoId = extractYoutubeId(inputVal); if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; } document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; localStorage.setItem('myBgType', 'youtube'); localStorage.setItem('myBgData', videoId); }
@@ -506,7 +505,7 @@ def read_root():
                     let stream;
                     if (type === 'screen') { stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 15 }, audio: true }); btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; }
                     else { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); btnCam.innerText = "중지"; btnCam.style.background = "#d63031"; btnScreen.style.display = "none"; }
-                    myStreams[index] = stream; const myName = window.myNickname || "익명"; const userEl = document.getElementById(`username-${index}`); if (userEl) userEl.value = myName; updateUsername(index, myName);
+                    myStreams[index] = stream; const myName = window.myNickname || "익명"; const userEl = document.getElementById(`username-${index}`); const currentInputValue = userEl ? userEl.value.trim() : ""; const targetName = (window.isAdmin && currentInputValue) ? currentInputValue : myName; if (userEl) userEl.value = targetName; updateUsername(index, targetName);
                     let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : ''; box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`); localVideo.srcObject = stream; localVideo.play().catch(e => console.log(e));
                     if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: index })); }
@@ -542,7 +541,7 @@ def read_root():
                     ws.onopen = function() {
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr, isAdmin: !!window.isAdmin })); autoStampToday();
                         if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 20000); 
                     };
                     ws.onmessage = async function(event) {
@@ -550,13 +549,6 @@ def read_root():
                             const data = JSON.parse(event.data);
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
-                            // 👇 [디오의 해결책] 이전 창이 얌전하게 스스로 종료하게 만드는 마법의 4줄!
-                            else if (data.type === "duplicate_kicked") {
-                                alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
-                                if (pingInterval) clearInterval(pingInterval);
-                                ws.onclose = null; // 억지로 다시 살아나는 무한 재연결 루프 완벽 차단!
-                                ws.close();
-                            }
                             else if (data.type === "chat_cleared") { document.getElementById('chatHistory').innerHTML = ""; }
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
@@ -589,7 +581,7 @@ def read_root():
                             }
                             else if (data.type === "attendance_update") { window.attendanceData = data.attendance; if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
-                            else if (data.type === "username_change") { cardData[data.index].user = data.user; const inputEl = document.getElementById(`username-${data.index}`); if (inputEl) { inputEl.value = data.user; } const myName = window.myNickname || "익명"; if (data.user === myName) { myOwnedSlots.add(data.index); } else { myOwnedSlots.delete(data.index); } const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } applyEmptySlotVisibility(); } 
+                            else if (data.type === "username_change") { cardData[data.index].user = data.user; const inputEl = document.getElementById(`username-${data.index}`); if (inputEl) { inputEl.value = data.user; } const myName = window.myNickname || "익명"; if (data.user === myName || (window.isAdmin && (data.user === ADMIN_NICKNAME || data.user.startsWith(ADMIN_NICKNAME)))) { myOwnedSlots.add(data.index); } else { myOwnedSlots.delete(data.index); } const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } applyEmptySlotVisibility(); } 
                             else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
                             else if (data.type === "toggle_mosaic") { if (cardData[data.index]) { cardData[data.index].is_mosaic = data.is_mosaic; applyMosaicUI(data.index, data.is_mosaic); } }
                             else if (data.type === "start_share") { const targetIndex = data.index; const sharerId = data.sender; if (data.target && data.target !== ws.clientId) return; expectedShares[targetIndex] = sharerId; if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId })); } }
@@ -664,15 +656,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if p_type == "set_nickname":
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
+                is_admin_flag = packet.get("isAdmin", False)
                 
-                # 👇 [디오의 해결책] 중복 접속 시 이전 창(좀비)에게 조용히 귓속말로 종료 신호 보내기
-                for existing_ws, name in list(manager.active_users.items()):
-                    if name == nickname and existing_ws != websocket:
-                        try:
-                            await existing_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
-                        except:
-                            pass
-
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
@@ -682,32 +667,50 @@ async def websocket_endpoint(websocket: WebSocket):
                 if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+                
                 recovered = False
                 if owned:
                     for idx in owned:
                         if 0 <= idx < 16:
                             current_user = server_state["cards"][idx]["user"]
-                            if current_user.startswith("자리") or current_user == nickname:
+                            if current_user.startswith("자리") or current_user == nickname or (is_admin_flag and current_user.startswith(nickname)):
                                 if idx not in manager.active_slots[client_id]:
                                     manager.active_slots[client_id].append(idx)
-                                server_state["cards"][idx]["user"] = nickname
+                                server_state["cards"][idx]["user"] = current_user if current_user.startswith(nickname) else nickname
                                 recovered = True
-                                change_packet = json.dumps({"type": "username_change", "index": idx, "user": nickname})
+                                change_packet = json.dumps({"type": "username_change", "index": idx, "user": server_state["cards"][idx]["user"]})
                                 await manager.broadcast(change_packet)
                                 await websocket.send_text(change_packet)
                 if recovered:
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     continue
+
+                # 👇 [관리자 전용 2자리 특권 로직] 관리자(부엉)면 이미 1자리가 있어도 빈 자리를 하나 더 허용!
                 assigned_idx = None
-                for i, card in enumerate(server_state["cards"]):
-                    if card["user"].startswith("자리"):
-                        assigned_idx = i
-                        break
+                if is_admin_flag:
+                    for i, card in enumerate(server_state["cards"]):
+                        if card["user"].startswith("자리"):
+                            assigned_idx = i
+                            break
+                else:
+                    already_has_slot = False
+                    for idx in manager.active_slots.get(client_id, []):
+                        if not server_state["cards"][idx]["user"].startswith("자리"):
+                            already_has_slot = True
+                            break
+                    if not already_has_slot:
+                        for i, card in enumerate(server_state["cards"]):
+                            if card["user"].startswith("자리"):
+                                assigned_idx = i
+                                break
+
                 if assigned_idx is not None:
-                    manager.active_slots[client_id].append(assigned_idx)
-                    server_state["cards"][assigned_idx]["user"] = nickname
+                    if assigned_idx not in manager.active_slots[client_id]:
+                        manager.active_slots[client_id].append(assigned_idx)
+                    target_name = nickname if not is_admin_flag else (nickname if len(manager.active_slots[client_id]) == 1 else f"{nickname}_타이머")
+                    server_state["cards"][assigned_idx]["user"] = target_name
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                    change_packet = json.dumps({"type": "username_change", "index": assigned_idx, "user": nickname})
+                    change_packet = json.dumps({"type": "username_change", "index": assigned_idx, "user": target_name})
                     await manager.broadcast(change_packet)
                     await websocket.send_text(change_packet)
                 continue
