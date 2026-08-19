@@ -107,15 +107,8 @@ class ConnectionManager:
                     pass
 
     async def broadcast_user_list(self):
-        # [초안정 구조] 연결을 강제로 끊지 않고, 동일 닉네임은 가장 최근 접속본 하나만 추려서 명단 전송
-        seen_names = set()
-        unique_users_info = []
-        for ws, name in reversed(list(self.active_users.items())):
-            if name != "연결중..." and name not in seen_names:
-                seen_names.add(name)
-                unique_users_info.insert(0, {"clientId": str(id(ws)), "nickname": name})
-        
-        msg = json.dumps({"type": "user_list", "count": len(unique_users_info), "users": unique_users_info})
+        users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
+        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
         for conn in self.active_connections:
             try:
                 await conn.send_text(msg)
@@ -126,11 +119,7 @@ manager = ConnectionManager()
 
 @app.get("/user_count")
 def get_user_count():
-    seen_names = set()
-    for ws, name in manager.active_users.items():
-        if name != "연결중...":
-            seen_names.add(name)
-    return {"count": len(seen_names)}
+    return {"count": len(manager.active_connections)}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -190,6 +179,7 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
+            /* 이모티콘 통통 튀는 애니메이션 및 투명 버튼 스타일 유지 */
             @keyframes bounceFast { 
                 0% { transform: translateY(0px); } 
                 100% { transform: translateY(-7px); } 
@@ -560,6 +550,13 @@ def read_root():
                             const data = JSON.parse(event.data);
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
+                            // 👇 [디오의 해결책] 이전 창이 얌전하게 스스로 종료하게 만드는 마법의 4줄!
+                            else if (data.type === "duplicate_kicked") {
+                                alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
+                                if (pingInterval) clearInterval(pingInterval);
+                                ws.onclose = null; // 억지로 다시 살아나는 무한 재연결 루프 완벽 차단!
+                                ws.close();
+                            }
                             else if (data.type === "chat_cleared") { document.getElementById('chatHistory').innerHTML = ""; }
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
@@ -668,11 +665,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
                 
-                # [초안정 수정] 기존 소켓을 강제로 끊어서 튕기게 만드는 코드를 완전히 제거했습니다.
-                # 서버는 아무 소켓도 강제 종료하지 않고, 단순히 명단 리스트(broadcast_user_list)에서 중복을 걸러냅니다.
+                # 👇 [디오의 해결책] 중복 접속 시 이전 창(좀비)에게 조용히 귓속말로 종료 신호 보내기
+                for existing_ws, name in list(manager.active_users.items()):
+                    if name == nickname and existing_ws != websocket:
+                        try:
+                            await existing_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
+                        except:
+                            pass
+
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
-                
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
