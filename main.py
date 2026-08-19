@@ -107,10 +107,9 @@ class ConnectionManager:
                     pass
 
     async def broadcast_user_list(self):
-        # 중복 닉네임 방지 (동일 닉네임은 가장 최신 연결 하나만 남김)
+        # [초안정 구조] 연결을 강제로 끊지 않고, 동일 닉네임은 가장 최근 접속본 하나만 추려서 명단 전송
         seen_names = set()
         unique_users_info = []
-        # 뒤에 들어온(최신) 연결이 우선되도록 역순으로 확인
         for ws, name in reversed(list(self.active_users.items())):
             if name != "연결중..." and name not in seen_names:
                 seen_names.add(name)
@@ -669,19 +668,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
                 
-                # 동일 닉네임으로 이미 접속해 있는 기존 웹소켓이 있다면 먼저 정리 (중복 로그인 방지)
-                for existing_ws, name in list(manager.active_users.items()):
-                    if name == nickname and existing_ws != websocket:
-                        try:
-                            freed = manager.disconnect(existing_ws)
-                            await existing_ws.close()
-                            for idx in freed:
-                                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
-                        except Exception:
-                            pass
-
+                # [초안정 수정] 기존 소켓을 강제로 끊어서 튕기게 만드는 코드를 완전히 제거했습니다.
+                # 서버는 아무 소켓도 강제 종료하지 않고, 단순히 명단 리스트(broadcast_user_list)에서 중복을 걸러냅니다.
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
+                
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
