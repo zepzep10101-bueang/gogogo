@@ -107,8 +107,16 @@ class ConnectionManager:
                     pass
 
     async def broadcast_user_list(self):
-        users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
-        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
+        # 중복 닉네임 방지 (동일 닉네임은 가장 최신 연결 하나만 남김)
+        seen_names = set()
+        unique_users_info = []
+        # 뒤에 들어온(최신) 연결이 우선되도록 역순으로 확인
+        for ws, name in reversed(list(self.active_users.items())):
+            if name != "연결중..." and name not in seen_names:
+                seen_names.add(name)
+                unique_users_info.insert(0, {"clientId": str(id(ws)), "nickname": name})
+        
+        msg = json.dumps({"type": "user_list", "count": len(unique_users_info), "users": unique_users_info})
         for conn in self.active_connections:
             try:
                 await conn.send_text(msg)
@@ -119,7 +127,11 @@ manager = ConnectionManager()
 
 @app.get("/user_count")
 def get_user_count():
-    return {"count": len(manager.active_connections)}
+    seen_names = set()
+    for ws, name in manager.active_users.items():
+        if name != "연결중...":
+            seen_names.add(name)
+    return {"count": len(seen_names)}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -179,7 +191,6 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* 이모티콘 통통 튀는 애니메이션 및 투명 버튼 스타일 유지 */
             @keyframes bounceFast { 
                 0% { transform: translateY(0px); } 
                 100% { transform: translateY(-7px); } 
@@ -657,6 +668,18 @@ async def websocket_endpoint(websocket: WebSocket):
             if p_type == "set_nickname":
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
+                
+                # 동일 닉네임으로 이미 접속해 있는 기존 웹소켓이 있다면 먼저 정리 (중복 로그인 방지)
+                for existing_ws, name in list(manager.active_users.items()):
+                    if name == nickname and existing_ws != websocket:
+                        try:
+                            freed = manager.disconnect(existing_ws)
+                            await existing_ws.close()
+                            for idx in freed:
+                                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+                        except Exception:
+                            pass
+
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
