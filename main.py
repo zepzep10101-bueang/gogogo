@@ -344,6 +344,18 @@ def read_root():
             window.attendanceData = {}; 
             window.adminLogData = []; 
 
+            // [비트레이트 100k 제한 함수]
+            function setMediaBitrate(sdp, bitrate) {
+                let lines = sdp.split('\n');
+                let line = -1;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].indexOf('m=video') === 0) { line = i; break; }
+                }
+                if (line === -1) return sdp;
+                lines.splice(line + 1, 0, 'b=AS:' + bitrate);
+                return lines.join('\n');
+            }
+
             function toggleSidePanel() {
                 const container = document.querySelector('.main-container');
                 const panel = document.querySelector('.side-panel');
@@ -424,7 +436,7 @@ def read_root():
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0, is_local_hidden: false }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
@@ -557,7 +569,11 @@ def read_root():
                 if (cardData[index].status > 0) { cardData[index].status = 0; updateStatusUI(index, 0); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 })); } }
                 try {
                     let stream;
-                    if (type === 'screen') { stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 15 }, audio: true }); btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; }
+                    if (type === 'screen') { 
+                        // [최적화 완료] 프레임 레이트를 10으로 낮춤
+                        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 10 }, audio: true }); 
+                        btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; 
+                    }
                     else { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); btnCam.innerText = "중지"; btnCam.style.background = "#d63031"; btnScreen.style.display = "none"; }
                     myStreams[index] = stream; const myName = window.myNickname || "익명"; const userEl = document.getElementById(`username-${index}`); if (userEl) userEl.value = myName; updateUsername(index, myName);
                     let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : ''; box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
@@ -680,7 +696,11 @@ def read_root():
                                 pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ice", index: index, target: senderId, candidate: e.candidate })); } };
                                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                                 if (candidateBuffers[pcKey]) { for (const cand of candidateBuffers[pcKey]) { await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.log(e)); } delete candidateBuffers[pcKey]; }
-                                const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
+                                const answer = await pc.createAnswer(); 
+                                // [최적화 완료] Answer에서도 비트레이트 100 제한 적용[cite: 2]
+                                const sdpWithBitrate = setMediaBitrate(answer.sdp, 100);
+                                await pc.setLocalDescription({ type: answer.type, sdp: sdpWithBitrate });
+                                
                                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "answer", index: index, target: senderId, sdp: pc.localDescription })); }
                             } 
                             else if (data.type === "answer" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp)); } 
@@ -711,7 +731,12 @@ def read_root():
                 pc.oniceconnectionstatechange = () => { const state = pc.iceConnectionState; if (state === 'disconnected' || state === 'failed' || state === 'closed') { try { pc.getSenders().forEach(sender => pc.removeTrack(sender)); pc.close(); } catch(e) {} delete peerConnections[pcKey]; } };
                 const stream = myStreams[index]; if (stream) { stream.getTracks().forEach(track => pc.addTrack(track, stream)); }
                 pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ice", index: index, target: viewerId, candidate: e.candidate })); } };
-                const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+                
+                const offer = await pc.createOffer(); 
+                // [최적화 완료] Offer에서 비트레이트 100 제한 적용[cite: 2]
+                const sdpWithBitrate = setMediaBitrate(offer.sdp, 100);
+                await pc.setLocalDescription({ type: offer.type, sdp: sdpWithBitrate });
+                
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "offer", index: index, target: viewerId, sdp: pc.localDescription })); }
             }
 
