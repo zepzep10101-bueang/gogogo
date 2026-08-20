@@ -146,7 +146,6 @@ def read_root():
             #bgMediaWrapper img, #bgMediaWrapper iframe { width: 100vw; height: 100vh; object-fit: cover; display: block; border: none; pointer-events: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
             
-            /* 그리드 레이아웃 설정 (transition 추가로 접고 펼 때 부드럽게) */
             .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
             
             .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
@@ -158,7 +157,7 @@ def read_root():
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
             .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
-            .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; }
+            .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: visibility 0.2s; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
             .panel-box { background: rgba(30, 30, 40, 0.85); border-radius: 12px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.2); min-width: 0; word-break: keep-all; overflow-wrap: break-word; }
@@ -287,7 +286,6 @@ def read_root():
         <div class="video-background" id="bgContainer"><div id="bgMediaWrapper"></div></div>
         <div class="overlay"></div>
         
-        <!-- 패널 복구용 떠 있는 버튼 (초기엔 숨김) -->
         <button id="restorePanelBtn" onclick="toggleSidePanel()" style="display:none; position:fixed; right:20px; bottom:20px; z-index:9999; background:#6c5ce7; color:white; border:none; border-radius:50px; padding:12px 18px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;">💬 패널 열기</button>
 
         <div class="main-container">
@@ -346,7 +344,6 @@ def read_root():
             window.attendanceData = {}; 
             window.adminLogData = []; 
 
-            // 대시보드 및 채팅창 숨기기/열기 기능 (프론트엔드 전용)
             function toggleSidePanel() {
                 const container = document.querySelector('.main-container');
                 const panel = document.querySelector('.side-panel');
@@ -358,7 +355,7 @@ def read_root():
                     restoreBtn.style.display = 'none';
                 } else {
                     panel.style.display = 'none';
-                    container.style.gridTemplateColumns = '1fr'; // 패널 공간 없애기
+                    container.style.gridTemplateColumns = '1fr'; 
                     restoreBtn.style.display = 'block';
                 }
             }
@@ -427,7 +424,7 @@ def read_root():
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0 }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
@@ -469,10 +466,24 @@ def read_root():
             function clearChat() { if (confirm("채팅창을 전부 깨끗하게 지울까?")) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); } } }
             function forceRecoverWebRTC() { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in expectedShares) { const sharerId = expectedShares[idx]; if (sharerId && sharerId !== ws.clientId) { ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId })); } } } alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!"); }
 
+            function toggleLocalHide(index) {
+                cardData[index].is_local_hidden = !cardData[index].is_local_hidden;
+                const btn = document.getElementById(`hide-btn-${index}`);
+                const streamBox = document.getElementById(`stream-box-${index}`);
+                if (cardData[index].is_local_hidden) {
+                    if(btn) { btn.innerText = "보기"; btn.style.background = "#e84393"; }
+                    if(streamBox) { streamBox.style.visibility = "hidden"; }
+                } else {
+                    if(btn) { btn.innerText = "가리기"; btn.style.background = "#2d3436"; }
+                    if(streamBox) { streamBox.style.visibility = "visible"; }
+                }
+            }
+
             function initCards() {
                 const grid = document.getElementById('cardGrid'); grid.innerHTML = '';
                 cardData.forEach((card, index) => {
                     let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = card.status > 0 ? '끄기' : '상태'; let statusBtnBg = card.status > 0 ? '#d63031' : '#8e44ad';
+                    let hideBtnText = card.is_local_hidden ? '보기' : '가리기'; let hideBtnBg = card.is_local_hidden ? '#e84393' : '#2d3436'; let boxVisibility = card.is_local_hidden ? 'hidden' : 'visible';
                     let myOrder = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
@@ -496,12 +507,13 @@ def read_root():
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
+                                    <button class="share-btn" id="hide-btn-${index}" style="background:${hideBtnBg};" onclick="toggleLocalHide(${index})">${hideBtnText}</button>
                                     <button class="share-btn" style="background:#b2bec3; color:#2d3436; flex-grow:1;" onclick="document.getElementById('card-file-${index}').click()" title="카드 배경화면 변경">🖼️ 배경</button>
                                     <input type="file" id="card-file-${index}" style="display:none;" accept="image/jpeg, image/png, image/webp" onchange="setCardBackground(${index}, event)">
                                 </div>
                             </div>
                             <div style="position: relative; flex-grow: 1; display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; margin-top: 6px;">
-                                <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0;"></div>
+                                <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0; visibility:${boxVisibility};"></div>
                                 <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 15, 30, 0.5); flex-direction: column; align-items: center; justify-content: center; z-index: 25;">
                                     <div id="big-timer-text-${index}" style="font-size: 38px; font-weight: 900; color: ${card.timer_running ? '#ffffff' : '#f1c40f'}; -webkit-text-stroke: 1.5px #000; text-shadow: 3px 3px 8px rgba(0,0,0,0.8); font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px; line-height: 1;">00:00:00</div>
                                     <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" class="timer-plain-btn" title="클릭하면 시작/정지 토글">
@@ -617,6 +629,8 @@ def read_root():
                                         if (cardData[i]) {
                                             cardData[i].user = card.user; cardData[i].card_bg = card.card_bg; cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0;
                                             cardData[i].timer_visible = card.timer_visible || false; cardData[i].timer_running = card.timer_running || false; cardData[i].timer_elapsed = card.timer_elapsed || 0; cardData[i].timer_last_start = card.timer_last_start || 0;
+                                            cardData[i].is_local_hidden = cardData[i].is_local_hidden || false; 
+                                            
                                             applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status);
                                             const userEl = document.getElementById(`username-${i}`); if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`); 
@@ -624,7 +638,15 @@ def read_root():
                                                 if (card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
                                                 cardEl.style.order = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                                             }
-                                            updateTimerOverlayUI(i); const box = document.getElementById(`stream-box-${i}`); if (box && !box.querySelector('video')) { renderBox(i); }
+                                            const hideBtn = document.getElementById(`hide-btn-${i}`);
+                                            if(hideBtn) {
+                                                hideBtn.innerText = cardData[i].is_local_hidden ? "보기" : "가리기";
+                                                hideBtn.style.background = cardData[i].is_local_hidden ? "#e84393" : "#2d3436";
+                                            }
+                                            const box = document.getElementById(`stream-box-${i}`);
+                                            if(box) box.style.visibility = cardData[i].is_local_hidden ? "hidden" : "visible";
+                                            
+                                            updateTimerOverlayUI(i); if (box && !box.querySelector('video')) { renderBox(i); }
                                         }
                                     });
                                 }
