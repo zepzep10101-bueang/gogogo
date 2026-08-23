@@ -1,9 +1,9 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-json = __import__('json')
-os = __import__('os')
-uvicorn = __import__('uvicorn')
-asyncio = __import__('asyncio')
+import json
+import os
+import uvicorn
+import asyncio
 from pymongo import MongoClient
 
 MONGO_URI = "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0"
@@ -63,6 +63,7 @@ def save_data(data):
 server_state = load_data()
 app = FastAPI()
 
+# 💡 [핵심 수정 부분] 병목 현상 및 메모리 누수 완벽 차단 매니저
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -76,10 +77,12 @@ class ConnectionManager:
         self.active_users[websocket] = "연결중..."
 
     def disconnect(self, websocket: WebSocket):
+        # 이미 삭제된 객체인지 확인하고 안전하게 메모리(리스트)에서 제거
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         if websocket in self.active_users:
             del self.active_users[websocket]
+            
         disconnected_client = str(id(websocket))
         freed_indexes = []
         to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
@@ -89,31 +92,32 @@ class ConnectionManager:
         return freed_indexes
 
     async def broadcast(self, message: str, exclude: WebSocket = None):
-        dead_connections = []
-        for connection in list(self.active_connections):
-            if connection != exclude:
+        # 줄서서 보내지 않고 비동기로 동시에 던지기 위한 함수
+        async def send_to_client(conn: WebSocket):
+            if conn != exclude:
                 try:
-                    await connection.send_text(message)
+                    await conn.send_text(message)
                 except Exception:
-                    dead_connections.append(connection)
-        for dead in dead_connections:
-            freed_indexes = self.disconnect(dead)
-            await self.broadcast_user_list()
-            for conn in self.active_connections:
-                try:
-                    for idx in freed_indexes:
-                        await conn.send_text(json.dumps({"type": "stop_share", "index": idx}))
-                except Exception:
-                    pass
+                    self.disconnect(conn) # 에러 난 소켓은 즉시 청소
+
+        # 모든 연결에 대해 동시에 Task를 생성해서 딜레이 없이 쫙 뿌림
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def broadcast_user_list(self):
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
         msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
-        for conn in self.active_connections:
+        
+        async def send_to_client(conn: WebSocket):
             try:
                 await conn.send_text(msg)
             except Exception:
-                pass
+                self.disconnect(conn)
+
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 manager = ConnectionManager()
 
@@ -344,7 +348,6 @@ def read_root():
             window.attendanceData = {}; 
             window.adminLogData = []; 
 
-            // [비트레이트 50k 최적화 적용 함수]
             function setMediaBitrate(sdp, bitrate) {
                 let lines = sdp.split('\n');
                 let line = -1;
@@ -570,7 +573,6 @@ def read_root():
                 try {
                     let stream;
                     if (type === 'screen') { 
-                        // [최적화 완료] 프레임 레이트 10 유지
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 10 }, audio: true }); 
                         btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; 
                     }
@@ -697,7 +699,6 @@ def read_root():
                                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                                 if (candidateBuffers[pcKey]) { for (const cand of candidateBuffers[pcKey]) { await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.log(e)); } delete candidateBuffers[pcKey]; }
                                 const answer = await pc.createAnswer(); 
-                                // [최적화 완료] Answer에서 비트레이트 50 제한 적용
                                 const sdpWithBitrate = setMediaBitrate(answer.sdp, 50);
                                 await pc.setLocalDescription({ type: answer.type, sdp: sdpWithBitrate });
                                 
@@ -733,7 +734,6 @@ def read_root():
                 pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ice", index: index, target: viewerId, candidate: e.candidate })); } };
                 
                 const offer = await pc.createOffer(); 
-                // [최적화 완료] Offer에서 비트레이트 50 제한 적용
                 const sdpWithBitrate = setMediaBitrate(offer.sdp, 50);
                 await pc.setLocalDescription({ type: offer.type, sdp: sdpWithBitrate });
                 
@@ -745,15 +745,18 @@ def read_root():
         </script>
     </body>
     </html>
-"""
+    """
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     client_id = str(id(websocket))
-    await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-    await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+    
+    # 💡 [핵심 수정] 클라이언트 초기 상태 전송을 try 안으로 넣어서 중간 연결 끊김 방어
     try:
+        await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
+        await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+        
         while True:
             data = await websocket.receive_text()
             packet = json.loads(data)
@@ -886,6 +889,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
+        pass # 에러가 터져도 당황하지 않고 아래 finally 블록으로 넘어가서 깔끔하게 청소!
+
+    # 💡 [핵심 수정] 무조건 깔끔하게 청소하고 나가는 안전장치(finally 블록)
+    finally:
         client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
         reverted_indexes = []
