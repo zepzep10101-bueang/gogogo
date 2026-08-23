@@ -18,27 +18,18 @@ def load_data():
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
-            cards = data.get("cards", [])
-            if len(cards) > 16:
-                data["cards"] = cards[:16]
-            elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(len(cards), 16)]
-                data["cards"].extend(new_cards)
-            for i, card in enumerate(data["cards"]):
-                card["user"] = card.get("user") or f"자리{i+1}"
-                card["is_mosaic"] = card.get("is_mosaic", False)
-                card["is_large"] = card.get("is_large", False)
-                card["status"] = card.get("status", 0)
-                card["timer_visible"] = card.get("timer_visible", False)
-                card["timer_running"] = card.get("timer_running", False)
-                card["timer_elapsed"] = card.get("timer_elapsed", 0)
-                card["timer_last_start"] = card.get("timer_last_start", 0)
+            # 💡 [핵심 수정] 꼬인 자리 데이터만 16자리 빈방으로 싹 리셋해버림 (출석부랑 공지사항은 안전하게 유지!)
+            data["cards"] = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(16)]
+            
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
             if "attendance" not in data:
                 data["attendance"] = {}
             if "admin_log" not in data:
                 data["admin_log"] = []
+                
+            # 몽고디비에 리셋된 자리 정보로 강제 덮어쓰기
+            collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
             return data
     except Exception:
         pass
@@ -63,7 +54,7 @@ def save_data(data):
 server_state = load_data()
 app = FastAPI()
 
-# 💡 [핵심 수정 부분] 병목 현상 및 메모리 누수 완벽 차단 매니저
+# 💡 병목 현상 및 메모리 누수 완벽 차단 매니저
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -752,7 +743,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     client_id = str(id(websocket))
     
-    # 💡 [핵심 수정] 클라이언트 초기 상태 전송을 try 안으로 넣어서 중간 연결 끊김 방어
+    # 💡 클라이언트 초기 상태 전송을 try 안으로 넣어서 중간 연결 끊김 방어
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
         await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
@@ -889,9 +880,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
-        pass # 에러가 터져도 당황하지 않고 아래 finally 블록으로 넘어가서 깔끔하게 청소!
+        pass
 
-    # 💡 [핵심 수정] 무조건 깔끔하게 청소하고 나가는 안전장치(finally 블록)
+    # 💡 무조건 깔끔하게 청소하고 나가는 안전장치(finally 블록)
     finally:
         client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
