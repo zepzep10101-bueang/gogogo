@@ -572,7 +572,11 @@ def read_root():
                         stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always", frameRate: 10 }, audio: true }); 
                         btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; 
                     }
-                    else { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); btnCam.innerText = "중지"; btnCam.style.background = "#d63031"; btnScreen.style.display = "none"; }
+                    else { 
+                        // [최적화 적용] 웹캠 프레임을 20fps로 제한하여 컴퓨터 부하 방지
+                        stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } }, audio: false }); 
+                        btnCam.innerText = "중지"; btnCam.style.background = "#d63031"; btnScreen.style.display = "none"; 
+                    }
                     myStreams[index] = stream; const myName = window.myNickname || "익명"; const userEl = document.getElementById(`username-${index}`); if (userEl) userEl.value = myName; updateUsername(index, myName);
                     let filterStyle = cardData[index].is_mosaic ? `filter: blur(5px);` : ''; box.innerHTML = `<video id="video-${index}" autoplay playsinline muted disablePictureInPicture style="${filterStyle}"></video>`;
                     const localVideo = document.getElementById(`video-${index}`); localVideo.srcObject = stream; localVideo.play().catch(e => console.log(e));
