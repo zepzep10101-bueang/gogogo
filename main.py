@@ -769,15 +769,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 owned = packet.get("owned", [])
                 
                 # ---------------------------------------------------------
-                # [중복 접속 방어 안전장치]
-                # 동일한 닉네임으로 이미 접속 중인 다른 세션이 있다면 강제 퇴장(duplicate_kicked) 전송
+                # [중복 접속 방어 안전장치 - 초강력 즉시 절단 버전]
                 # ---------------------------------------------------------
+                to_close = []
                 for existing_ws, name in list(manager.active_users.items()):
                     if name == nickname and existing_ws != websocket:
-                        try:
-                            await existing_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
-                        except:
-                            pass
+                        to_close.append(existing_ws)
+                
+                for old_ws in to_close:
+                    try:
+                        await old_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
+                        # 메시지 보내자마자 바로 소켓을 부숴서(close) 미련 없이 서버에서 쫓아냅니다!
+                        await old_ws.close()
+                    except:
+                        pass
+                # ---------------------------------------------------------
 
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
