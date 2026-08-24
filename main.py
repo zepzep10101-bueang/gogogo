@@ -573,7 +573,6 @@ def read_root():
                         btnScreen.innerText = "중지"; btnScreen.style.background = "#d63031"; btnCam.style.display = "none"; 
                     }
                     else { 
-                        // [최적화 적용] 웹캠 프레임을 20fps로 제한하여 컴퓨터 부하 방지
                         stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } }, audio: false }); 
                         btnCam.innerText = "중지"; btnCam.style.background = "#d63031"; btnScreen.style.display = "none"; 
                     }
@@ -769,6 +768,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
                 
+                # ---------------------------------------------------------
+                # [중복 접속 방어 안전장치]
+                # 동일한 닉네임으로 이미 접속 중인 다른 세션이 있다면 강제 퇴장(duplicate_kicked) 전송
+                # ---------------------------------------------------------
                 for existing_ws, name in list(manager.active_users.items()):
                     if name == nickname and existing_ws != websocket:
                         try:
