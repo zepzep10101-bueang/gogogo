@@ -14,7 +14,6 @@ try:
 except Exception as e:
     print("망고로드 연결 실패:", e)
 
-# 🛠️ [수정됨] 망고DB가 지연되거나 끊겨도 절대 서버가 죽지 않도록 완벽한 에러 방패(try-except) 적용!
 def load_data():
     initial_data = {
         "_id": "main_state",
@@ -194,9 +193,10 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS (불투명 배경 및 타이틀 정리 완료) --- */
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
-            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; }
+            /* 💡 수정됨: padding-right: 35px 를 추가해서 ❌ 버튼이랑 색상 선택기가 겹치지 않게 함 */
+            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; padding-right: 35px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
             .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
             .rec-color-picker-box input[type="color"] { width: 25px; height: 25px; border: none; border-radius: 50%; cursor: pointer; padding: 0; background: none; }
@@ -893,15 +893,16 @@ def read_root():
 
             function loadRecordDataIntoUI(nickname) {
                 const isMe = (nickname === window.myNickname);
-                const data = window.trackersData[nickname];
+                const data = window.trackersData[nickname] || { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {} };
 
                 document.getElementById('rec-title').innerText = `✨ ${nickname} 작가님의 집필 기록방 ✨`;
 
                 document.getElementById('rec-target-chars').value = data.targetChars || 5000;
                 document.getElementById('rec-done-chars').value = data.doneChars || 0;
-                document.getElementById('themeColorPicker').value = data.themeColor || "#d87093";
                 
-                changeThemeColor(data.themeColor || "#d87093");
+                const savedColor = data.themeColor || "#d87093";
+                document.getElementById('themeColorPicker').value = savedColor;
+                changeThemeColor(savedColor);
 
                 document.getElementById('rec-target-chars').readOnly = !isMe;
                 document.getElementById('rec-done-chars').readOnly = !isMe;
