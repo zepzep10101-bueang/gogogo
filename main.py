@@ -307,7 +307,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- ✍️ 집필기록방 전용 모달창 (불투명 배경 및 확실한 열림 보장) -->
+        <!-- ✍️ 집필기록방 전용 모달창 -->
         <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
             <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: #ffffff; overflow-x: hidden;">
                 <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
@@ -447,7 +447,6 @@ def read_root():
             window.attendanceData = {}; 
             window.adminLogData = []; 
             
-            // --- 전역 집필기록(Tracker) 데이터 및 변수 ---
             window.trackersData = {}; 
             window.currentViewingUser = "";
             window.goalAchieved = false;
@@ -865,8 +864,6 @@ def read_root():
 
             function sendChat() { const input = document.getElementById('chatInput'); const msgText = input.value.trim(); if (!msgText) return; const myName = window.myNickname || "익명"; const now = new Date(); const month = now.getMonth() + 1; const date = now.getDate(); const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); const timeStr = `${month}/${date} ${timeString}`; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr })); input.value = ''; } }
             
-            // --- [핵심] 서버 연동형 집필기록방(Tracker) 전용 자바스크립트 ---
-            
             function openRecordModalByIndex(index) {
                 const cardUser = cardData[index].user;
                 if (!cardUser || cardUser.startsWith("자리")) {
@@ -896,7 +893,6 @@ def read_root():
                 const isMe = (nickname === window.myNickname);
                 const data = window.trackersData[nickname];
 
-                // ✅ 제목을 [누구누구 작가님의 집필 기록방]으로 확실하게 고정!
                 document.getElementById('rec-title').innerText = `✨ ${nickname} 작가님의 집필 기록방 ✨`;
 
                 document.getElementById('rec-target-chars').value = data.targetChars || 5000;
