@@ -14,7 +14,17 @@ try:
 except Exception as e:
     print("망고로드 연결 실패:", e)
 
+# 🛠️ [수정됨] 망고DB가 지연되거나 끊겨도 절대 서버가 죽지 않도록 완벽한 에러 방패(try-except) 적용!
 def load_data():
+    initial_data = {
+        "_id": "main_state",
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(16)],
+        "chat_history": [],
+        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
+        "attendance": {},
+        "admin_log": [],
+        "trackers": {}
+    }
     try:
         data = collection.find_one({"_id": "main_state"})
         if data:
@@ -38,20 +48,12 @@ def load_data():
             if "trackers" not in data:
                 data["trackers"] = {}
             return data
-    except Exception:
-        pass
-    
-    initial_data = {
-        "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(16)],
-        "chat_history": [],
-        "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
-        "attendance": {},
-        "admin_log": [],
-        "trackers": {}
-    }
-    collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
-    return initial_data
+        else:
+            collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
+            return initial_data
+    except Exception as e:
+        print("망고로드 초기화 에러 (하지만 서버는 죽지 않습니다!):", e)
+        return initial_data
 
 def save_data(data):
     try:
