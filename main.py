@@ -193,18 +193,18 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS --- */
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS (레이아웃 겹침 수정 완료) --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 20px; width: 100%; height: 100%; min-height: 500px; border-radius: 10px; }
-            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 22px; }
             .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
             .rec-color-picker-box input[type="color"] { width: 30px; height: 30px; border: none; border-radius: 50%; cursor: pointer; background: none; }
             .rec-picker-guide { font-size: 11px; color: #888; font-weight: normal; }
-            .rec-section { margin-bottom: 20px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); }
-            .rec-section h3 { margin-top: 0; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
-            .rec-record-box { display: flex; justify-content: space-between; align-items: center; }
-            .rec-timer-container { text-align: right; }
-            .rec-timer-display { font-size: 26px; font-weight: bold; color: var(--rec-primary); margin-bottom: 5px; }
+            .rec-section { margin-bottom: 15px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); position: relative; }
+            .rec-section h3 { margin-top: 0; margin-bottom: 10px; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px; }
+            .rec-record-box { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+            .rec-timer-container { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+            .rec-timer-display { font-size: 24px; font-weight: bold; color: var(--rec-primary); }
             .rec-input-edit { width: 70px; padding: 2px; border: 1px solid var(--rec-border); border-radius: 4px; font-size: 14px; text-align: right; background: #fff; color: #333; }
             .rec-banner { display: none; margin-top: 10px; padding: 8px; background: #fffacd; border: 1px solid #ffd700; border-radius: 5px; text-align: center; font-weight: bold; color: #b8860b; font-size: 13px; }
             .rec-list { list-style: none; padding: 0; margin: 0 0 10px 0; }
