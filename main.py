@@ -132,7 +132,7 @@ def read_root():
         <style>
             :root {
                 --rec-primary: #d87093;
-                --rec-bg: #fff0f5;
+                --rec-bg: #ffffff;
                 --rec-box: #ffffff;
                 --rec-sec: #fff5f8;
                 --rec-border: #ffb6c1;
@@ -192,7 +192,7 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS (레이아웃 겹침 철벽 방어) --- */
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS (불투명 배경 및 이름 통일 완료) --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
             .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
@@ -214,7 +214,7 @@ def read_root():
             .rec-time-tag { font-size: 12px; color: #888; margin-left: 10px; }
             
             .rec-todo-input-box { display: flex; gap: 5px; width: 100%; margin-top: 5px; }
-            .rec-todo-input-box input { flex: 1; padding: 8px; border: 1px solid var(--rec-border); border-radius: 5px; font-size: 13px; }
+            .rec-todo-input-box input { flex: 1; padding: 8px; border: 1px solid var(--rec-border); border-radius: 5px; font-size: 13px; background: #fff; color: #333; }
             
             .rec-btn { background: var(--rec-border); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #4a4a4a; font-size: 12px; white-space: nowrap; }
             .rec-btn:hover { opacity: 0.8; }
@@ -307,7 +307,7 @@ def read_root():
             </div>
         </div>
 
-        <!-- ✍️ 집필기록방 전용 모달창 (서버 연동형) -->
+        <!-- ✍️ 집필기록방 전용 모달창 (불투명 배경 및 이름 적용) -->
         <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
             <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: var(--rec-bg); overflow-x: hidden;">
                 <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
@@ -511,7 +511,6 @@ def read_root():
             }
             function closeModal(modalId) { 
                 document.getElementById(modalId).style.display = 'none'; 
-                // 기록방을 닫을 때 테마 컬러를 내 것으로 복구
                 if (modalId === 'recordModal' && window.myNickname && window.trackersData[window.myNickname]) {
                     changeThemeColor(window.trackersData[window.myNickname].themeColor || "#d87093");
                 }
@@ -632,7 +631,6 @@ def read_root():
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
-                                    <!-- 타이머 버튼 대신 닉네임 연동 집필기록 버튼으로 교체 -->
                                     <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
                                 </div>
                                 <div class="btn-group" style="margin-top: 4px;">
@@ -792,7 +790,6 @@ def read_root():
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
                                 window.trackersData[data.nickname] = data.tracker_data;
-                                // 만약 지금 모달로 해당 유저를 훔쳐보는 중이라면 실시간으로 반영!
                                 if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
                                     loadRecordDataIntoUI(data.nickname);
                                 }
@@ -886,7 +883,6 @@ def read_root():
                 }
                 window.currentViewingUser = nickname;
                 
-                // 만약 서버에 그 작가님 데이터가 없으면 빈 껍데기로 초기화
                 if (!window.trackersData[nickname]) {
                     window.trackersData[nickname] = { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {} };
                 }
@@ -899,8 +895,8 @@ def read_root():
                 const isMe = (nickname === window.myNickname);
                 const data = window.trackersData[nickname];
 
-                // 내 자리면 수정 가능, 남의 자리면 읽기 전용 훔쳐보기 모드
-                document.getElementById('rec-title').innerText = isMe ? "✨ 내 집필 기록방 ✨" : `✨ ${nickname} 작가님의 집필 기록방 ✨`;
+                // ✅ 제목을 [누구누구 작가님의 집필 기록방]으로 확실하게 통일!
+                document.getElementById('rec-title').innerText = `✨ ${nickname} 작가님의 집필 기록방 ✨`;
 
                 document.getElementById('rec-target-chars').value = data.targetChars || 5000;
                 document.getElementById('rec-done-chars').value = data.doneChars || 0;
@@ -912,7 +908,6 @@ def read_root():
                 document.getElementById('rec-done-chars').readOnly = !isMe;
                 document.getElementById('themeColorPicker').disabled = !isMe;
                 
-                // 개인용 타이머와 할 일은 본인에게만 보여줌 (남의 프라이버시 보호)
                 document.getElementById('rec-save-btn').style.display = isMe ? "inline-block" : "none";
                 document.getElementById('rec-my-timer-area').style.display = isMe ? "block" : "none";
                 document.getElementById('rec-todo-section').style.display = isMe ? "block" : "none";
@@ -967,19 +962,16 @@ def read_root():
                 if (!window.trackersData) window.trackersData = {};
                 if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {} };
                 
-                // 내 브라우저에 남은 기존 기록이 있다면 불러오기
                 if (localStorage.getItem('targetChars')) { window.trackersData[window.myNickname].targetChars = localStorage.getItem('targetChars'); }
                 if (localStorage.getItem('doneChars')) { window.trackersData[window.myNickname].doneChars = localStorage.getItem('doneChars'); }
                 if (localStorage.getItem('themeColor')) { window.trackersData[window.myNickname].themeColor = localStorage.getItem('themeColor'); }
                 
-                // 불러온 내 데이터를 서버로 조용히 동기화
                 if(window.myNickname) {
                     saveRecordData(true); 
                 }
             }
 
             function checkGoalAchievement() {
-                // 목표 달성 확인
                 const target = parseInt(document.getElementById('rec-target-chars').value) || 0;
                 const done = parseInt(document.getElementById('rec-done-chars').value) || 0;
                 const banner = document.getElementById('rec-congrats-banner');
@@ -989,7 +981,6 @@ def read_root():
                     banner.style.display = 'block';
                     banner.innerText = isMe ? "🎉 축하합니다! 오늘의 목표 분량을 모두 달성했습니다!" : `🎉 우와! ${window.currentViewingUser} 작가님이 오늘의 목표를 달성했습니다!`;
                     
-                    // 내 기록방이고, 처음 목표를 달성한 순간에만 방 전체 채팅 공지
                     if (isMe && !window.goalAchieved) {
                         window.goalAchieved = true;
                         if (ws && ws.readyState === WebSocket.OPEN && window.myNickname) {
@@ -1027,7 +1018,6 @@ def read_root():
                 if (!myData.calendar[monthStr]) myData.calendar[monthStr] = {};
                 myData.calendar[monthStr][dayStr] = { target: target, done: done };
 
-                // 서버로 내 데이터 전송해서 모두에게 공유!
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "tracker_update", nickname: window.myNickname, tracker_data: myData }));
                 }
@@ -1040,14 +1030,15 @@ def read_root():
                 }
             }
 
+            // ✅ 테마 색상 변경 시 배경(rec-bg)은 항상 완전한 불투명 흰색(#ffffff)으로 유지되도록 고정!
             function changeThemeColor(hex) {
                 const root = document.documentElement;
                 root.style.setProperty('--rec-primary', hex);
                 root.style.setProperty('--rec-border', hex);
-                root.style.setProperty('--rec-bg', hex + '15');
+                root.style.setProperty('--rec-bg', '#ffffff'); // 💡 투명도 제거하고 완전 불투명 하얀색 고정!
                 root.style.setProperty('--rec-box', '#ffffff');
-                root.style.setProperty('--rec-sec', hex + '0d');
-                root.style.setProperty('--rec-done', hex + '25');
+                root.style.setProperty('--rec-sec', hex + '10');
+                root.style.setProperty('--rec-done', hex + '30');
             }
 
             function updateMainTimerDisplay() {
