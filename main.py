@@ -29,7 +29,6 @@ def load_data():
                 card["is_mosaic"] = card.get("is_mosaic", False)
                 card["is_large"] = card.get("is_large", False)
                 card["status"] = card.get("status", 0)
-                # 개별 타이머 관련 필드는 모두 제거
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
             if "attendance" not in data:
@@ -193,29 +192,34 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS (레이아웃 겹침 수정 완료) --- */
-            .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 20px; width: 100%; height: 100%; min-height: 500px; border-radius: 10px; }
-            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-            .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 22px; }
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS (레이아웃 겹침 철벽 방어) --- */
+            .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
+            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; }
+            .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
             .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
-            .rec-color-picker-box input[type="color"] { width: 30px; height: 30px; border: none; border-radius: 50%; cursor: pointer; background: none; }
-            .rec-picker-guide { font-size: 11px; color: #888; font-weight: normal; }
-            .rec-section { margin-bottom: 15px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); position: relative; }
-            .rec-section h3 { margin-top: 0; margin-bottom: 10px; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px; }
-            .rec-record-box { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-            .rec-timer-container { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
-            .rec-timer-display { font-size: 24px; font-weight: bold; color: var(--rec-primary); }
-            .rec-input-edit { width: 70px; padding: 2px; border: 1px solid var(--rec-border); border-radius: 4px; font-size: 14px; text-align: right; background: #fff; color: #333; }
+            .rec-color-picker-box input[type="color"] { width: 25px; height: 25px; border: none; border-radius: 50%; cursor: pointer; padding: 0; background: none; }
+            
+            .rec-section { margin-bottom: 15px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); display: flex; flex-direction: column; gap: 12px; }
+            .rec-section h3 { margin: 0; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--rec-border); }
+            
+            .rec-record-box { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 15px; width: 100%; }
+            .rec-timer-container { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 140px; }
+            .rec-timer-display { font-size: 26px; font-weight: bold; color: var(--rec-primary); line-height: 1; }
+            .rec-input-edit { width: 70px; padding: 4px; border: 1px solid var(--rec-border); border-radius: 4px; font-size: 14px; text-align: right; background: #fff; color: #333; }
+            
             .rec-banner { display: none; margin-top: 10px; padding: 8px; background: #fffacd; border: 1px solid #ffd700; border-radius: 5px; text-align: center; font-weight: bold; color: #b8860b; font-size: 13px; }
-            .rec-list { list-style: none; padding: 0; margin: 0 0 10px 0; }
-            .rec-list li { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+            .rec-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+            .rec-list li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
             .rec-completed { text-decoration: line-through; color: #aaa; }
             .rec-time-tag { font-size: 12px; color: #888; margin-left: 10px; }
-            .rec-todo-input-box { display: flex; gap: 5px; }
-            .rec-todo-input-box input { flex: 1; padding: 5px; border: 1px solid var(--rec-border); border-radius: 5px; background:#fff; color:#333;}
-            .rec-btn { background: var(--rec-border); border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #4a4a4a; font-size: 12px; }
+            
+            .rec-todo-input-box { display: flex; gap: 5px; width: 100%; margin-top: 5px; }
+            .rec-todo-input-box input { flex: 1; padding: 8px; border: 1px solid var(--rec-border); border-radius: 5px; font-size: 13px; }
+            
+            .rec-btn { background: var(--rec-border); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #4a4a4a; font-size: 12px; white-space: nowrap; }
             .rec-btn:hover { opacity: 0.8; }
             .rec-btn-del { background: #ff9999; color: #fff; }
+            
             .rec-cal-wrap { display: none; margin-top: 10px; }
             .rec-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
             .rec-cal-header { font-weight: bold; color: var(--rec-primary); font-size: 12px; padding-bottom: 5px; }
@@ -325,13 +329,13 @@ def read_root():
                             <button id="rec-save-btn" class="rec-btn" onclick="saveRecordData()" style="background: var(--rec-primary); color: #fff;">💾 기록 저장하기</button>
                         </h3>
                         <div class="rec-record-box">
-                            <div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
                                 <div>목표: <input type="number" id="rec-target-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
-                                <div style="margin-top: 5px;">완료: <input type="number" id="rec-done-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
+                                <div>완료: <input type="number" id="rec-done-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
                             </div>
                             <div class="rec-timer-container" id="rec-my-timer-area">
                                 <div class="rec-timer-display" id="rec-main-timer">00:00:00</div>
-                                <div>
+                                <div style="display: flex; gap: 5px;">
                                     <button class="rec-btn" onclick="startMainTimer()">시작</button>
                                     <button class="rec-btn" onclick="pauseMainTimer()" style="background: #dda7a7; color:#fff;">정지</button>
                                     <button class="rec-btn" onclick="resetMainTimer()">리셋</button>
@@ -351,23 +355,29 @@ def read_root():
                     </div>
 
                     <div class="rec-section" id="rec-pomo-section">
-                        <h3>🍅 개인 뽀모도로</h3>
-                        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; font-size: 13px;">
-                            집필: <input type="number" id="rec-pomo-work" value="25" style="width: 45px;" class="rec-input-edit"> 분 / 
-                            휴식: <input type="number" id="rec-pomo-rest" value="5" style="width: 45px;" class="rec-input-edit"> 분
-                        </div>
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <span id="rec-pomo-display" style="font-size: 18px; font-weight: bold; color: var(--rec-primary);">25:00 (대기 중)</span>
-                            <div>
-                                <button class="rec-btn" onclick="startPomodoro()">뽀모 시작</button>
-                                <button class="rec-btn" onclick="pausePomodoro()" style="background: #dda7a7; color:#fff;">멈춤</button>
-                                <button class="rec-btn" onclick="resetPomodoro()" style="background: #ccc;">리셋</button>
+                        <h3>
+                            🍅 개인 뽀모도로
+                        </h3>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                집필: <input type="number" id="rec-pomo-work" value="25" style="width: 50px;" class="rec-input-edit"> 분 / 
+                                휴식: <input type="number" id="rec-pomo-rest" value="5" style="width: 50px;" class="rec-input-edit"> 분
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap; justify-content: flex-end;">
+                                <span id="rec-pomo-display" style="font-size: 18px; font-weight: bold; color: var(--rec-primary);">25:00 (대기 중)</span>
+                                <div style="display: flex; gap: 5px;">
+                                    <button class="rec-btn" onclick="startPomodoro()">뽀모 시작</button>
+                                    <button class="rec-btn" onclick="pausePomodoro()" style="background: #dda7a7; color:#fff;">멈춤</button>
+                                    <button class="rec-btn" onclick="resetPomodoro()" style="background: #ccc;">리셋</button>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="rec-section">
-                        <h3 id="rec-cal-month-title">📅 월간 집필 통계</h3>
+                        <h3 id="rec-cal-month-title">📅 월간 집필 통계
+                            <button class="rec-btn" onclick="toggleRecCalendar()" id="rec-cal-toggle-btn" style="font-size: 11px; padding: 4px 8px;">접기 🔼</button>
+                        </h3>
                         <div class="rec-cal-wrap" id="rec-calendar-wrap" style="display: block;">
                             <div class="rec-cal-grid" id="rec-calendar-grid"></div>
                         </div>
@@ -1280,7 +1290,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
                 
-            # 서버에서 집필기록(Tracker) 업데이트를 받아서 전파
             elif p_type == "tracker_update":
                 nickname = packet.get("nickname")
                 if "trackers" not in server_state: server_state["trackers"] = {}
