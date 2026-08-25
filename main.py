@@ -22,34 +22,34 @@ def load_data():
             if len(cards) > 16:
                 data["cards"] = cards[:16]
             elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(len(cards), 16)]
+                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
                 data["cards"].extend(new_cards)
             for i, card in enumerate(data["cards"]):
                 card["user"] = card.get("user") or f"자리{i+1}"
                 card["is_mosaic"] = card.get("is_mosaic", False)
                 card["is_large"] = card.get("is_large", False)
                 card["status"] = card.get("status", 0)
-                card["timer_visible"] = card.get("timer_visible", False)
-                card["timer_running"] = card.get("timer_running", False)
-                card["timer_elapsed"] = card.get("timer_elapsed", 0)
-                card["timer_last_start"] = card.get("timer_last_start", 0)
+                # 개별 타이머 관련 필드는 모두 제거
             if "global_notice" not in data:
                 data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
             if "attendance" not in data:
                 data["attendance"] = {}
             if "admin_log" not in data:
                 data["admin_log"] = []
+            if "trackers" not in data:
+                data["trackers"] = {}
             return data
     except Exception:
         pass
     
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "timer_visible": False, "timer_running": False, "timer_elapsed": 0, "timer_last_start": 0} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
         "attendance": {},
-        "admin_log": []
+        "admin_log": [],
+        "trackers": {}
     }
     collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
     return initial_data
@@ -131,6 +131,15 @@ def read_root():
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>🍀심사 합격 & 돈 긁어모으는 방🏆</title>
         <style>
+            :root {
+                --rec-primary: #d87093;
+                --rec-bg: #fff0f5;
+                --rec-box: #ffffff;
+                --rec-sec: #fff5f8;
+                --rec-border: #ffb6c1;
+                --rec-done: #ffe4e1;
+            }
+            
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
             body, html { width: 100%; height: 100%; overflow-x: hidden; overflow-y: scroll; background: #111; touch-action: pan-y; }
             body::-webkit-scrollbar { width: 8px; }
@@ -156,7 +165,8 @@ def read_root():
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
             .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
             .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
-            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; }
+            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; transition: opacity 0.2s; }
+            .share-btn:hover { opacity: 0.8; }
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: visibility 0.2s; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
@@ -164,7 +174,7 @@ def read_root():
             .settings-toggle-btn { border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; white-space: nowrap; }
             .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; }
             .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-            .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+            .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; z-index: 100;}
             .close-btn:hover { color: #ff7675; }
             .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
             #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 13px; color: #ddd; line-height: 1.5; word-break: break-all; padding-right: 4px; }
@@ -175,41 +185,45 @@ def read_root():
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+            
+            /* 기존 달력 클래스 보존 */
             .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
             .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
             .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            @keyframes bounceFast { 
-                0% { transform: translateY(0px); } 
-                100% { transform: translateY(-7px); } 
-            }
-            @keyframes bounceSlow { 
-                0% { transform: translateY(0px); } 
-                100% { transform: translateY(-4px); } 
-            }
-            .emoji-fast { 
-                display: inline-block; 
-                animation: bounceFast 0.25s infinite alternate ease-in-out; 
-            }
-            .emoji-slow { 
-                display: inline-block; 
-                animation: bounceSlow 0.8s infinite alternate ease-in-out; 
-            }
-            .timer-plain-btn {
-                background: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-                cursor: pointer;
-                font-size: 26px;
-                margin-top: 12px;
-                padding: 4px 12px;
-                transition: transform 0.2s;
-            }
-            .timer-plain-btn:hover {
-                transform: scale(1.15);
-            }
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS --- */
+            .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 20px; width: 100%; height: 100%; min-height: 500px; border-radius: 10px; }
+            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+            .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 22px; }
+            .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
+            .rec-color-picker-box input[type="color"] { width: 30px; height: 30px; border: none; border-radius: 50%; cursor: pointer; background: none; }
+            .rec-picker-guide { font-size: 11px; color: #888; font-weight: normal; }
+            .rec-section { margin-bottom: 20px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); }
+            .rec-section h3 { margin-top: 0; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+            .rec-record-box { display: flex; justify-content: space-between; align-items: center; }
+            .rec-timer-container { text-align: right; }
+            .rec-timer-display { font-size: 26px; font-weight: bold; color: var(--rec-primary); margin-bottom: 5px; }
+            .rec-input-edit { width: 70px; padding: 2px; border: 1px solid var(--rec-border); border-radius: 4px; font-size: 14px; text-align: right; background: #fff; color: #333; }
+            .rec-banner { display: none; margin-top: 10px; padding: 8px; background: #fffacd; border: 1px solid #ffd700; border-radius: 5px; text-align: center; font-weight: bold; color: #b8860b; font-size: 13px; }
+            .rec-list { list-style: none; padding: 0; margin: 0 0 10px 0; }
+            .rec-list li { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+            .rec-completed { text-decoration: line-through; color: #aaa; }
+            .rec-time-tag { font-size: 12px; color: #888; margin-left: 10px; }
+            .rec-todo-input-box { display: flex; gap: 5px; }
+            .rec-todo-input-box input { flex: 1; padding: 5px; border: 1px solid var(--rec-border); border-radius: 5px; background:#fff; color:#333;}
+            .rec-btn { background: var(--rec-border); border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #4a4a4a; font-size: 12px; }
+            .rec-btn:hover { opacity: 0.8; }
+            .rec-btn-del { background: #ff9999; color: #fff; }
+            .rec-cal-wrap { display: none; margin-top: 10px; }
+            .rec-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
+            .rec-cal-header { font-weight: bold; color: var(--rec-primary); font-size: 12px; padding-bottom: 5px; }
+            .rec-cal-day { background: #fff; border: 1px solid var(--rec-border); border-radius: 4px; padding: 3px 1px; min-height: 50px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; color: #333;}
+            .rec-cal-day.done { background: var(--rec-done); }
+            .rec-cal-day .date-num { font-weight: bold; font-size: 10px; }
+            .rec-cal-day .goal { font-size: 8.5px; color: #666; white-space: nowrap; }
+            .rec-cal-day .act { font-size: 8.5px; font-weight: bold; color: var(--rec-primary); white-space: nowrap; }
         </style>
     </head>
     <body>
@@ -221,6 +235,7 @@ def read_root():
             document.addEventListener('wheel', function(e) { if (e.ctrlKey) { e.preventDefault(); } }, { passive: false });
             document.addEventListener('touchstart', function(e) { if (e.touches.length > 1) { e.preventDefault(); } }, { passive: false });
         </script>
+        
         <div class="login-overlay" id="loginOverlay">
             <div class="login-box">
                 <h2>🔒 행운방 입장</h2>
@@ -231,6 +246,7 @@ def read_root():
                 <button onclick="login()">입장하기</button>
             </div>
         </div>
+        
         <div id="noticeModal" class="modal-overlay" onclick="if(event.target===this) closeModal('noticeModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('noticeModal')">❌</button>
@@ -242,6 +258,7 @@ def read_root():
                 <div id="noticeText" style="font-size: 13px; color: #fff; line-height: 1.6; word-break: break-all; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px;">공지사항 로딩 중...</div>
             </div>
         </div>
+        
         <div id="attendanceModal" class="modal-overlay" onclick="if(event.target===this) closeModal('attendanceModal')">
             <div class="modal-box" style="width: 380px;">
                 <button class="close-btn" onclick="closeModal('attendanceModal')">❌</button>
@@ -261,6 +278,7 @@ def read_root():
                 </div>
             </div>
         </div>
+        
         <div id="settingsModal" class="modal-overlay" onclick="if(event.target===this) closeModal('settingsModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('settingsModal')">❌</button>
@@ -276,6 +294,7 @@ def read_root():
                 </div>
             </div>
         </div>
+        
         <div id="adminLogModal" class="modal-overlay" onclick="if(event.target===this) closeModal('adminLogModal')">
             <div class="modal-box" style="width: 350px;">
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
@@ -283,6 +302,80 @@ def read_root():
                 <div id="adminLogContent" style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 12px; color: #ddd; line-height: 1.6;">기록이 없습니다.</div>
             </div>
         </div>
+
+        <!-- ✍️ 집필기록방 전용 모달창 (서버 연동형) -->
+        <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
+            <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: var(--rec-bg); overflow-x: hidden;">
+                <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
+                
+                <div class="rec-container">
+                    <div class="rec-header-bar">
+                        <h1 id="rec-title">✨ 집필 기록방 ✨</h1>
+                        <div class="rec-color-picker-box">
+                            <div>
+                                <label for="themeColorPicker">🎨 테마 색상:</label>
+                                <input type="color" id="themeColorPicker" value="#d87093" oninput="changeThemeColor(this.value)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rec-section">
+                        <h3>
+                            ⏱️ 오늘의 집필 기록
+                            <button id="rec-save-btn" class="rec-btn" onclick="saveRecordData()" style="background: var(--rec-primary); color: #fff;">💾 기록 저장하기</button>
+                        </h3>
+                        <div class="rec-record-box">
+                            <div>
+                                <div>목표: <input type="number" id="rec-target-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
+                                <div style="margin-top: 5px;">완료: <input type="number" id="rec-done-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
+                            </div>
+                            <div class="rec-timer-container" id="rec-my-timer-area">
+                                <div class="rec-timer-display" id="rec-main-timer">00:00:00</div>
+                                <div>
+                                    <button class="rec-btn" onclick="startMainTimer()">시작</button>
+                                    <button class="rec-btn" onclick="pauseMainTimer()" style="background: #dda7a7; color:#fff;">정지</button>
+                                    <button class="rec-btn" onclick="resetMainTimer()">리셋</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="rec-congrats-banner" class="rec-banner">🎉 축하합니다! 오늘의 목표 분량을 모두 달성했습니다!</div>
+                    </div>
+
+                    <div class="rec-section" id="rec-todo-section">
+                        <h3>📝 오늘의 할 일</h3>
+                        <ul class="rec-list" id="rec-todo-list"></ul>
+                        <div class="rec-todo-input-box">
+                            <input type="text" id="rec-new-todo-text" placeholder="새로운 할 일을 입력하세요..." onkeypress="if(event.key==='Enter') addRecTodo()">
+                            <button class="rec-btn" onclick="addRecTodo()">추가</button>
+                        </div>
+                    </div>
+
+                    <div class="rec-section" id="rec-pomo-section">
+                        <h3>🍅 개인 뽀모도로</h3>
+                        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                            집필: <input type="number" id="rec-pomo-work" value="25" style="width: 45px;" class="rec-input-edit"> 분 / 
+                            휴식: <input type="number" id="rec-pomo-rest" value="5" style="width: 45px;" class="rec-input-edit"> 분
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span id="rec-pomo-display" style="font-size: 18px; font-weight: bold; color: var(--rec-primary);">25:00 (대기 중)</span>
+                            <div>
+                                <button class="rec-btn" onclick="startPomodoro()">뽀모 시작</button>
+                                <button class="rec-btn" onclick="pausePomodoro()" style="background: #dda7a7; color:#fff;">멈춤</button>
+                                <button class="rec-btn" onclick="resetPomodoro()" style="background: #ccc;">리셋</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rec-section">
+                        <h3 id="rec-cal-month-title">📅 월간 집필 통계</h3>
+                        <div class="rec-cal-wrap" id="rec-calendar-wrap" style="display: block;">
+                            <div class="rec-cal-grid" id="rec-calendar-grid"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="video-background" id="bgContainer"><div id="bgMediaWrapper"></div></div>
         <div class="overlay"></div>
         
@@ -343,6 +436,16 @@ def read_root():
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
             window.adminLogData = []; 
+            
+            // --- 전역 집필기록(Tracker) 데이터 및 변수 ---
+            window.trackersData = {}; 
+            window.currentViewingUser = "";
+            window.goalAchieved = false;
+            let recTotalSeconds = 0;
+            let recMainTimerInterval = null;
+            let recPomoInterval = null;
+            let recPomoSeconds = 25 * 60;
+            let recIsWorking = true;
 
             function setMediaBitrate(sdp, bitrate) {
                 let lines = sdp.split('\n');
@@ -391,10 +494,22 @@ def read_root():
                 }
             }, 10000);
 
-            function openModal(modalId) { document.getElementById(modalId).style.display = 'flex'; if (modalId === 'attendanceModal') { renderAttendanceBoard(); } if (modalId === 'adminLogModal') { renderAdminLog(); } }
-            function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
+            function openModal(modalId) { 
+                document.getElementById(modalId).style.display = 'flex'; 
+                if (modalId === 'attendanceModal') { renderAttendanceBoard(); } 
+                if (modalId === 'adminLogModal') { renderAdminLog(); } 
+            }
+            function closeModal(modalId) { 
+                document.getElementById(modalId).style.display = 'none'; 
+                // 기록방을 닫을 때 테마 컬러를 내 것으로 복구
+                if (modalId === 'recordModal' && window.myNickname && window.trackersData[window.myNickname]) {
+                    changeThemeColor(window.trackersData[window.myNickname].themeColor || "#d87093");
+                }
+            }
+
             function formatLogTime(ts) { const now = new Date(ts * 1000); const m = now.getMonth() + 1; const d = now.getDate(); return `${m}/${d} ${now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`; }
             function renderAdminLog() { const container = document.getElementById('adminLogContent'); if (!window.adminLogData || window.adminLogData.length === 0) { container.innerHTML = "기록이 없습니다."; return; } container.innerHTML = window.adminLogData.map(log => `<div style="margin-bottom: 4px;">[${formatLogTime(log.time)}] <b style="color:#ffeaa7;">${log.msg}</b></div>`).join(""); container.scrollTop = container.scrollHeight; }
+            
             function renderAttendanceBoard() {
                 const now = new Date(); const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate(); const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const calTitleEl = document.getElementById('calMonthTitle'); if (calTitleEl) calTitleEl.innerText = `🍀 ${y}년 ${m}월 내 출석부`;
@@ -431,48 +546,54 @@ def read_root():
             function applyEmptySlotVisibility() { cardData.forEach((card, index) => { const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { if (window.isHideEmpty && card.user.startsWith("자리")) { cardEl.style.display = "none"; } else { cardEl.style.display = "flex"; } } }); }
             function addMySlot() { const myName = window.myNickname || "익명"; let emptyIdx = -1; for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리")) { emptyIdx = i; break; } } if (emptyIdx !== -1) { const inputEl = document.getElementById(`username-${emptyIdx}`); if (inputEl) inputEl.value = myName; updateUsername(emptyIdx, myName); } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); } }
             function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
-            function login() { const inputPw = document.getElementById('pwInput').value; const inputNick = document.getElementById('nickInput').value.trim(); if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; } if (inputNick === ADMIN_NICKNAME) { if (inputPw !== ADMIN_PASSWORD) { alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!"); return; } window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; } else { if (inputPw !== ROOM_PASSWORD) { alert("비밀번호가 틀렸어! 다시 확인해봐."); return; } window.isAdmin = false; } window.myNickname = inputNick; localStorage.setItem('mySavedNickname', inputNick); document.getElementById('loginOverlay').style.display = 'none'; initCards(); connectWebSocket(); loadLocalBackground(); }
+            
+            function login() { 
+                const inputPw = document.getElementById('pwInput').value; 
+                const inputNick = document.getElementById('nickInput').value.trim(); 
+                if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; } 
+                if (inputNick === ADMIN_NICKNAME) { 
+                    if (inputPw !== ADMIN_PASSWORD) { alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!"); return; } 
+                    window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; 
+                } else { 
+                    if (inputPw !== ROOM_PASSWORD) { alert("비밀번호가 틀렸어! 다시 확인해봐."); return; } 
+                    window.isAdmin = false; 
+                } 
+                window.myNickname = inputNick; 
+                localStorage.setItem('mySavedNickname', inputNick); 
+                document.getElementById('loginOverlay').style.display = 'none'; 
+                initCards(); 
+                connectWebSocket(); 
+                loadLocalBackground(); 
+                loadMyLocalTrackerData(); 
+            }
+            
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, timer_visible: false, timer_running: false, timer_elapsed: 0, timer_last_start: 0, is_local_hidden: false }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
             function getEmptySlotHTML(username) { if (!username || username.startsWith("자리")) { return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } else { return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } }
-            function renderBox(index) { const box = document.getElementById(`stream-box-${index}`); if (!box) return; const existingVideo = box.querySelector('video'); if (existingVideo) existingVideo.remove(); const card = cardData[index]; if (card.status > 0) { let textMsg = ""; if (card.status === 1) textMsg = "🍽️ 식사중"; else if (card.status === 2) textMsg = "☕ 휴식중"; else if (card.status === 3) textMsg = "💤 수면중"; box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;"><div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div></div>`; } else { box.innerHTML = getEmptySlotHTML(card.user); } }
-            function sendTimerSync(index) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "sync_timer", index: index, visible: cardData[index].timer_visible, running: cardData[index].timer_running, elapsed: cardData[index].timer_elapsed, last_start: cardData[index].timer_last_start })); } }
             
-            function updateTimerOverlayUI(index) { 
-                const card = cardData[index]; const overlay = document.getElementById(`timer-overlay-${index}`); 
-                if (overlay) { overlay.style.display = card.timer_visible ? 'flex' : 'none'; } 
-                const btn = document.getElementById(`timer-toggle-btn-${index}`); 
-                if (btn) { 
-                    if(card.timer_running) {
-                        btn.innerHTML = '<span class="emoji-fast">🦉</span> <span class="emoji-fast" style="animation-delay: 0.15s;">🖥️</span>';
-                    } else {
-                        btn.innerHTML = '<span class="emoji-slow">🐠</span> <span class="emoji-slow" style="animation-delay: 0.3s;">💤</span>';
-                    }
-                } 
-                const timerText = document.getElementById(`big-timer-text-${index}`); 
-                if (timerText) { 
-                    timerText.style.color = card.timer_running ? '#ffffff' : '#f1c40f'; 
-                    let totalSecs = card.timer_elapsed; 
-                    if (card.timer_running && card.timer_last_start) { totalSecs += Math.floor((Date.now() - card.timer_last_start) / 1000); } 
-                    let h = Math.floor(totalSecs / 3600); let m = Math.floor((totalSecs % 3600) / 60); let s = totalSecs % 60; 
-                    timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; 
+            function renderBox(index) { 
+                const box = document.getElementById(`stream-box-${index}`); if (!box) return; 
+                const existingVideo = box.querySelector('video'); if (existingVideo) existingVideo.remove(); 
+                const card = cardData[index]; 
+                if (card.status > 0) { 
+                    let textMsg = ""; if (card.status === 1) textMsg = "🍽️ 식사중"; else if (card.status === 2) textMsg = "☕ 휴식중"; else if (card.status === 3) textMsg = "💤 수면중"; 
+                    box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;"><div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div></div>`; 
+                } else { 
+                    box.innerHTML = getEmptySlotHTML(card.user); 
                 } 
             }
             
-            function toggleTimerOverlay(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("자기 자리 타이머만 조작할 수 있어!"); return; } cardData[index].timer_visible = !cardData[index].timer_visible; updateTimerOverlayUI(index); sendTimerSync(index); }
-            function toggleManualTimerRunning(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("본인 타이머만 조작할 수 있어!"); return; } if (cardData[index].timer_running) { cardData[index].timer_elapsed += Math.floor((Date.now() - cardData[index].timer_last_start) / 1000); cardData[index].timer_running = false; cardData[index].timer_last_start = 0; } else { cardData[index].timer_running = true; cardData[index].timer_last_start = Date.now(); } updateTimerOverlayUI(index); sendTimerSync(index); }
-            function resetManualTimer(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("본인 타이머만 초기화할 수 있어!"); return; } cardData[index].timer_elapsed = 0; if (cardData[index].timer_running) { cardData[index].timer_last_start = Date.now(); } else { cardData[index].timer_last_start = 0; } updateTimerOverlayUI(index); sendTimerSync(index); }
             function updateStatusUI(index, status) { const btn = document.getElementById(`share-btn-status-${index}`); if (btn) { if (status > 0) { btn.innerText = "끄기"; btn.style.background = "#d63031"; } else { btn.innerText = "상태"; btn.style.background = "#8e44ad"; } } }
             function handleStatusMainClick(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("자기 자리 상태만 바꿀 수 있어 누나!"); return; } if (cardData[index].status > 0) { setStatus(index, 0); } else { toggleStatusMenu(index); } }
             function toggleStatusMenu(index) { for(let i=0; i<16; i++) { if (i !== index) { const m = document.getElementById(`status-menu-${i}`); if (m) m.style.display = 'none'; } } const menu = document.getElementById(`status-menu-${index}`); if (menu) { menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex'; } }
             function setStatus(index, s) { const menu = document.getElementById(`status-menu-${index}`); if(menu) menu.style.display = 'none'; cardData[index].status = s; updateStatusUI(index, s); if (s !== 0 && myStreams[index]) { stopShare(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: s })); } renderBox(index); }
             document.addEventListener('click', function(event) { if (!event.target.closest('.status-wrap')) { for(let i=0; i<16; i++) { const m = document.getElementById(`status-menu-${i}`); if(m) m.style.display = 'none'; } } });
-            setInterval(() => { const now = Date.now(); cardData.forEach((card, idx) => { if (card.timer_visible) { let totalSecs = card.timer_elapsed; if (card.timer_running && card.timer_last_start) { totalSecs += Math.floor((now - card.timer_last_start) / 1000); } const timerText = document.getElementById(`big-timer-text-${idx}`); if (timerText) { let h = Math.floor(totalSecs / 3600); let m = Math.floor((totalSecs % 3600) / 60); let s = totalSecs % 60; timerText.innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; } } }); }, 1000);
+            
             function logChat(sender, msg, timeStr) { const history = document.getElementById('chatHistory'); const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : ''; history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`; history.scrollTop = history.scrollHeight; }
             function clearChat() { if (confirm("채팅창을 전부 깨끗하게 지울까?")) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); } } }
             function forceRecoverWebRTC() { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in expectedShares) { const sharerId = expectedShares[idx]; if (sharerId && sharerId !== ws.clientId) { ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId })); } } } alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!"); }
@@ -501,8 +622,8 @@ def read_root():
                             <div class="card-header">
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
-                                    <button onclick="toggleTimerOverlay(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">⏱ 타이머</button>
-                                    <button onclick="resetManualTimer(${index})" class="share-btn" style="background:#d63031; flex-grow:0; padding:4px 6px;" title="시간 초기화">🔄</button>
+                                    <!-- 타이머 버튼 대신 닉네임 연동 집필기록 버튼으로 교체 -->
+                                    <button onclick="openRecordModal('${card.user}')" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
                                 </div>
                                 <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
@@ -525,12 +646,6 @@ def read_root():
                             </div>
                             <div style="position: relative; flex-grow: 1; display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; margin-top: 6px;">
                                 <div class="card-stream-box" id="stream-box-${index}" style="margin-top:0; border-radius:0; visibility:${boxVisibility};"></div>
-                                <div id="timer-overlay-${index}" style="display: ${card.timer_visible ? 'flex' : 'none'}; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 15, 30, 0.5); flex-direction: column; align-items: center; justify-content: center; z-index: 25;">
-                                    <div id="big-timer-text-${index}" style="font-size: 38px; font-weight: 900; color: ${card.timer_running ? '#ffffff' : '#f1c40f'}; -webkit-text-stroke: 1.5px #000; text-shadow: 3px 3px 8px rgba(0,0,0,0.8); font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px; line-height: 1;">00:00:00</div>
-                                    <button id="timer-toggle-btn-${index}" onclick="toggleManualTimerRunning(${index})" class="timer-plain-btn" title="클릭하면 시작/정지 토글">
-                                        ${card.timer_running ? '<span class="emoji-fast">🦉</span> <span class="emoji-fast" style="animation-delay: 0.15s;">🖥️</span>' : '<span class="emoji-slow">🐠</span> <span class="emoji-slow" style="animation-delay: 0.3s;">💤</span>'}
-                                    </button>
-                                </div>
                             </div>
                         </div>
                     `;
@@ -547,12 +662,8 @@ def read_root():
                 cardData[index].user = val; 
                 const myName = window.myNickname || "익명"; 
                 if (val === myName) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } 
-                
                 const cardEl = document.getElementById(`card-card-${index}`);
-                if (cardEl) {
-                    cardEl.style.order = (val === myName && myName) ? -1 : 0;
-                }
-                
+                if (cardEl) { cardEl.style.order = (val === myName && myName) ? -1 : 0; }
                 const box = document.getElementById(`stream-box-${index}`); 
                 if (box && !box.querySelector('video')) { renderBox(index); } 
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
@@ -635,17 +746,16 @@ def read_root():
                             else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time); } 
                             else if (data.type === "update_notice") { window.rawNotice = data.notice; document.getElementById('noticeText').innerHTML = formatNotice(data.notice); }
                             else if (data.type === "status_update") { cardData[data.index].status = data.status; updateStatusUI(data.index, data.status); const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } }
-                            else if (data.type === "sync_timer") { const idx = data.index; if (cardData[idx]) { cardData[idx].timer_visible = data.visible; cardData[idx].timer_running = data.running; cardData[idx].timer_elapsed = data.elapsed; cardData[idx].timer_last_start = data.last_start; updateTimerOverlayUI(idx); } }
                             else if (data.type === "init_state") {
                                 const state = data.state;
                                 if (state.global_notice) { window.rawNotice = state.global_notice; document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice); }
                                 if (state.attendance) { window.attendanceData = state.attendance; }
                                 if (state.admin_log) { window.adminLogData = state.admin_log; if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
+                                if (state.trackers) { window.trackersData = state.trackers; }
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
                                             cardData[i].user = card.user; cardData[i].card_bg = card.card_bg; cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0;
-                                            cardData[i].timer_visible = card.timer_visible || false; cardData[i].timer_running = card.timer_running || false; cardData[i].timer_elapsed = card.timer_elapsed || 0; cardData[i].timer_last_start = card.timer_last_start || 0;
                                             cardData[i].is_local_hidden = cardData[i].is_local_hidden || false; 
                                             
                                             applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status);
@@ -662,13 +772,20 @@ def read_root():
                                             }
                                             const box = document.getElementById(`stream-box-${i}`);
                                             if(box) box.style.visibility = cardData[i].is_local_hidden ? "hidden" : "visible";
-                                            
-                                            updateTimerOverlayUI(i); if (box && !box.querySelector('video')) { renderBox(i); }
+                                            if (box && !box.querySelector('video')) { renderBox(i); }
                                         }
                                     });
                                 }
                                 if (state.chat_history) { const historyEl = document.getElementById('chatHistory'); historyEl.innerHTML = ""; state.chat_history.forEach(chat => { const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : ''; historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`; }); historyEl.scrollTop = historyEl.scrollHeight; }
                                 applyEmptySlotVisibility();
+                            }
+                            else if (data.type === "tracker_update") { 
+                                if (!window.trackersData) window.trackersData = {};
+                                window.trackersData[data.nickname] = data.tracker_data;
+                                // 만약 지금 모달로 해당 유저를 훔쳐보는 중이라면 실시간으로 반영!
+                                if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
+                                    loadRecordDataIntoUI(data.nickname);
+                                }
                             }
                             else if (data.type === "attendance_update") { window.attendanceData = data.attendance; if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
@@ -740,6 +857,305 @@ def read_root():
             }
 
             function sendChat() { const input = document.getElementById('chatInput'); const msgText = input.value.trim(); if (!msgText) return; const myName = window.myNickname || "익명"; const now = new Date(); const month = now.getMonth() + 1; const date = now.getDate(); const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); const timeStr = `${month}/${date} ${timeString}`; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr })); input.value = ''; } }
+            
+            // --- [핵심] 서버 연동형 집필기록방(Tracker) 전용 자바스크립트 ---
+            
+            function openRecordModal(nickname) {
+                if (!nickname || nickname.startsWith("자리")) {
+                    alert("아직 자리에 작가님이 앉지 않았어요! 😅");
+                    return;
+                }
+                window.currentViewingUser = nickname;
+                
+                // 만약 서버에 그 작가님 데이터가 없으면 빈 껍데기로 초기화
+                if (!window.trackersData[nickname]) {
+                    window.trackersData[nickname] = { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {} };
+                }
+                
+                loadRecordDataIntoUI(nickname);
+                document.getElementById('recordModal').style.display = 'flex';
+            }
+
+            function loadRecordDataIntoUI(nickname) {
+                const isMe = (nickname === window.myNickname);
+                const data = window.trackersData[nickname];
+
+                // 내 자리면 수정 가능, 남의 자리면 읽기 전용 훔쳐보기 모드
+                document.getElementById('rec-title').innerText = isMe ? "✨ 내 집필 기록방 ✨" : `✨ ${nickname} 작가님의 집필 기록방 ✨`;
+
+                document.getElementById('rec-target-chars').value = data.targetChars || 5000;
+                document.getElementById('rec-done-chars').value = data.doneChars || 0;
+                document.getElementById('themeColorPicker').value = data.themeColor || "#d87093";
+                
+                changeThemeColor(data.themeColor || "#d87093");
+
+                document.getElementById('rec-target-chars').readOnly = !isMe;
+                document.getElementById('rec-done-chars').readOnly = !isMe;
+                document.getElementById('themeColorPicker').disabled = !isMe;
+                
+                // 개인용 타이머와 할 일은 본인에게만 보여줌 (남의 프라이버시 보호)
+                document.getElementById('rec-save-btn').style.display = isMe ? "inline-block" : "none";
+                document.getElementById('rec-my-timer-area').style.display = isMe ? "block" : "none";
+                document.getElementById('rec-todo-section').style.display = isMe ? "block" : "none";
+                document.getElementById('rec-pomo-section').style.display = isMe ? "block" : "none";
+
+                buildRecordCalendar(nickname, data.calendar || {});
+                checkGoalAchievement();
+            }
+
+            function buildRecordCalendar(nickname, calendarData) {
+                const now = new Date();
+                const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate();
+                const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+                
+                document.getElementById('rec-cal-month-title').innerHTML = `📅 월간 집필 통계 (${m}월) <button class="rec-btn" onclick="toggleRecCalendar()" id="rec-cal-toggle-btn" style="font-size: 11px; padding: 3px 8px;">접기 🔼</button>`;
+                
+                const grid = document.getElementById('rec-calendar-grid');
+                let html = '';
+                const daysOfWeek = ['일','월','화','수','목','금','토']; 
+                daysOfWeek.forEach(d => { html += `<div class="rec-cal-header">${d}</div>`; });
+                
+                const firstDay = new Date(y, m - 1, 1).getDay(); 
+                const daysInMonth = new Date(y, m, 0).getDate(); 
+                
+                for(let i=0; i<firstDay; i++) { html += `<div class="rec-cal-day" style="background:transparent; border:none;"></div>`; }
+                
+                const monthData = calendarData[monthStr] || {};
+                
+                for(let i=1; i<=daysInMonth; i++) {
+                    const dayData = monthData[i.toString()];
+                    let isDone = false;
+                    let inner = `<span class="date-num">${i}일${i===today?'(오늘)':''}</span>`;
+                    
+                    if (dayData) {
+                        isDone = (parseInt(dayData.done) >= parseInt(dayData.target)) && parseInt(dayData.target) > 0;
+                        inner += `<span class="goal">목표:${Number(dayData.target).toLocaleString()}</span>`;
+                        inner += `<span class="act" ${isDone?'style="font-weight:bold;"':''}>완료:${Number(dayData.done).toLocaleString()}</span>`;
+                    }
+                    
+                    let cls = "rec-cal-day";
+                    if (isDone) cls += " done";
+                    if (i === today) {
+                        html += `<div class="${cls}" style="border: 2px solid var(--rec-primary);">${inner}</div>`;
+                    } else {
+                        html += `<div class="${cls}">${inner}</div>`;
+                    }
+                }
+                grid.innerHTML = html;
+            }
+
+            function loadMyLocalTrackerData() {
+                if (!window.trackersData) window.trackersData = {};
+                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {} };
+                
+                // 내 브라우저에 남은 기존 기록이 있다면 불러오기
+                if (localStorage.getItem('targetChars')) { window.trackersData[window.myNickname].targetChars = localStorage.getItem('targetChars'); }
+                if (localStorage.getItem('doneChars')) { window.trackersData[window.myNickname].doneChars = localStorage.getItem('doneChars'); }
+                if (localStorage.getItem('themeColor')) { window.trackersData[window.myNickname].themeColor = localStorage.getItem('themeColor'); }
+                
+                // 불러온 내 데이터를 서버로 조용히 동기화
+                if(window.myNickname) {
+                    saveRecordData(true); 
+                }
+            }
+
+            function checkGoalAchievement() {
+                // 목표 달성 확인
+                const target = parseInt(document.getElementById('rec-target-chars').value) || 0;
+                const done = parseInt(document.getElementById('rec-done-chars').value) || 0;
+                const banner = document.getElementById('rec-congrats-banner');
+                const isMe = (window.currentViewingUser === window.myNickname);
+
+                if (done >= target && target > 0) {
+                    banner.style.display = 'block';
+                    banner.innerText = isMe ? "🎉 축하합니다! 오늘의 목표 분량을 모두 달성했습니다!" : `🎉 우와! ${window.currentViewingUser} 작가님이 오늘의 목표를 달성했습니다!`;
+                    
+                    // 내 기록방이고, 처음 목표를 달성한 순간에만 방 전체 채팅 공지
+                    if (isMe && !window.goalAchieved) {
+                        window.goalAchieved = true;
+                        if (ws && ws.readyState === WebSocket.OPEN && window.myNickname) {
+                            ws.send(JSON.stringify({ type: "chat", senderName: "🎉시스템", msg: `🎊 ${window.myNickname} 작가님이 오늘의 목표 분량을 모두 완료했습니다! 축하해주세요! 🎊` }));
+                        }
+                    }
+                } else {
+                    banner.style.display = 'none';
+                    if (isMe) window.goalAchieved = false;
+                }
+            }
+
+            function saveRecordData(isSilent = false) {
+                if (!window.myNickname) return;
+                const target = document.getElementById('rec-target-chars').value;
+                const done = document.getElementById('rec-done-chars').value;
+                const color = document.getElementById('themeColorPicker').value;
+
+                localStorage.setItem('targetChars', target);
+                localStorage.setItem('doneChars', done);
+                localStorage.setItem('themeColor', color);
+                
+                const now = new Date();
+                const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                const dayStr = now.getDate().toString();
+
+                if (!window.trackersData) window.trackersData = {};
+                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {} };
+                
+                let myData = window.trackersData[window.myNickname];
+                myData.targetChars = target;
+                myData.doneChars = done;
+                myData.themeColor = color;
+                if (!myData.calendar) myData.calendar = {};
+                if (!myData.calendar[monthStr]) myData.calendar[monthStr] = {};
+                myData.calendar[monthStr][dayStr] = { target: target, done: done };
+
+                // 서버로 내 데이터 전송해서 모두에게 공유!
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "tracker_update", nickname: window.myNickname, tracker_data: myData }));
+                }
+
+                buildRecordCalendar(window.myNickname, myData.calendar);
+                checkGoalAchievement();
+
+                if (!isSilent) {
+                    alert('✨ 목표와 완료 글자수가 서버에 안전하게 저장되었습니다! 이제 다른 작가님들도 내 진도를 볼 수 있어요. 💾');
+                }
+            }
+
+            function changeThemeColor(hex) {
+                const root = document.documentElement;
+                root.style.setProperty('--rec-primary', hex);
+                root.style.setProperty('--rec-border', hex);
+                root.style.setProperty('--rec-bg', hex + '15');
+                root.style.setProperty('--rec-box', '#ffffff');
+                root.style.setProperty('--rec-sec', hex + '0d');
+                root.style.setProperty('--rec-done', hex + '25');
+            }
+
+            function updateMainTimerDisplay() {
+                const hrs = String(Math.floor(recTotalSeconds / 3600)).padStart(2, '0');
+                const mins = String(Math.floor((recTotalSeconds % 3600) / 60)).padStart(2, '0');
+                const secs = String(recTotalSeconds % 60).padStart(2, '0');
+                document.getElementById('rec-main-timer').textContent = `${hrs}:${mins}:${secs}`;
+            }
+
+            function startMainTimer() {
+                if (recMainTimerInterval) return;
+                recMainTimerInterval = setInterval(() => { recTotalSeconds++; updateMainTimerDisplay(); }, 1000);
+            }
+
+            function pauseMainTimer() {
+                clearInterval(recMainTimerInterval);
+                recMainTimerInterval = null;
+            }
+
+            function resetMainTimer() {
+                pauseMainTimer();
+                recTotalSeconds = 0;
+                updateMainTimerDisplay();
+            }
+
+            function startPomodoro() {
+                if (recPomoInterval) return;
+                const workMins = parseInt(document.getElementById('rec-pomo-work').value) || 25;
+                if (recPomoSeconds === 25 * 60) recPomoSeconds = workMins * 60;
+                startMainTimer();
+                recPomoInterval = setInterval(() => {
+                    if (recPomoSeconds > 0) {
+                        recPomoSeconds--;
+                        const mins = String(Math.floor(recPomoSeconds / 60)).padStart(2, '0');
+                        const secs = String(recPomoSeconds % 60).padStart(2, '0');
+                        const status = recIsWorking ? "(집필 중 ✍️)" : "(휴식 중 ☕)";
+                        document.getElementById('rec-pomo-display').textContent = `${mins}:${secs} ${status}`;
+                    } else {
+                        playBipSound();
+                        if (recIsWorking) {
+                            recIsWorking = false;
+                            const restMins = parseInt(document.getElementById('rec-pomo-rest').value) || 5;
+                            recPomoSeconds = restMins * 60;
+                            alert('집필 시간 종료! 휴식 시작 ☕');
+                        } else {
+                            recIsWorking = true;
+                            const workMins = parseInt(document.getElementById('rec-pomo-work').value) || 25;
+                            recPomoSeconds = workMins * 60;
+                            alert('휴식 시간이 종료되었습니다! 다시 집필 시작 ✍️');
+                        }
+                    }
+                }, 1000);
+            }
+
+            function pausePomodoro() {
+                clearInterval(recPomoInterval);
+                recPomoInterval = null;
+                pauseMainTimer();
+            }
+
+            function resetPomodoro() {
+                pausePomodoro();
+                const workMins = parseInt(document.getElementById('rec-pomo-work').value) || 25;
+                recPomoSeconds = workMins * 60;
+                recIsWorking = true;
+                document.getElementById('rec-pomo-display').textContent = "25:00 (대기 중)";
+            }
+
+            function toggleRecCalendar() {
+                const wrap = document.getElementById('rec-calendar-wrap');
+                const btn = document.getElementById('rec-cal-toggle-btn');
+                if (wrap.style.display === 'block') {
+                    wrap.style.display = 'none';
+                    btn.textContent = '펼치기 🔽';
+                } else {
+                    wrap.style.display = 'block';
+                    btn.textContent = '접기 🔼';
+                }
+            }
+
+            function addRecTodo() {
+                const input = document.getElementById('rec-new-todo-text');
+                const text = input.value.trim();
+                if (!text) return;
+                const ul = document.getElementById('rec-todo-list');
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <label><input type="checkbox" onchange="toggleRecTodo(this)"> <span>${text}</span></label>
+                    <div><span class="rec-time-tag"></span> <button class="rec-btn rec-btn-del" onclick="removeRecTodo(this)">삭제</button></div>
+                `;
+                ul.appendChild(li);
+                input.value = '';
+            }
+
+            function removeRecTodo(btn) { btn.closest('li').remove(); }
+
+            function toggleRecTodo(checkbox) {
+                const li = checkbox.closest('li');
+                const span = li.querySelector('span');
+                const timeTag = li.querySelector('.rec-time-tag');
+                if (checkbox.checked) {
+                    span.classList.add('rec-completed');
+                    const now = new Date();
+                    timeTag.textContent = `(완료: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')})`;
+                } else {
+                    span.classList.remove('rec-completed');
+                    timeTag.textContent = '';
+                }
+            }
+
+            function playBipSound() {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                let beepCount = 0;
+                const interval = setInterval(() => {
+                    if (beepCount >= 4) { clearInterval(interval); return; }
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.15);
+                    beepCount++;
+                }, 200);
+            }
+
             checkLogin();
         </script>
     </body>
@@ -768,9 +1184,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
                 
-                # ---------------------------------------------------------
-                # [중복 접속 방어 안전장치 - 초강력 즉시 절단 버전]
-                # ---------------------------------------------------------
                 to_close = []
                 for existing_ws, name in list(manager.active_users.items()):
                     if name == nickname and existing_ws != websocket:
@@ -779,11 +1192,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 for old_ws in to_close:
                     try:
                         await old_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
-                        # 메시지 보내자마자 바로 소켓을 부숴서(close) 미련 없이 서버에서 쫓아냅니다!
                         await old_ws.close()
                     except:
                         pass
-                # ---------------------------------------------------------
 
                 manager.active_users[websocket] = nickname
                 await manager.broadcast_user_list()
@@ -860,6 +1271,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(asyncio.to_thread(save_data, server_state))
                 await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
                 
+            # 서버에서 집필기록(Tracker) 업데이트를 받아서 전파
+            elif p_type == "tracker_update":
+                nickname = packet.get("nickname")
+                if "trackers" not in server_state: server_state["trackers"] = {}
+                server_state["trackers"][nickname] = packet.get("tracker_data")
+                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "tracker_update", "nickname": nickname, "tracker_data": packet.get("tracker_data")}), exclude=websocket)
+                
             else:
                 packet["sender"] = client_id
                 if p_type == "username_change":
@@ -887,13 +1306,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif p_type == "status_update":
                     server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                elif p_type == "sync_timer":
-                    idx = packet["index"]
-                    server_state["cards"][idx]["timer_visible"] = packet.get("visible", False)
-                    server_state["cards"][idx]["timer_running"] = packet.get("running", False)
-                    server_state["cards"][idx]["timer_elapsed"] = packet.get("elapsed", 0)
-                    server_state["cards"][idx]["timer_last_start"] = packet.get("last_start", 0)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
@@ -915,10 +1328,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["cards"][r_idx]["is_large"] = False
                     server_state["cards"][r_idx]["is_mosaic"] = False 
                     server_state["cards"][r_idx]["status"] = 0
-                    server_state["cards"][r_idx]["timer_visible"] = False
-                    server_state["cards"][r_idx]["timer_running"] = False
-                    server_state["cards"][r_idx]["timer_elapsed"] = 0
-                    server_state["cards"][r_idx]["timer_last_start"] = 0
                     reverted_indexes.append(r_idx)
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
@@ -935,7 +1344,6 @@ async def websocket_endpoint(websocket: WebSocket):
         
         for r_idx in reverted_indexes:
             await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
-            await manager.broadcast(json.dumps({"type": "sync_timer", "index": r_idx, "visible": False, "running": False, "elapsed": 0, "last_start": 0}))
             await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
