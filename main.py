@@ -623,7 +623,7 @@ def read_root():
                                 <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                                     <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
                                     <!-- 타이머 버튼 대신 닉네임 연동 집필기록 버튼으로 교체 -->
-                                    <button onclick="openRecordModal('${card.user}')" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
+                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
                                 </div>
                                 <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
@@ -860,6 +860,15 @@ def read_root():
             
             // --- [핵심] 서버 연동형 집필기록방(Tracker) 전용 자바스크립트 ---
             
+            function openRecordModalByIndex(index) {
+                const cardUser = cardData[index].user;
+                if (!cardUser || cardUser.startsWith("자리")) {
+                    alert("아직 자리에 작가님이 앉지 않았어요! 😅");
+                    return;
+                }
+                openRecordModal(cardUser);
+            }
+
             function openRecordModal(nickname) {
                 if (!nickname || nickname.startsWith("자리")) {
                     alert("아직 자리에 작가님이 앉지 않았어요! 😅");
