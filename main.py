@@ -65,17 +65,17 @@ app = FastAPI()
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
-        self.active_shares: dict[int, str] = {}
-        self.active_users: dict[WebSocket, str] = {}
-        self.active_slots: dict[str, list[int]] = {} 
+        self.active_connections = []
+        self.active_shares = {}
+        self.active_users = {}
+        self.active_slots = {} 
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
         self.active_users[websocket] = "연결중..."
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         if websocket in self.active_users:
@@ -89,8 +89,8 @@ class ConnectionManager:
             freed_indexes.append(idx)
         return freed_indexes
 
-    async def broadcast(self, message: str, exclude: WebSocket = None):
-        async def send_to_client(conn: WebSocket):
+    async def broadcast(self, message, exclude=None):
+        async def send_to_client(conn):
             if conn != exclude:
                 try:
                     await conn.send_text(message)
@@ -105,7 +105,7 @@ class ConnectionManager:
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
         msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
         
-        async def send_to_client(conn: WebSocket):
+        async def send_to_client(conn):
             try:
                 await conn.send_text(msg)
             except Exception:
@@ -195,7 +195,6 @@ def read_root():
             
             /* --- 독립된 집필기록방(Tracker) 전용 CSS --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
-            /* 💡 수정됨: padding-right: 35px 를 추가해서 ❌ 버튼이랑 색상 선택기가 겹치지 않게 함 */
             .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; padding-right: 35px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
             .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
@@ -225,11 +224,12 @@ def read_root():
             .rec-cal-wrap { display: none; margin-top: 10px; }
             .rec-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
             .rec-cal-header { font-weight: bold; color: var(--rec-primary); font-size: 12px; padding-bottom: 5px; }
-            .rec-cal-day { background: #fff; border: 1px solid var(--rec-border); border-radius: 4px; padding: 3px 1px; min-height: 50px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; color: #333;}
+            .rec-cal-day { background: #fff; border: 1px solid var(--rec-border); border-radius: 4px; padding: 3px 1px; min-height: 50px; display: flex; flex-direction: column; justify-content: flex-start; overflow: hidden; color: #333;}
             .rec-cal-day.done { background: var(--rec-done); }
-            .rec-cal-day .date-num { font-weight: bold; font-size: 10px; }
+            .rec-cal-day .date-num { font-weight: bold; font-size: 10px; margin-bottom: 2px; }
             .rec-cal-day .goal { font-size: 8.5px; color: #666; white-space: nowrap; }
             .rec-cal-day .act { font-size: 8.5px; font-weight: bold; color: var(--rec-primary); white-space: nowrap; }
+            .rec-cal-day .time { font-size: 8.5px; color: #555; white-space: nowrap; margin-top: 1px; }
         </style>
     </head>
     <body>
@@ -904,6 +904,17 @@ def read_root():
                 document.getElementById('themeColorPicker').value = savedColor;
                 changeThemeColor(savedColor);
 
+                const now = new Date();
+                const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                const dayStr = now.getDate().toString();
+
+                if (isMe && recTotalSeconds === 0) {
+                    if (data.calendar && data.calendar[monthStr] && data.calendar[monthStr][dayStr] && data.calendar[monthStr][dayStr].seconds) {
+                        recTotalSeconds = data.calendar[monthStr][dayStr].seconds;
+                        updateMainTimerDisplay();
+                    }
+                }
+
                 document.getElementById('rec-target-chars').readOnly = !isMe;
                 document.getElementById('rec-done-chars').readOnly = !isMe;
                 document.getElementById('themeColorPicker').disabled = !isMe;
@@ -945,6 +956,14 @@ def read_root():
                         isDone = (parseInt(dayData.done) >= parseInt(dayData.target)) && parseInt(dayData.target) > 0;
                         inner += `<span class="goal">목표:${Number(dayData.target).toLocaleString()}</span>`;
                         inner += `<span class="act" ${isDone?'style="font-weight:bold;"':''}>완료:${Number(dayData.done).toLocaleString()}</span>`;
+                        
+                        if (dayData.seconds !== undefined) {
+                            let h = Math.floor(dayData.seconds / 3600);
+                            let min = Math.floor((dayData.seconds % 3600) / 60);
+                            let s = dayData.seconds % 60;
+                            let timeStr = `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                            inner += `<span class="time">⏱️${timeStr}</span>`;
+                        }
                     }
                     
                     let cls = "rec-cal-day";
@@ -998,6 +1017,7 @@ def read_root():
                 const target = document.getElementById('rec-target-chars').value;
                 const done = document.getElementById('rec-done-chars').value;
                 const color = document.getElementById('themeColorPicker').value;
+                const totalSecs = recTotalSeconds;
 
                 localStorage.setItem('targetChars', target);
                 localStorage.setItem('doneChars', done);
@@ -1016,7 +1036,7 @@ def read_root():
                 myData.themeColor = color;
                 if (!myData.calendar) myData.calendar = {};
                 if (!myData.calendar[monthStr]) myData.calendar[monthStr] = {};
-                myData.calendar[monthStr][dayStr] = { target: target, done: done };
+                myData.calendar[monthStr][dayStr] = { target: target, done: done, seconds: totalSecs };
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "tracker_update", nickname: window.myNickname, tracker_data: myData }));
@@ -1026,7 +1046,7 @@ def read_root():
                 checkGoalAchievement();
 
                 if (!isSilent) {
-                    alert('✨ 목표와 완료 글자수가 서버에 안전하게 저장되었습니다! 이제 다른 작가님들도 내 진도를 볼 수 있어요. 💾');
+                    alert('✨ 목표, 완료 글자수와 집필 시간까지 서버에 안전하게 저장되었습니다! 💾');
                 }
             }
 
