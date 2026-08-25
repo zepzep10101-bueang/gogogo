@@ -192,7 +192,7 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS (불투명 배경 및 이름 통일 완료) --- */
+            /* --- 독립된 집필기록방(Tracker) 전용 CSS (불투명 배경 및 타이틀 정리 완료) --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
             .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
@@ -307,9 +307,9 @@ def read_root():
             </div>
         </div>
 
-        <!-- ✍️ 집필기록방 전용 모달창 (불투명 배경 및 이름 적용) -->
+        <!-- ✍️ 집필기록방 전용 모달창 (불투명 배경 및 확실한 열림 보장) -->
         <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
-            <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: var(--rec-bg); overflow-x: hidden;">
+            <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: #ffffff; overflow-x: hidden;">
                 <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
                 
                 <div class="rec-container">
@@ -888,14 +888,15 @@ def read_root():
                 }
                 
                 loadRecordDataIntoUI(nickname);
-                document.getElementById('recordModal').style.display = 'flex';
+                const modal = document.getElementById('recordModal');
+                if (modal) modal.style.display = 'flex';
             }
 
             function loadRecordDataIntoUI(nickname) {
                 const isMe = (nickname === window.myNickname);
                 const data = window.trackersData[nickname];
 
-                // ✅ 제목을 [누구누구 작가님의 집필 기록방]으로 확실하게 통일!
+                // ✅ 제목을 [누구누구 작가님의 집필 기록방]으로 확실하게 고정!
                 document.getElementById('rec-title').innerText = `✨ ${nickname} 작가님의 집필 기록방 ✨`;
 
                 document.getElementById('rec-target-chars').value = data.targetChars || 5000;
@@ -1030,12 +1031,11 @@ def read_root():
                 }
             }
 
-            // ✅ 테마 색상 변경 시 배경(rec-bg)은 항상 완전한 불투명 흰색(#ffffff)으로 유지되도록 고정!
             function changeThemeColor(hex) {
                 const root = document.documentElement;
                 root.style.setProperty('--rec-primary', hex);
                 root.style.setProperty('--rec-border', hex);
-                root.style.setProperty('--rec-bg', '#ffffff'); // 💡 투명도 제거하고 완전 불투명 하얀색 고정!
+                root.style.setProperty('--rec-bg', '#ffffff');
                 root.style.setProperty('--rec-box', '#ffffff');
                 root.style.setProperty('--rec-sec', hex + '10');
                 root.style.setProperty('--rec-done', hex + '30');
