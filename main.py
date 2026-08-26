@@ -606,7 +606,23 @@ def read_root():
             
             function logChat(sender, msg, timeStr) { const history = document.getElementById('chatHistory'); const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : ''; history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`; history.scrollTop = history.scrollHeight; }
             function clearChat() { if (confirm("채팅창을 전부 깨끗하게 지울까?")) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); } } }
-            function forceRecoverWebRTC() { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in expectedShares) { const sharerId = expectedShares[idx]; if (sharerId && sharerId !== ws.clientId) { ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId })); } } } alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!"); }
+            
+            // 🔥 복구 로직 강화
+            function forceRecoverWebRTC() { 
+                if (ws && ws.readyState === WebSocket.OPEN) { 
+                    // 내 상태 다시 알리기
+                    const ownedArr = Array.from(myOwnedSlots);
+                    ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: ownedArr }));
+                    ws.send(JSON.stringify({ type: "request_existing_shares" })); 
+                    for (let idx in expectedShares) { 
+                        const sharerId = expectedShares[idx]; 
+                        if (sharerId && sharerId !== ws.clientId) { 
+                            ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId })); 
+                        } 
+                    } 
+                } 
+                alert("화면 공유 통신선을 강제로 다시 뚫고 있습니다! 2~3초만 기다려주세요!"); 
+            }
 
             function toggleLocalHide(index) {
                 cardData[index].is_local_hidden = !cardData[index].is_local_hidden;
@@ -713,6 +729,7 @@ def read_root():
                 const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; }
             }
 
+            // WebRTC 복구 인터벌 5초 유지 및 예외처리 강화
             setInterval(() => {
                 if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
                 for (let idx in expectedShares) {
@@ -1343,20 +1360,9 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
-        reverted_indexes = []
+        
+        # 🔥 여기서 '자리X'로 이름과 설정을 밀어버리던 초기화 코드를 전부 걷어냈어! 🔥
         if client_id in manager.active_slots:
-            for r_idx in manager.active_slots[client_id]:
-                is_claimed_by_other = False
-                for other_cid, slots in manager.active_slots.items():
-                    if other_cid != client_id and r_idx in slots:
-                        is_claimed_by_other = True
-                        break
-                if not is_claimed_by_other:
-                    server_state["cards"][r_idx]["user"] = f"자리{r_idx+1}"
-                    server_state["cards"][r_idx]["is_large"] = False
-                    server_state["cards"][r_idx]["is_mosaic"] = False 
-                    server_state["cards"][r_idx]["status"] = 0
-                    reverted_indexes.append(r_idx)
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
 
@@ -1364,15 +1370,12 @@ async def websocket_endpoint(websocket: WebSocket):
         await manager.broadcast_user_list()
         
         if nickname and nickname != "연결중...":
-            log_entry = {"msg": f"{nickname} 님이 퇴장했습니다.", "time": __import__('time').time()}
+            log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
             if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
             await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
         
-        for r_idx in reverted_indexes:
-            await manager.broadcast(json.dumps({"type": "username_change", "index": r_idx, "user": f"자리{r_idx+1}"}))
-            await manager.broadcast(json.dumps({"type": "toggle_mosaic", "index": r_idx, "is_mosaic": False}))
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
