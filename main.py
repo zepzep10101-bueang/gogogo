@@ -607,10 +607,8 @@ def read_root():
             function logChat(sender, msg, timeStr) { const history = document.getElementById('chatHistory'); const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : ''; history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`; history.scrollTop = history.scrollHeight; }
             function clearChat() { if (confirm("채팅창을 전부 깨끗하게 지울까?")) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); } } }
             
-            // 🔥 복구 로직 강화
             function forceRecoverWebRTC() { 
                 if (ws && ws.readyState === WebSocket.OPEN) { 
-                    // 내 상태 다시 알리기
                     const ownedArr = Array.from(myOwnedSlots);
                     ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: ownedArr }));
                     ws.send(JSON.stringify({ type: "request_existing_shares" })); 
@@ -729,7 +727,6 @@ def read_root():
                 const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; }
             }
 
-            // WebRTC 복구 인터벌 5초 유지 및 예외처리 강화
             setInterval(() => {
                 if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
                 for (let idx in expectedShares) {
@@ -1253,6 +1250,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
                 
                 recovered = False
+                
+                # 1. 내가 소유했던 자리(owned) 복구 시도
                 if owned:
                     for idx in owned:
                         if 0 <= idx < 16:
@@ -1265,10 +1264,22 @@ async def websocket_endpoint(websocket: WebSocket):
                                 change_packet = json.dumps({"type": "username_change", "index": idx, "user": nickname})
                                 await manager.broadcast(change_packet)
                                 await websocket.send_text(change_packet)
+                
+                # 2. 브라우저가 owned를 잊어버렸더라도, 내 닉네임이 적힌 유령 자리가 남아있다면 싹 다 내 걸로 강제 편입 (새로 추가한 분신술 방지 코드!)
+                for i, card in enumerate(server_state["cards"]):
+                    if card["user"] == nickname:
+                        if i not in manager.active_slots[client_id]:
+                            manager.active_slots[client_id].append(i)
+                            recovered = True
+                            change_packet = json.dumps({"type": "username_change", "index": i, "user": nickname})
+                            await manager.broadcast(change_packet)
+                            await websocket.send_text(change_packet)
+
                 if recovered:
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     continue
 
+                # 3. 위에서 아무 자리도 못 건졌다면 (완전 쌩판 처음이거나 방이 깨끗할 때) 빈자리 찾기
                 assigned_idx = None
                 for i, card in enumerate(server_state["cards"]):
                     if card["user"].startswith("자리"):
@@ -1361,7 +1372,6 @@ async def websocket_endpoint(websocket: WebSocket):
         client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
         
-        # 🔥 여기서 '자리X'로 이름과 설정을 밀어버리던 초기화 코드를 전부 걷어냈어! 🔥
         if client_id in manager.active_slots:
             del manager.active_slots[client_id]
             asyncio.create_task(asyncio.to_thread(save_data, server_state))
