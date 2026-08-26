@@ -350,7 +350,7 @@ def read_root():
                     <div class="rec-section" id="rec-todo-section">
                         <h3>📝 오늘의 할 일</h3>
                         <ul class="rec-list" id="rec-todo-list"></ul>
-                        <div class="rec-todo-input-box">
+                        <div class="rec-todo-input-box" id="rec-todo-input-area">
                             <input type="text" id="rec-new-todo-text" placeholder="새로운 할 일을 입력하세요..." onkeypress="if(event.key==='Enter') addRecTodo()">
                             <button class="rec-btn" onclick="addRecTodo()">추가</button>
                         </div>
@@ -897,7 +897,7 @@ def read_root():
                 window.currentViewingUser = nickname;
                 
                 if (!window.trackersData[nickname]) {
-                    window.trackersData[nickname] = { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {} };
+                    window.trackersData[nickname] = { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {}, todos: [], lastDate: "" };
                 }
                 
                 loadRecordDataIntoUI(nickname);
@@ -907,7 +907,34 @@ def read_root():
 
             function loadRecordDataIntoUI(nickname) {
                 const isMe = (nickname === window.myNickname);
-                const data = window.trackersData[nickname] || { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {} };
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+                
+                // 🔥 자정 리셋: 남의 거라도 날짜 다르면 0으로 보여줌
+                if (isMe) {
+                    if (window.trackersData && window.trackersData[nickname]) {
+                        if (window.trackersData[nickname].lastDate && window.trackersData[nickname].lastDate !== todayStr) {
+                            window.trackersData[nickname].doneChars = 0;
+                            window.trackersData[nickname].todos = [];
+                            window.trackersData[nickname].lastDate = todayStr;
+                            recTotalSeconds = 0;
+                            localStorage.setItem('doneChars', '0');
+                            localStorage.setItem('myTodos', '[]');
+                            localStorage.setItem('lastDate', todayStr);
+                            
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: "tracker_update", nickname: nickname, tracker_data: window.trackersData[nickname] }));
+                            }
+                        }
+                    }
+                }
+                
+                let data = window.trackersData[nickname] || { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {}, todos: [], lastDate: todayStr };
+
+                // 뷰어 시점에서도 과거 데이터는 0으로 처리
+                if (!isMe && data.lastDate && data.lastDate !== todayStr) {
+                    data = { ...data, doneChars: 0, todos: [] };
+                }
 
                 document.getElementById('rec-title').innerText = `✨ ${nickname} 작가님의 집필 기록방 ✨`;
 
@@ -918,12 +945,11 @@ def read_root():
                 document.getElementById('themeColorPicker').value = savedColor;
                 changeThemeColor(savedColor);
 
-                const now = new Date();
                 const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                 const dayStr = now.getDate().toString();
 
                 if (isMe && recTotalSeconds === 0) {
-                    if (data.calendar && data.calendar[monthStr] && data.calendar[monthStr][dayStr] && data.calendar[monthStr][dayStr].seconds) {
+                    if (data.lastDate === todayStr && data.calendar && data.calendar[monthStr] && data.calendar[monthStr][dayStr] && data.calendar[monthStr][dayStr].seconds) {
                         recTotalSeconds = data.calendar[monthStr][dayStr].seconds;
                         updateMainTimerDisplay();
                     }
@@ -935,8 +961,28 @@ def read_root():
                 
                 document.getElementById('rec-save-btn').style.display = isMe ? "inline-block" : "none";
                 document.getElementById('rec-my-timer-area').style.display = isMe ? "block" : "none";
-                document.getElementById('rec-todo-section').style.display = isMe ? "block" : "none";
+                
+                const todoInputArea = document.getElementById('rec-todo-input-area');
+                if (todoInputArea) todoInputArea.style.display = isMe ? "flex" : "none";
+                
                 document.getElementById('rec-pomo-section').style.display = isMe ? "block" : "none";
+
+                // 🔥 할 일(To-do) 리스트 영구 렌더링
+                const ul = document.getElementById('rec-todo-list');
+                ul.innerHTML = '';
+                const todos = data.todos || [];
+                todos.forEach(todo => {
+                    const li = document.createElement('li');
+                    const checked = todo.done ? "checked" : "";
+                    const compClass = todo.done ? "rec-completed" : "";
+                    const disabled = !isMe ? "disabled" : "";
+                    const delBtn = isMe ? `<button class="rec-btn rec-btn-del" onclick="removeRecTodo(this)">삭제</button>` : "";
+                    li.innerHTML = `
+                        <label><input type="checkbox" onchange="toggleRecTodo(this)" ${checked} ${disabled}> <span class="${compClass}">${todo.text}</span></label>
+                        <div><span class="rec-time-tag">${todo.time || ''}</span> ${delBtn}</div>
+                    `;
+                    ul.appendChild(li);
+                });
 
                 buildRecordCalendar(nickname, data.calendar || {});
                 checkGoalAchievement();
@@ -993,11 +1039,32 @@ def read_root():
 
             function loadMyLocalTrackerData() {
                 if (!window.trackersData) window.trackersData = {};
-                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {} };
+                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {}, todos: [], lastDate: "" };
                 
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+                let savedLastDate = localStorage.getItem('lastDate');
+
                 if (localStorage.getItem('targetChars')) { window.trackersData[window.myNickname].targetChars = localStorage.getItem('targetChars'); }
-                if (localStorage.getItem('doneChars')) { window.trackersData[window.myNickname].doneChars = localStorage.getItem('doneChars'); }
                 if (localStorage.getItem('themeColor')) { window.trackersData[window.myNickname].themeColor = localStorage.getItem('themeColor'); }
+
+                // 🔥 자정 리셋 로직
+                if (savedLastDate && savedLastDate !== todayStr) {
+                    window.trackersData[window.myNickname].doneChars = 0;
+                    window.trackersData[window.myNickname].todos = [];
+                    window.trackersData[window.myNickname].lastDate = todayStr;
+                    localStorage.setItem('doneChars', '0');
+                    localStorage.setItem('myTodos', '[]');
+                    localStorage.setItem('lastDate', todayStr);
+                    recTotalSeconds = 0;
+                } else {
+                    if (localStorage.getItem('doneChars')) { window.trackersData[window.myNickname].doneChars = localStorage.getItem('doneChars'); }
+                    if (localStorage.getItem('myTodos')) { 
+                        try { window.trackersData[window.myNickname].todos = JSON.parse(localStorage.getItem('myTodos')); } 
+                        catch(e) { window.trackersData[window.myNickname].todos = []; }
+                    }
+                    window.trackersData[window.myNickname].lastDate = todayStr;
+                }
                 
                 if(window.myNickname) {
                     saveRecordData(true); 
@@ -1028,6 +1095,29 @@ def read_root():
 
             function saveRecordData(isSilent = false) {
                 if (!window.myNickname) return;
+                
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+
+                if (!window.trackersData) window.trackersData = {};
+                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {}, todos: [], lastDate: todayStr };
+                let myData = window.trackersData[window.myNickname];
+
+                // 🔥 자정 리셋 로직: 창 켜두고 다음날 저장 눌렀을 때 방지
+                if (myData.lastDate && myData.lastDate !== todayStr) {
+                     document.getElementById('rec-done-chars').value = 0;
+                     document.getElementById('rec-todo-list').innerHTML = '';
+                     recTotalSeconds = 0;
+                     updateMainTimerDisplay();
+                     myData.lastDate = todayStr;
+                     myData.doneChars = 0;
+                     myData.todos = [];
+                     localStorage.setItem('doneChars', '0');
+                     localStorage.setItem('myTodos', '[]');
+                     localStorage.setItem('lastDate', todayStr);
+                     alert("자정이 지나 날짜가 변경되었습니다! 오늘의 완료량과 할 일이 자동으로 리셋되었습니다. 🌱");
+                }
+
                 const target = document.getElementById('rec-target-chars').value;
                 const done = document.getElementById('rec-done-chars').value;
                 const color = document.getElementById('themeColorPicker').value;
@@ -1036,18 +1126,33 @@ def read_root():
                 localStorage.setItem('targetChars', target);
                 localStorage.setItem('doneChars', done);
                 localStorage.setItem('themeColor', color);
+                localStorage.setItem('lastDate', todayStr);
                 
-                const now = new Date();
                 const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                 const dayStr = now.getDate().toString();
-
-                if (!window.trackersData) window.trackersData = {};
-                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {} };
                 
-                let myData = window.trackersData[window.myNickname];
                 myData.targetChars = target;
                 myData.doneChars = done;
                 myData.themeColor = color;
+                myData.lastDate = todayStr;
+
+                // 🔥 To-Do 리스트 긁어서 실시간 보존
+                const ul = document.getElementById('rec-todo-list');
+                const lis = ul.querySelectorAll('li');
+                let currentTodos = [];
+                lis.forEach(li => {
+                    const textEl = li.querySelector('label span');
+                    if(!textEl) return;
+                    const text = textEl.innerText;
+                    const doneBox = li.querySelector('input[type="checkbox"]');
+                    const isDone = doneBox ? doneBox.checked : false;
+                    const timeTag = li.querySelector('.rec-time-tag');
+                    const timeStr = timeTag ? timeTag.innerText : '';
+                    currentTodos.push({ text: text, done: isDone, time: timeStr });
+                });
+                myData.todos = currentTodos;
+                localStorage.setItem('myTodos', JSON.stringify(currentTodos));
+
                 if (!myData.calendar) myData.calendar = {};
                 if (!myData.calendar[monthStr]) myData.calendar[monthStr] = {};
                 myData.calendar[monthStr][dayStr] = { target: target, done: done, seconds: totalSecs };
@@ -1060,7 +1165,7 @@ def read_root():
                 checkGoalAchievement();
 
                 if (!isSilent) {
-                    alert('✨ 목표, 완료 글자수와 집필 시간까지 서버에 안전하게 저장되었습니다! 💾');
+                    alert('✨ 목표, 완료 글자수와 집필 시간, 오늘의 할 일까지 서버에 안전하게 저장되었습니다! 💾');
                 }
             }
 
@@ -1152,6 +1257,7 @@ def read_root():
                 }
             }
 
+            // 🔥 투두 기능: 추가/삭제/체크 시 자동 실시간 저장
             function addRecTodo() {
                 const input = document.getElementById('rec-new-todo-text');
                 const text = input.value.trim();
@@ -1164,13 +1270,17 @@ def read_root():
                 `;
                 ul.appendChild(li);
                 input.value = '';
+                saveRecordData(true);
             }
 
-            function removeRecTodo(btn) { btn.closest('li').remove(); }
+            function removeRecTodo(btn) { 
+                btn.closest('li').remove(); 
+                saveRecordData(true);
+            }
 
             function toggleRecTodo(checkbox) {
                 const li = checkbox.closest('li');
-                const span = li.querySelector('span');
+                const span = li.querySelector('label span');
                 const timeTag = li.querySelector('.rec-time-tag');
                 if (checkbox.checked) {
                     span.classList.add('rec-completed');
@@ -1180,6 +1290,7 @@ def read_root():
                     span.classList.remove('rec-completed');
                     timeTag.textContent = '';
                 }
+                saveRecordData(true);
             }
 
             function playBipSound() {
@@ -1251,7 +1362,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 recovered = False
                 
-                # 1. 내가 소유했던 자리(owned) 복구 시도
                 if owned:
                     for idx in owned:
                         if 0 <= idx < 16:
@@ -1265,7 +1375,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await manager.broadcast(change_packet)
                                 await websocket.send_text(change_packet)
                 
-                # 2. 브라우저가 owned를 잊어버렸더라도, 내 닉네임이 적힌 유령 자리가 남아있다면 싹 다 내 걸로 강제 편입 (새로 추가한 분신술 방지 코드!)
                 for i, card in enumerate(server_state["cards"]):
                     if card["user"] == nickname:
                         if i not in manager.active_slots[client_id]:
@@ -1279,7 +1388,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     asyncio.create_task(asyncio.to_thread(save_data, server_state))
                     continue
 
-                # 3. 위에서 아무 자리도 못 건졌다면 (완전 쌩판 처음이거나 방이 깨끗할 때) 빈자리 찾기
                 assigned_idx = None
                 for i, card in enumerate(server_state["cards"]):
                     if card["user"].startswith("자리"):
