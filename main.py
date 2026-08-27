@@ -6,7 +6,7 @@ import uvicorn
 import asyncio
 from pymongo import MongoClient
 
-MONGO_URI = "mongodb+srv://zepzep10101_db_user:9zT7ZAjz5tcQe2dX@cluster0.sai0kyf.mongodb.net/?appName=Cluster0"
+MONGO_URI = os.environ.get("MONGO_URI", "")
 try:
     client = MongoClient(MONGO_URI)
     db = client["dashboard_db"]
