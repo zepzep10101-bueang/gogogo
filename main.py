@@ -765,7 +765,22 @@ def read_root():
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
-                        if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 20000); 
+                        
+                        # [디오 수정: 화공/캠 + 남이 보던 화면까지 완벽 자동 복구 + 5초 핑]
+                        for (let idx in myStreams) {
+                            if (myStreams[idx]) {
+                                ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
+                            }
+                        }
+                        ws.send(JSON.stringify({ type: "request_existing_shares" }));
+                        for (let idx in expectedShares) {
+                            const sharerId = expectedShares[idx];
+                            if (sharerId && sharerId !== ws.clientId) {
+                                ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
+                            }
+                        }
+
+                        if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 5000); 
                     };
                     ws.onmessage = async function(event) {
                         try {
@@ -839,6 +854,7 @@ def read_root():
                                 if (cardEl) { cardEl.style.order = (data.user === myName && myName) ? -1 : 0; }
                                 const box = document.getElementById(`stream-box-${data.index}`); 
                                 if (box && !box.querySelector('video')) { renderBox(data.index); } 
+                                if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
                                 applyEmptySlotVisibility(); 
                             } 
                             else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
@@ -928,7 +944,7 @@ def read_root():
                 const now = new Date();
                 const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
                 
-                // 🔥 자정 리셋: 남의 거라도 날짜 다르면 0으로 보여줌
+                # [디오 수정: 자정 리셋]
                 if (isMe) {
                     if (window.trackersData && window.trackersData[nickname]) {
                         if (window.trackersData[nickname].lastDate && window.trackersData[nickname].lastDate !== todayStr) {
@@ -949,7 +965,6 @@ def read_root():
                 
                 let data = window.trackersData[nickname] || { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {}, todos: [], lastDate: todayStr };
 
-                // 뷰어 시점에서도 과거 데이터는 0으로 처리
                 if (!isMe && data.lastDate && data.lastDate !== todayStr) {
                     data = { ...data, doneChars: 0, todos: [] };
                 }
@@ -985,7 +1000,6 @@ def read_root():
                 
                 document.getElementById('rec-pomo-section').style.display = isMe ? "block" : "none";
 
-                // 🔥 할 일(To-do) 리스트 영구 렌더링
                 const ul = document.getElementById('rec-todo-list');
                 ul.innerHTML = '';
                 const todos = data.todos || [];
@@ -1066,7 +1080,6 @@ def read_root():
                 if (localStorage.getItem('targetChars')) { window.trackersData[window.myNickname].targetChars = localStorage.getItem('targetChars'); }
                 if (localStorage.getItem('themeColor')) { window.trackersData[window.myNickname].themeColor = localStorage.getItem('themeColor'); }
 
-                // 🔥 자정 리셋 로직
                 if (savedLastDate && savedLastDate !== todayStr) {
                     window.trackersData[window.myNickname].doneChars = 0;
                     window.trackersData[window.myNickname].todos = [];
@@ -1121,7 +1134,6 @@ def read_root():
                 if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {}, todos: [], lastDate: todayStr };
                 let myData = window.trackersData[window.myNickname];
 
-                // 🔥 자정 리셋 로직: 창 켜두고 다음날 저장 눌렀을 때 방지
                 if (myData.lastDate && myData.lastDate !== todayStr) {
                      document.getElementById('rec-done-chars').value = 0;
                      document.getElementById('rec-todo-list').innerHTML = '';
@@ -1154,7 +1166,6 @@ def read_root():
                 myData.themeColor = color;
                 myData.lastDate = todayStr;
 
-                // 🔥 To-Do 리스트 긁어서 실시간 보존
                 const ul = document.getElementById('rec-todo-list');
                 const lis = ul.querySelectorAll('li');
                 let currentTodos = [];
@@ -1275,7 +1286,6 @@ def read_root():
                 }
             }
 
-            // 🔥 투두 기능: 추가/삭제/체크 시 자동 실시간 저장
             function addRecTodo() {
                 const input = document.getElementById('rec-new-todo-text');
                 const text = input.value.trim();
