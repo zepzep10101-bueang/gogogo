@@ -11,17 +11,19 @@ collection = None
 MONGO_URI = os.environ.get("MONGO_URI", "")
 
 try:
-    # [수정 2: 몽고디비 연결이 안 끊기게 옵션 빵빵하게 추가!]
+    # [수정 2: 타임아웃을 짧게 주어 서버가 멈추지 않도록 안전장치 강화]
     client = MongoClient(
         MONGO_URI,
         maxPoolSize=50, 
-        waitQueueTimeoutMS=10000, 
-        socketTimeoutMS=60000, 
-        serverSelectionTimeoutMS=5000, 
-        retryWrites=True
+        waitQueueTimeoutMS=5000, 
+        socketTimeoutMS=30000, 
+        serverSelectionTimeoutMS=3000, 
+        retrywrites=True
     )
     db = client["dashboard_db"]
     collection = db["dashboard_data"]
+    # 연결 테스트
+    client.admin.command('ping')
 except Exception as e:
     print("망고로드 첫 연결 실패 (나중에 다시 시도됨):", e)
 
@@ -36,7 +38,6 @@ def load_data():
         "trackers": {}
     }
     try:
-        # [수정 3: collection이 정상적으로 있을 때만 데이터를 불러오게 방어!]
         if collection is not None:
             data = collection.find_one({"_id": "main_state"})
             if data:
@@ -71,13 +72,11 @@ def load_data():
 
 def save_data(data):
     try:
-        # [수정 4: collection이 정상일 때만 저장해서 에러 홍수 차단!]
         if collection is not None:
             collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
-        else:
-            pass # 연결 안 됐으면 조용히 넘어가기
     except Exception as e:
         print("망고로드 저장 에러:", e)
+
 server_state = load_data()
 app = FastAPI()
 
@@ -204,14 +203,12 @@ def read_root():
             .status-offline { background: #d63031; color: white; }
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
             
-            /* 기존 달력 클래스 보존 */
             .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
             .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
             .cal-day.today { border: 1px solid #ff7675; cursor: pointer; background: rgba(255, 118, 117, 0.2); }
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            /* --- 독립된 집필기록방(Tracker) 전용 CSS --- */
             .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
             .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; padding-right: 35px; }
             .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
@@ -327,7 +324,6 @@ def read_root():
             </div>
         </div>
 
-        <!-- ✍️ 집필기록방 전용 모달창 -->
         <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
             <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: #ffffff; overflow-x: hidden;">
                 <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
@@ -598,7 +594,7 @@ def read_root():
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
@@ -766,7 +762,6 @@ def read_root():
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
                         
-                        # [디오 수정: 화공/캠 + 남이 보던 화면까지 완벽 자동 복구 + 5초 핑]
                         for (let idx in myStreams) {
                             if (myStreams[idx]) {
                                 ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
@@ -944,7 +939,6 @@ def read_root():
                 const now = new Date();
                 const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
                 
-                # [디오 수정: 자정 리셋]
                 if (isMe) {
                     if (window.trackersData && window.trackersData[nickname]) {
                         if (window.trackersData[nickname].lastDate && window.trackersData[nickname].lastDate !== todayStr) {
