@@ -8,7 +8,7 @@ from pymongo import MongoClient
 
 # [수정 1: collection 변수를 미리 만들어둬서 없는 이름이라고 에러 뿜는 것 방지!]
 collection = None
-MONGO_URI = os.environ.get("MONGO_URI", "")
+MONGO_URI = os.environ.get("MONGO_URI", "").strip()
 
 try:
     # [수정 2: 타임아웃을 짧게 주어 서버가 멈추지 않도록 안전장치 강화]
