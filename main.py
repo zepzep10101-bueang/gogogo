@@ -6,13 +6,24 @@ import uvicorn
 import asyncio
 from pymongo import MongoClient
 
+# [수정 1: collection 변수를 미리 만들어둬서 없는 이름이라고 에러 뿜는 것 방지!]
+collection = None
 MONGO_URI = os.environ.get("MONGO_URI", "")
+
 try:
-    client = MongoClient(MONGO_URI)
+    # [수정 2: 몽고디비 연결이 안 끊기게 옵션 빵빵하게 추가!]
+    client = MongoClient(
+        MONGO_URI,
+        maxPoolSize=50, 
+        waitQueueTimeoutMS=10000, 
+        socketTimeoutMS=60000, 
+        serverSelectionTimeoutMS=5000, 
+        retryWrites=True
+    )
     db = client["dashboard_db"]
     collection = db["dashboard_data"]
 except Exception as e:
-    print("망고로드 연결 실패:", e)
+    print("망고로드 첫 연결 실패 (나중에 다시 시도됨):", e)
 
 def load_data():
     initial_data = {
@@ -25,30 +36,34 @@ def load_data():
         "trackers": {}
     }
     try:
-        data = collection.find_one({"_id": "main_state"})
-        if data:
-            cards = data.get("cards", [])
-            if len(cards) > 16:
-                data["cards"] = cards[:16]
-            elif len(cards) < 16:
-                new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
-                data["cards"].extend(new_cards)
-            for i, card in enumerate(data["cards"]):
-                card["user"] = card.get("user") or f"자리{i+1}"
-                card["is_mosaic"] = card.get("is_mosaic", False)
-                card["is_large"] = card.get("is_large", False)
-                card["status"] = card.get("status", 0)
-            if "global_notice" not in data:
-                data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
-            if "attendance" not in data:
-                data["attendance"] = {}
-            if "admin_log" not in data:
-                data["admin_log"] = []
-            if "trackers" not in data:
-                data["trackers"] = {}
-            return data
+        # [수정 3: collection이 정상적으로 있을 때만 데이터를 불러오게 방어!]
+        if collection is not None:
+            data = collection.find_one({"_id": "main_state"})
+            if data:
+                cards = data.get("cards", [])
+                if len(cards) > 16:
+                    data["cards"] = cards[:16]
+                elif len(cards) < 16:
+                    new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
+                    data["cards"].extend(new_cards)
+                for i, card in enumerate(data["cards"]):
+                    card["user"] = card.get("user") or f"자리{i+1}"
+                    card["is_mosaic"] = card.get("is_mosaic", False)
+                    card["is_large"] = card.get("is_large", False)
+                    card["status"] = card.get("status", 0)
+                if "global_notice" not in data:
+                    data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
+                if "attendance" not in data:
+                    data["attendance"] = {}
+                if "admin_log" not in data:
+                    data["admin_log"] = []
+                if "trackers" not in data:
+                    data["trackers"] = {}
+                return data
+            else:
+                collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
+                return initial_data
         else:
-            collection.update_one({"_id": "main_state"}, {"$set": initial_data}, upsert=True)
             return initial_data
     except Exception as e:
         print("망고로드 초기화 에러 (하지만 서버는 죽지 않습니다!):", e)
@@ -56,10 +71,13 @@ def load_data():
 
 def save_data(data):
     try:
-        collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
+        # [수정 4: collection이 정상일 때만 저장해서 에러 홍수 차단!]
+        if collection is not None:
+            collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
+        else:
+            pass # 연결 안 됐으면 조용히 넘어가기
     except Exception as e:
         print("망고로드 저장 에러:", e)
-
 server_state = load_data()
 app = FastAPI()
 
