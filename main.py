@@ -852,8 +852,7 @@ def read_root():
                                 const cardEl = document.getElementById(`card-card-${data.index}`);
                                 if (cardEl) { cardEl.style.order = (data.user === myName && myName) ? -1 : 0; }
                                 const box = document.getElementById(`stream-box-${data.index}`); 
-                                if (box && !box.querySelector('video')) { renderBox(data.index); } 
-                                if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
+                                if (box && !box.querySelector('video')) { renderBox(data.index); }
                                 applyEmptySlotVisibility(); 
                             } 
                             else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
