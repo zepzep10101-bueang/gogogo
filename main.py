@@ -339,6 +339,7 @@ def read_root():
                             <div>
                                 <label for="themeColorPicker">🎨 테마 색상:</label>
                                 <input type="color" id="themeColorPicker" value="#d87093" oninput="changeThemeColor(this.value)" onchange="saveRecordData(true)">
+                            </div>
                         </div>
                     </div>
 
