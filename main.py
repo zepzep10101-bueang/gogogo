@@ -475,6 +475,8 @@ def read_root():
             let recPomoInterval = null;
             let recPomoSeconds = 25 * 60;
             let recIsWorking = true;
+            window.recViewYear = new Date().getFullYear();
+            window.recViewMonth = new Date().getMonth() + 1;
 
             function setMediaBitrate(sdp, bitrate) {
                 let lines = sdp.split('\n');
@@ -942,6 +944,9 @@ def read_root():
                 const now = new Date();
                 const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
                 
+                window.recViewYear = now.getFullYear();
+                window.recViewMonth = now.getMonth() + 1;
+                
                 if (isMe) {
                     if (window.trackersData && window.trackersData[nickname]) {
                         if (window.trackersData[nickname].lastDate && window.trackersData[nickname].lastDate !== todayStr) {
@@ -1019,10 +1024,21 @@ def read_root():
 
             function buildRecordCalendar(nickname, calendarData) {
                 const now = new Date();
-                const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate();
+                const y = window.recViewYear;
+                const m = window.recViewMonth;
+                const today = (y === now.getFullYear() && m === now.getMonth() + 1) ? now.getDate() : -1;
                 const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 
-                document.getElementById('rec-cal-month-title').innerHTML = `📅 월간 집필 통계 (${m}월) <button class="rec-btn" onclick="toggleRecCalendar()" id="rec-cal-toggle-btn" style="font-size: 11px; padding: 3px 8px;">접기 🔼</button>`;
+                document.getElementById('rec-cal-month-title').innerHTML = `
+                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                        <span>
+                            <button class="rec-btn" onclick="changeRecMonth(-1, '${nickname}')" style="padding: 2px 6px;">◀️</button>
+                            📅 ${y}년 ${m}월 집필 통계
+                            <button class="rec-btn" onclick="changeRecMonth(1, '${nickname}')" style="padding: 2px 6px;">▶️</button>
+                        </span>
+                        <button class="rec-btn" onclick="toggleRecCalendar()" id="rec-cal-toggle-btn" style="font-size: 11px; padding: 3px 8px;">접기 🔼</button>
+                    </div>
+                `;
                 
                 const grid = document.getElementById('rec-calendar-grid');
                 let html = '';
@@ -1333,6 +1349,15 @@ def read_root():
                     osc.stop(audioCtx.currentTime + 0.15);
                     beepCount++;
                 }, 200);
+            }
+
+            function changeRecMonth(offset, nickname) {
+                window.recViewMonth += offset;
+                if (window.recViewMonth < 1) { window.recViewMonth = 12; window.recViewYear--; }
+                else if (window.recViewMonth > 12) { window.recViewMonth = 1; window.recViewYear++; }
+                
+                const data = window.trackersData[nickname] || { calendar: {} };
+                buildRecordCalendar(nickname, data.calendar || {});
             }
 
             checkLogin();
