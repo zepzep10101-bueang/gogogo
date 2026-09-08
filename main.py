@@ -4,6 +4,9 @@ import json
 import os
 import uvicorn
 import asyncio
+import copy
+import uuid
+from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 
 # [디오 최종 방어막 수정: 0.5초 기다렸다가 변수를 읽어오게 해서 Empty host 원천 차단!]
@@ -72,7 +75,7 @@ def load_data():
             return initial_data
     except Exception as e:
         print("망고로드 초기화 에러 (하지만 서버는 죽지 않습니다!):", e)
-        return initial_data
+        raise RuntimeError("DB를 읽지 못해 기존 기록 보호를 위해 시작을 중단합니다.") from e
 
 def save_data(data):
     try:
@@ -80,8 +83,16 @@ def save_data(data):
             collection.update_one({"_id": "main_state"}, {"$set": data}, upsert=True)
     except Exception as e:
         print("망고로드 저장 에러:", e)
+        raise
 
 server_state = load_data()
+for message in server_state.get("chat_history", []):
+    message.setdefault("id", uuid.uuid4().hex)
+save_lock = asyncio.Lock()
+
+async def persist_state():
+    async with save_lock:
+        await asyncio.to_thread(save_data, copy.deepcopy(server_state))
 app = FastAPI()
 
 class ConnectionManager:
@@ -137,6 +148,54 @@ class ConnectionManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
 manager = ConnectionManager()
+
+
+KST = timezone(timedelta(hours=9))
+
+def normalize_tracker(nickname, now=None):
+    now = now or datetime.now(KST)
+    day = f"{now.year}-{now.month}-{now.day}"
+    data = server_state.setdefault("trackers", {}).setdefault(nickname, {})
+    timer = data.setdefault("timer", {"date": data.get("lastDate", day), "seconds": 0, "started": None})
+    if not timer.get("migrated"):
+        old = data.get("calendar", {}).get(now.strftime("%Y-%m"), {}).get(str(now.day), {})
+        if timer["date"] == day:
+            timer["seconds"] = old.get("seconds", 0)
+        timer["migrated"] = True
+    if timer["date"] != day:
+        old_date = timer["date"]
+        try:
+            y, m, d = map(int, old_date.split("-"))
+            boundary = datetime(y, m, d, tzinfo=KST) + timedelta(days=1)
+            elapsed = timer["seconds"] + (max(0, boundary.timestamp() - timer["started"]) if timer.get("started") else 0)
+            record = data.setdefault("calendar", {}).setdefault(f"{y}-{m:02d}", {}).setdefault(str(d), {})
+            record["seconds"] = int(elapsed)
+        except (ValueError, TypeError):
+            pass
+        timer.update(date=day, seconds=0, started=None)
+        data["doneChars"] = 0
+    data["lastDate"] = day
+    elapsed = timer["seconds"] + (max(0, now.timestamp() - timer["started"]) if timer.get("started") else 0)
+    record = data.setdefault("calendar", {}).setdefault(now.strftime("%Y-%m"), {}).setdefault(str(now.day), {})
+    record.update(target=data.get("targetChars", 5000), done=data.get("doneChars", 0), seconds=int(elapsed))
+    return data
+
+def public_tracker(data):
+    return {k: copy.deepcopy(v) for k, v in data.items() if k != "todos"}
+
+def state_for(nickname):
+    result = {k: copy.deepcopy(v) for k, v in server_state.items() if k not in ("trackers", "identity_keys")}
+    result["trackers"] = {name: (copy.deepcopy(normalize_tracker(name)) if name == nickname else public_tracker(normalize_tracker(name))) for name in list(server_state.get("trackers", {}))}
+    return result
+
+async def publish_tracker(nickname):
+    data = normalize_tracker(nickname)
+    for conn in list(manager.active_connections):
+        if manager.active_users.get(conn) == "연결중...":
+            continue
+        own = manager.active_users.get(conn) == nickname
+        await conn.send_json({"type": "tracker_update", "nickname": nickname, "tracker_data": copy.deepcopy(data) if own else public_tracker(data)})
+
 
 @app.get("/user_count")
 def get_user_count():
@@ -267,6 +326,7 @@ def read_root():
                 <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 10px;">닉네임은 한 번만 적으면 저장 돼!</p>
                 <div id="loginUserCount" style="margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894; background: rgba(0, 184, 148, 0.15); padding: 8px; border-radius: 6px; border: 1px solid rgba(0, 184, 148, 0.4);">🔥 현재 달리고 있는 작가님: 확인 중...</div>
                 <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
+                <p id="loginStatus" role="status" style="max-width:300px;color:#ffeaa7;margin:8px auto;"></p>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()"><br>
                 <button onclick="login()">입장하기</button>
             </div>
@@ -366,7 +426,7 @@ def read_root():
                     </div>
 
                     <div class="rec-section" id="rec-todo-section">
-                        <h3>📝 오늘의 할 일</h3>
+                        <h3>📝 나만 보는 할 일 · 삭제 전까지 유지</h3>
                         <ul class="rec-list" id="rec-todo-list"></ul>
                         <div class="rec-todo-input-box" id="rec-todo-input-area">
                             <input type="text" id="rec-new-todo-text" placeholder="새로운 할 일을 입력하세요..." onkeypress="if(event.key==='Enter') addRecTodo()">
@@ -374,7 +434,8 @@ def read_root():
                         </div>
                     </div>
 
-                    <div class="rec-section" id="rec-pomo-section">
+                    <div class="rec-section"><h3>🏆 이번 달 목표</h3><label>월 목표 <input id="rec-month-goal" type="number" min="0" step="1000" class="rec-input-edit" onchange="saveRecordData(true)"> 자</label><div id="rec-month-progress"></div></div>
+                        <div class="rec-section" id="rec-pomo-section">
                         <h3>
                             🍅 개인 뽀모도로
                         </h3>
@@ -409,16 +470,16 @@ def read_root():
         <div class="video-background" id="bgContainer"><div id="bgMediaWrapper"></div></div>
         <div class="overlay"></div>
         
-        <button id="restorePanelBtn" onclick="toggleSidePanel()" style="display:none; position:fixed; right:20px; bottom:20px; z-index:9999; background:#6c5ce7; color:white; border:none; border-radius:50px; padding:12px 18px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;">💬 패널 열기</button>
+        <button id="restorePanelBtn" onclick="toggleDashboard()" style="display:none; position:fixed; right:20px; bottom:20px; z-index:9999; background:#6c5ce7; color:white; border:none; border-radius:50px; padding:12px 18px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;">💬 패널 열기</button>
 
         <div class="main-container">
             <div class="card-grid" id="cardGrid"></div>
             <div class="side-panel">
-                <div class="panel-box" style="flex-shrink: 0;">
+                <div class="panel-box" id="dashboardPanel" style="flex-shrink: 0;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
-                            <button onclick="toggleSidePanel()" style="background:#636e72; color:white; border:none; border-radius:3px; padding:3px 6px; font-size:10px; cursor:pointer; font-weight:bold;" title="집중 모드: 패널 숨기기">➡️ 접기</button>
+                            <button onclick="toggleDashboard()" style="background:#636e72; color:white; border:none; border-radius:3px; padding:3px 6px; font-size:10px; cursor:pointer; font-weight:bold;" id="dashboardToggle" title="대시보드만 접기">➡️ 접기</button>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
@@ -446,7 +507,7 @@ def read_root():
                         <h3 style="font-size: 14px; white-space: nowrap;">💬 실시간 채팅</h3>
                         <div style="display:flex; gap: 2px;">
                             <button onclick="forceRecoverWebRTC()" class="recovery-btn" style="font-size:9px; padding:2px 4px;">🔄 복구</button>
-                            <button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
+                            <button id="chatToggle" onclick="toggleChatPanel()" class="recovery-btn">접기</button><button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -541,7 +602,7 @@ def read_root():
             function renderAdminLog() { const container = document.getElementById('adminLogContent'); if (!window.adminLogData || window.adminLogData.length === 0) { container.innerHTML = "기록이 없습니다."; return; } container.innerHTML = window.adminLogData.map(log => `<div style="margin-bottom: 4px;">[${formatLogTime(log.time)}] <b style="color:#ffeaa7;">${log.msg}</b></div>`).join(""); container.scrollTop = container.scrollHeight; }
             
             function renderAttendanceBoard() {
-                const now = new Date(); const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate(); const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+                const now = kstNow(); const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate(); const monthStr = `${y}-${String(m).padStart(2, '0')}`;
                 const calTitleEl = document.getElementById('calMonthTitle'); if (calTitleEl) calTitleEl.innerText = `🍀 ${y}년 ${m}월 내 출석부`;
                 const grid = document.getElementById('calendarGrid');
                 if (grid) {
@@ -560,13 +621,13 @@ def read_root():
                 const monthData = window.attendanceData[monthStr] || {}; let rankArr = []; let todayAttendees = [];
                 for (let user in monthData) { const stamps = monthData[user]; rankArr.push({ name: user, count: stamps.length }); if (stamps.includes(today)) { todayAttendees.push(user); } }
                 rankArr.sort((a, b) => b.count - a.count); let rankHtml = '';
-                if (rankArr.length === 0) { rankHtml = '아직 이번 달 출석한 사람이 없어!'; } else { rankArr.forEach((item, idx) => { let medal = '🏅'; if (idx === 0) medal = '🥇'; else if (idx === 1) medal = '🥈'; else if (idx === 2) medal = '🥉'; rankHtml += `<div style="${(idx < 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${item.name} : ${item.count}일</div>`; }); }
+                if (rankArr.length === 0) { rankHtml = '아직 이번 달 출석한 사람이 없어!'; } else { rankArr.forEach((item, idx) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; let medal = ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '🏅'; rankHtml += `<div style="${(idx < 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
                 let todayHtml = todayAttendees.length === 0 ? '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!' : todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${u}</span>`).join('');
                 const rankEl = document.getElementById('attRankingList'); const todayEl = document.getElementById('attTodayList');
                 if (rankEl) rankEl.innerHTML = rankHtml; if (todayEl) todayEl.innerHTML = todayHtml;
             }
             function stampAttendance(y, m, d) { const monthStr = `${y}-${String(m).padStart(2, '0')}`; const myName = window.myNickname || "익명"; if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) return; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName })); } }
-            function autoStampToday() { const now = new Date(); const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; const myName = window.myNickname; if (!myName) return; const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || []; if (!myAtt.includes(now.getDate())) { stampAttendance(now.getFullYear(), now.getMonth() + 1, now.getDate()); } }
+            function autoStampToday() { const now = kstNow(); const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; const myName = window.myNickname; if (!myName) return; const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || []; if (!myAtt.includes(now.getDate())) { stampAttendance(now.getFullYear(), now.getMonth() + 1, now.getDate()); } }
             function loadLocalBackground() { const bgType = localStorage.getItem('myBgType'); const bgData = localStorage.getItem('myBgData'); if (bgType === 'image' && bgData) { document.getElementById('bgMediaWrapper').innerHTML = `<img src="${bgData}" alt="Full Background">`; } else if (bgType === 'youtube' && bgData) { document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${bgData}?autoplay=1&mute=1&loop=1&playlist=${bgData}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; } }
             function makeLinksClickable(text) { return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>'); }
             function formatNotice(text) { return !text ? "" : makeLinksClickable(text).replace(/\n/g, '<br>'); }
@@ -590,17 +651,23 @@ def read_root():
                 } 
                 window.myNickname = inputNick; 
                 localStorage.setItem('mySavedNickname', inputNick); 
-                document.getElementById('loginOverlay').style.display = 'none'; 
+                loginNotice('입장 확인 중…'); 
                 initCards(); 
                 connectWebSocket(); 
                 loadLocalBackground(); 
-                loadMyLocalTrackerData(); 
             }
             
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
-            let ws = null; let pingInterval = null; 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리{i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
+            let ws = null; let pingInterval = null;
+            let loginWaitTimer = null; let reconnectTimer = null;
+            function loginNotice(message) {
+                document.getElementById('loginOverlay').style.display='flex';
+                document.getElementById('loginStatus').textContent=message;
+                const status=document.getElementById('connStatus');
+                status.textContent='입장 대기'; status.className='status-indicator status-offline';
+            } 
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
@@ -624,7 +691,22 @@ def read_root():
             function setStatus(index, s) { const menu = document.getElementById(`status-menu-${index}`); if(menu) menu.style.display = 'none'; cardData[index].status = s; updateStatusUI(index, s); if (s !== 0 && myStreams[index]) { stopShare(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: s })); } renderBox(index); }
             document.addEventListener('click', function(event) { if (!event.target.closest('.status-wrap')) { for(let i=0; i<16; i++) { const m = document.getElementById(`status-menu-${i}`); if(m) m.style.display = 'none'; } } });
             
-            function logChat(sender, msg, timeStr) { const history = document.getElementById('chatHistory'); const tSpan = timeStr ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${timeStr}</span>` : ''; history.innerHTML += `<div style="margin-bottom: 5px;"><b>${sender}</b>: ${msg}${tSpan}</div>`; history.scrollTop = history.scrollHeight; }
+            function logChat(sender, msg, timeStr, id) {
+                const history = document.getElementById('chatHistory');
+                const row = document.createElement('div');
+                const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
+                row.append(name, document.createTextNode(': ' + msg + ' ' + (timeStr || '')));
+                if (id && sender === window.myNickname) {
+                    const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'rec-btn';
+                    button.onclick = () => { if(confirm('이 메시지를 삭제할까요?')) ws.send(JSON.stringify({type:'delete_chat', id})); };
+                    row.append(button);
+                }
+                history.append(row); history.scrollTop = history.scrollHeight;
+            }
+            function renderChatHistory(messages) { document.getElementById('chatHistory').replaceChildren(); messages.forEach(c => logChat(c.senderName,c.msg,c.time,c.id)); }
+            function clearChat() { if(confirm('채팅 전체를 삭제할까요?')) ws.send(JSON.stringify({type:'clear_chat'})); }
+
+
             function clearChat() { if (confirm("채팅창을 전부 깨끗하게 지울까?")) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "clear_chat" })); } } }
             
             function forceRecoverWebRTC() { 
@@ -762,9 +844,17 @@ def read_root():
             function connectWebSocket() {
                 const loc = window.location; let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://"; const wsUrl = wsProtocol + loc.host + "/ws";
                 try {
+                    clearTimeout(loginWaitTimer);
+                    clearTimeout(reconnectTimer);
+                    if(ws) { ws.onclose=null; ws.onmessage=null; ws.onopen=null; ws.close(); }
                     ws = new WebSocket(wsUrl);
+                    loginWaitTimer = setTimeout(() => {
+                        if(ws) { ws.onclose=null; ws.close(); }
+                        if(pingInterval) clearInterval(pingInterval);
+                        loginNotice('입장 확인이 지연되고 있어요. 잠시 후 입장하기를 다시 눌러주세요.');
+                    },15000);
                     ws.onopen = function() {
-                        const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
+                        const statusEl = document.getElementById('connStatus'); statusEl.innerText = "입장 확인 중"; statusEl.className = "status-indicator status-offline";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
                         
@@ -786,6 +876,7 @@ def read_root():
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
+                            if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
                             else if (data.type === "duplicate_kicked") {
@@ -800,10 +891,15 @@ def read_root():
                                 let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b style="color:white;">${u.nickname}</b>${kickBtn}</span>`; }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                             }
-                            else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time); } 
+                            else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time, data.id); } 
                             else if (data.type === "update_notice") { window.rawNotice = data.notice; document.getElementById('noticeText').innerHTML = formatNotice(data.notice); }
                             else if (data.type === "status_update") { cardData[data.index].status = data.status; updateStatusUI(data.index, data.status); const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } }
                             else if (data.type === "init_state") {
+                                clearTimeout(loginWaitTimer);
+                                document.getElementById('loginOverlay').style.display='none';
+                                document.getElementById('loginStatus').textContent='';
+                                const statusEl=document.getElementById('connStatus');
+                                statusEl.textContent='연결됨'; statusEl.className='status-indicator status-online';
                                 const state = data.state;
                                 if (state.global_notice) { window.rawNotice = state.global_notice; document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice); }
                                 if (state.attendance) { window.attendanceData = state.attendance; }
@@ -833,17 +929,20 @@ def read_root():
                                         }
                                     });
                                 }
-                                if (state.chat_history) { const historyEl = document.getElementById('chatHistory'); historyEl.innerHTML = ""; state.chat_history.forEach(chat => { const tSpan = chat.time ? `<span style="font-size:10px; color:#636e72; margin-left:6px;">${chat.time}</span>` : ''; historyEl.innerHTML += `<div style="margin-bottom: 5px;"><b>${chat.senderName}</b>: ${chat.msg}${tSpan}</div>`; }); historyEl.scrollTop = historyEl.scrollHeight; }
+                                if (state.chat_history) { renderChatHistory(state.chat_history); }
+                                loadMyLocalTrackerData(); refreshBadges();
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
                                 window.trackersData[data.nickname] = data.tracker_data;
+                                if (data.nickname === window.myNickname) restoreTimer();
+                                refreshBadges();
                                 if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
                                     loadRecordDataIntoUI(data.nickname);
                                 }
                             }
-                            else if (data.type === "attendance_update") { window.attendanceData = data.attendance; if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
+                            else if (data.type === "attendance_update") { window.attendanceData = data.attendance; refreshBadges(); if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
                             else if (data.type === "username_change") { 
                                 cardData[data.index].user = data.user; 
@@ -884,7 +983,8 @@ def read_root():
                         } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
                     
-                    ws.onclose = function() { 
+                    ws.onclose = function() {
+                        clearTimeout(loginWaitTimer); 
                         if (pingInterval) clearInterval(pingInterval); 
                         const statusEl = document.getElementById('connStatus'); 
                         if (statusEl) { 
@@ -893,9 +993,9 @@ def read_root():
                         } 
                         for (let key in peerConnections) { try { peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; }
                         for (let k in expectedShares) delete expectedShares[k];
-                        setTimeout(connectWebSocket, 3000); 
+                        reconnectTimer = setTimeout(connectWebSocket, 3000); 
                     };
-                } catch(e) { setTimeout(connectWebSocket, 2000); }
+                } catch(e) { clearTimeout(loginWaitTimer); loginNotice('연결을 시작하지 못했어요. 입장하기를 다시 눌러주세요.'); }
             }
 
             async function createOfferForViewer(index, viewerId) {
@@ -912,7 +1012,7 @@ def read_root():
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "offer", index: index, target: viewerId, sdp: pc.localDescription })); }
             }
 
-            function sendChat() { const input = document.getElementById('chatInput'); const msgText = input.value.trim(); if (!msgText) return; const myName = window.myNickname || "익명"; const now = new Date(); const month = now.getMonth() + 1; const date = now.getDate(); const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); const timeStr = `${month}/${date} ${timeString}`; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr })); input.value = ''; } }
+            function sendChat() { const input = document.getElementById('chatInput'); const msgText = input.value.trim(); if (!msgText) return; const myName = window.myNickname || "익명"; const now = kstNow(); const month = now.getMonth() + 1; const date = now.getDate(); const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); const timeStr = `${month}/${date} ${timeString}`; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "chat", senderName: myName, msg: msgText, time: timeStr })); input.value = ''; } }
             
             function openRecordModalByIndex(index) {
                 const cardUser = cardData[index].user;
@@ -941,7 +1041,7 @@ def read_root():
 
             function loadRecordDataIntoUI(nickname) {
                 const isMe = (nickname === window.myNickname);
-                const now = new Date();
+                const now = kstNow();
                 const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
                 
                 window.recViewYear = now.getFullYear();
@@ -951,11 +1051,11 @@ def read_root():
                     if (window.trackersData && window.trackersData[nickname]) {
                         if (window.trackersData[nickname].lastDate && window.trackersData[nickname].lastDate !== todayStr) {
                             window.trackersData[nickname].doneChars = 0;
-                            window.trackersData[nickname].todos = [];
+                            // Todos persist across dates.
                             window.trackersData[nickname].lastDate = todayStr;
                             recTotalSeconds = 0;
                             localStorage.setItem('doneChars', '0');
-                            localStorage.setItem('myTodos', '[]');
+                            // Keep private todos.
                             localStorage.setItem('lastDate', todayStr);
                             
                             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1004,7 +1104,8 @@ def read_root():
 
                 const ul = document.getElementById('rec-todo-list');
                 ul.innerHTML = '';
-                const todos = data.todos || [];
+                document.getElementById("rec-todo-list").closest(".rec-section").style.display = isMe ? "flex" : "none";
+                const todos = isMe ? (data.todos || []) : [];
                 todos.forEach(todo => {
                     const li = document.createElement('li');
                     const checked = todo.done ? "checked" : "";
@@ -1012,18 +1113,23 @@ def read_root():
                     const disabled = !isMe ? "disabled" : "";
                     const delBtn = isMe ? `<button class="rec-btn rec-btn-del" onclick="removeRecTodo(this)">삭제</button>` : "";
                     li.innerHTML = `
-                        <label><input type="checkbox" onchange="toggleRecTodo(this)" ${checked} ${disabled}> <span class="${compClass}">${todo.text}</span></label>
+                        <label><input type="checkbox" onchange="toggleRecTodo(this)" ${checked} ${disabled}> <span class="${compClass}">${escapeText(todo.text)}</span></label>
                         <div><span class="rec-time-tag">${todo.time || ''}</span> ${delBtn}</div>
                     `;
                     ul.appendChild(li);
                 });
 
                 buildRecordCalendar(nickname, data.calendar || {});
+                const goalMonth = monthKey();
+                document.getElementById('rec-month-goal').value = (data.monthlyGoals || {})[goalMonth] || 0;
+                document.getElementById('rec-month-goal').disabled = !isMe;
+                document.getElementById('rec-month-progress').textContent = '이번 달 완료: ' + monthlyDone(nickname).toLocaleString() + '자 ' + badgeFor(nickname);
+                if (isMe) restoreTimer();
                 checkGoalAchievement();
             }
 
             function buildRecordCalendar(nickname, calendarData) {
-                const now = new Date();
+                const now = kstNow();
                 const y = window.recViewYear;
                 const m = window.recViewMonth;
                 const today = (y === now.getFullYear() && m === now.getMonth() + 1) ? now.getDate() : -1;
@@ -1082,38 +1188,8 @@ def read_root():
                 grid.innerHTML = html;
             }
 
-            function loadMyLocalTrackerData() {
-                if (!window.trackersData) window.trackersData = {};
-                if (!window.trackersData[window.myNickname]) window.trackersData[window.myNickname] = { calendar: {}, todos: [], lastDate: "" };
-                
-                const now = new Date();
-                const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-                let savedLastDate = localStorage.getItem('lastDate');
+            function loadMyLocalTrackerData() { restoreTimer(); }
 
-                if (localStorage.getItem('targetChars')) { window.trackersData[window.myNickname].targetChars = localStorage.getItem('targetChars'); }
-                if (localStorage.getItem('themeColor')) { window.trackersData[window.myNickname].themeColor = localStorage.getItem('themeColor'); }
-
-                if (savedLastDate && savedLastDate !== todayStr) {
-                    window.trackersData[window.myNickname].doneChars = 0;
-                    window.trackersData[window.myNickname].todos = [];
-                    window.trackersData[window.myNickname].lastDate = todayStr;
-                    localStorage.setItem('doneChars', '0');
-                    localStorage.setItem('myTodos', '[]');
-                    localStorage.setItem('lastDate', todayStr);
-                    recTotalSeconds = 0;
-                } else {
-                    if (localStorage.getItem('doneChars')) { window.trackersData[window.myNickname].doneChars = localStorage.getItem('doneChars'); }
-                    if (localStorage.getItem('myTodos')) { 
-                        try { window.trackersData[window.myNickname].todos = JSON.parse(localStorage.getItem('myTodos')); } 
-                        catch(e) { window.trackersData[window.myNickname].todos = []; }
-                    }
-                    window.trackersData[window.myNickname].lastDate = todayStr;
-                }
-                
-                if(window.myNickname) {
-                    saveRecordData(true); 
-                }
-            }
 
             function checkGoalAchievement() {
                 const target = parseInt(document.getElementById('rec-target-chars').value) || 0;
@@ -1138,9 +1214,9 @@ def read_root():
             }
 
             function saveRecordData(isSilent = false) {
-                if (!window.myNickname) return;
+                if (!window.myNickname || window.currentViewingUser !== window.myNickname) return;
                 
-                const now = new Date();
+                const now = kstNow();
                 const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
 
                 if (!window.trackersData) window.trackersData = {};
@@ -1149,16 +1225,16 @@ def read_root():
 
                 if (myData.lastDate && myData.lastDate !== todayStr) {
                      document.getElementById('rec-done-chars').value = 0;
-                     document.getElementById('rec-todo-list').innerHTML = '';
+                     // Keep private todos in the UI.
                      recTotalSeconds = 0;
                      updateMainTimerDisplay();
                      myData.lastDate = todayStr;
                      myData.doneChars = 0;
-                     myData.todos = [];
+                     // Keep private todos.
                      localStorage.setItem('doneChars', '0');
-                     localStorage.setItem('myTodos', '[]');
+                     // Keep private todos.
                      localStorage.setItem('lastDate', todayStr);
-                     alert("자정이 지나 날짜가 변경되었습니다! 오늘의 완료량과 할 일이 자동으로 리셋되었습니다. 🌱");
+                     alert("자정이 지나 날짜가 변경되었습니다! 오늘의 완료량과 타이머가 초기화되었습니다. 할 일은 유지됩니다. 🌱");
                 }
 
                 const target = document.getElementById('rec-target-chars').value;
@@ -1178,6 +1254,8 @@ def read_root():
                 myData.doneChars = done;
                 myData.themeColor = color;
                 myData.lastDate = todayStr;
+                myData.monthlyGoals = myData.monthlyGoals || {};
+                myData.monthlyGoals[monthStr] = Math.max(0, Number(document.getElementById("rec-month-goal").value) || 0);
 
                 const ul = document.getElementById('rec-todo-list');
                 const lis = ul.querySelectorAll('li');
@@ -1228,21 +1306,10 @@ def read_root():
                 document.getElementById('rec-main-timer').textContent = `${hrs}:${mins}:${secs}`;
             }
 
-            function startMainTimer() {
-                if (recMainTimerInterval) return;
-                recMainTimerInterval = setInterval(() => { recTotalSeconds++; updateMainTimerDisplay(); }, 1000);
-            }
+            function startMainTimer() { timerAction('start'); }
+            function pauseMainTimer() { timerAction('pause'); }
+            function resetMainTimer() { if(confirm('오늘 집필 시간을 0으로 초기화할까요?')) timerAction('reset'); }
 
-            function pauseMainTimer() {
-                clearInterval(recMainTimerInterval);
-                recMainTimerInterval = null;
-            }
-
-            function resetMainTimer() {
-                pauseMainTimer();
-                recTotalSeconds = 0;
-                updateMainTimerDisplay();
-            }
 
             function startPomodoro() {
                 if (recPomoInterval) return;
@@ -1306,7 +1373,7 @@ def read_root():
                 const ul = document.getElementById('rec-todo-list');
                 const li = document.createElement('li');
                 li.innerHTML = `
-                    <label><input type="checkbox" onchange="toggleRecTodo(this)"> <span>${text}</span></label>
+                    <label><input type="checkbox" onchange="toggleRecTodo(this)"> <span>${escapeText(text)}</span></label>
                     <div><span class="rec-time-tag"></span> <button class="rec-btn rec-btn-del" onclick="removeRecTodo(this)">삭제</button></div>
                 `;
                 ul.appendChild(li);
@@ -1325,7 +1392,7 @@ def read_root():
                 const timeTag = li.querySelector('.rec-time-tag');
                 if (checkbox.checked) {
                     span.classList.add('rec-completed');
-                    const now = new Date();
+                    const now = kstNow();
                     timeTag.textContent = `(완료: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')})`;
                 } else {
                     span.classList.remove('rec-completed');
@@ -1360,6 +1427,87 @@ def read_root():
                 buildRecordCalendar(nickname, data.calendar || {});
             }
 
+            function kstNow() {
+                const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul', year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23'}).formatToParts(new Date());
+                const p = Object.fromEntries(parts.map(x => [x.type,x.value]));
+                return new Date(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second);
+            }
+            function monthKey() { const d=kstNow(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+            function dayKey() { const d=kstNow(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
+            function escapeText(value) { const el=document.createElement('span'); el.textContent=String(value ?? ''); return el.innerHTML; }
+            function timerAction(action) {
+                if (!ws || ws.readyState!==WebSocket.OPEN) { alert('재연결 후 타이머를 조작해주세요.'); return; }
+                ws.send(JSON.stringify({type:'timer_action',action}));
+            }
+            function restoreTimer() {
+                const data=window.trackersData[window.myNickname];
+                if (!data) return;
+                const t=data.timer;
+                if (!t || t.date!==dayKey()) recTotalSeconds=0;
+                else recTotalSeconds=Math.floor((Number(t.seconds)||0)+(t.started ? Math.max(0,Date.now()/1000-t.started):0));
+                updateMainTimerDisplay();
+            }
+            let observedDay=dayKey();
+            setInterval(() => {
+                restoreTimer(); refreshBadges();
+                if(observedDay!==dayKey()) {
+                    observedDay=dayKey(); window.goalAchieved=false;
+                    const mine=window.trackersData[window.myNickname];
+                    if(mine) { mine.doneChars=0; mine.lastDate=observedDay; if(mine.timer) mine.timer={date:observedDay,seconds:0,started:null}; }
+                    if(window.currentViewingUser===window.myNickname && mine) loadRecordDataIntoUI(window.myNickname);
+                    if(ws && ws.readyState===WebSocket.OPEN) { timerAction('sync'); autoStampToday(); }
+                }
+            },1000);
+            document.addEventListener('visibilitychange', () => { if(!document.hidden) restoreTimer(); });
+            function monthlyDone(name) {
+                const month=(window.trackersData[name]?.calendar || {})[monthKey()] || {};
+                return Object.values(month).reduce((sum,r)=>sum+Math.max(0,Number(r.done)||0),0);
+            }
+            function attendanceRank(name) {
+                const month=window.attendanceData[monthKey()] || {};
+                const count=new Set(month[name] || []).size;
+                if(!count) return 0;
+                return 1+Object.values(month).filter(days=>new Set(days).size>count).length;
+            }
+            function badgeFor(name) {
+                const rank=attendanceRank(name);
+                const medal=({1:'🥇',2:'🥈',3:'🥉'})[rank] || '';
+                const goal=Number(window.trackersData[name]?.monthlyGoals?.[monthKey()]) || 0;
+                return medal+(goal>0 && monthlyDone(name)>=goal ? '🏆':'');
+            }
+            function refreshBadges() {
+                cardData.forEach((card,i)=>{
+                    const input=document.getElementById(`username-${i}`);
+                    if(!input) return;
+                    let badge=document.getElementById(`badge-${i}`);
+                    if(!badge) { badge=document.createElement('span'); badge.id=`badge-${i}`; input.before(badge); }
+                    badge.textContent=badgeFor(card.user); badge.title='이번 달 출석 순위 / 월 목표 달성';
+                });
+                document.querySelectorAll('#userListStr b').forEach(el=>{
+                    const name=el.dataset.name || el.textContent; el.dataset.name=name; el.textContent=badgeFor(name)+name;
+                });
+            }
+            function toggleDashboard() {
+                const panel=document.getElementById('dashboardPanel');
+                const collapsed=panel.dataset.collapsed!=='true'; panel.dataset.collapsed=String(collapsed);
+                const heading=panel.firstElementChild;
+                Array.from(heading.children).slice(1).forEach(el=>el.style.display=collapsed?'none':'flex');
+                Array.from(panel.children).slice(1).forEach(el=>el.style.display=collapsed?'none':'');
+                document.getElementById('dashboardToggle').textContent=collapsed?'펼치기':'접기';
+                localStorage.setItem('dashboardCollapsed',String(collapsed));
+            }
+            function toggleChatPanel() {
+                const panel=document.querySelector('.chat-box');
+                const collapsed=panel.dataset.collapsed!=='true'; panel.dataset.collapsed=String(collapsed);
+                document.getElementById('chatHistory').style.display=collapsed?'none':'';
+                panel.querySelector('.chat-input').style.display=collapsed?'none':'flex';
+                panel.style.flexGrow=collapsed?'0':'1'; panel.style.height=collapsed?'auto':'100%';
+                document.getElementById('chatToggle').textContent=collapsed?'펼치기':'접기';
+                localStorage.setItem('chatCollapsed',String(collapsed));
+            }
+            if(localStorage.getItem('dashboardCollapsed')==='true') toggleDashboard();
+            if(localStorage.getItem('chatCollapsed')==='true') toggleChatPanel();
+
             checkLogin();
         </script>
     </body>
@@ -1373,7 +1521,7 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-        await websocket.send_text(json.dumps({"type": "init_state", "state": server_state}))
+        # Initial state is sent after the nickname is registered.
         
         while True:
             data = await websocket.receive_text()
@@ -1385,7 +1533,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "set_nickname":
-                nickname = packet.get("nickname", "익명")
+                nickname = str(packet.get("nickname", "")).strip()[:40]
+                if not nickname:
+                    await websocket.close(code=1008)
+                    return
                 owned = packet.get("owned", [])
                 
                 to_close = []
@@ -1401,13 +1552,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         pass
 
                 manager.active_users[websocket] = nickname
+                await websocket.send_json({"type": "init_state", "state": state_for(nickname)})
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
                 log_entry = {"msg": f"{nickname} 님이 입장했습니다.", "time": __import__('time').time()}
                 server_state.setdefault("admin_log", []).append(log_entry)
                 if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await persist_state()
                 await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
                 
                 recovered = False
@@ -1435,7 +1587,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.send_text(change_packet)
 
                 if recovered:
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                     continue
 
                 assigned_idx = None
@@ -1446,15 +1598,42 @@ async def websocket_endpoint(websocket: WebSocket):
                 if assigned_idx is not None:
                     manager.active_slots[client_id].append(assigned_idx)
                     server_state["cards"][assigned_idx]["user"] = nickname
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                     change_packet = json.dumps({"type": "username_change", "index": assigned_idx, "user": nickname})
                     await manager.broadcast(change_packet)
                     await websocket.send_text(change_packet)
                 continue
 
+            nickname = manager.active_users.get(websocket)
+            if not nickname or nickname == "연결중...":
+                continue
+
+            if p_type == "timer_action":
+                tracker = normalize_tracker(nickname)
+                timer = tracker["timer"]
+                action = packet.get("action")
+                if action in ("pause", "reset"):
+                    if timer.get("started"):
+                        timer["seconds"] += max(0, time.time() - timer["started"])
+                    timer["started"] = None
+                    if action == "reset": timer["seconds"] = 0
+                elif action == "start" and timer.get("started") is None:
+                    timer["started"] = time.time()
+                normalize_tracker(nickname)
+                await persist_state()
+                await publish_tracker(nickname)
+                continue
+
+            if p_type == "delete_chat":
+                message_id = packet.get("id")
+                server_state["chat_history"] = [c for c in server_state["chat_history"] if not (c.get("id") == message_id and c.get("senderName") == nickname)]
+                await persist_state()
+                await manager.broadcast(json.dumps({"type": "chat_history", "messages": server_state["chat_history"]}))
+                continue
+
             if p_type == "clear_chat":
                 server_state["chat_history"] = []
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await persist_state()
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
                 await websocket.send_text(json.dumps({"type": "chat_cleared"}))
                 continue
@@ -1468,31 +1647,39 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "chat":
-                chat_obj = {"senderName": packet.get("senderName"), "msg": packet.get("msg"), "time": packet.get("time", "")}
+                chat_obj = {"id": uuid.uuid4().hex, "senderName": nickname, "msg": str(packet.get("msg", ""))[:4000], "time": datetime.now(KST).strftime("%m/%d %H:%M")}
                 server_state["chat_history"].append(chat_obj)
                 if len(server_state["chat_history"]) > 100: server_state["chat_history"].pop(0)
-                await manager.broadcast(json.dumps(packet))
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await manager.broadcast(json.dumps({"type": "chat", **chat_obj}))
+                await persist_state()
                 
             elif p_type == "attendance":
-                month = packet.get("month")
-                day = packet.get("day")
-                nickname = packet.get("nickname")
+                now = datetime.now(KST)
+                month = now.strftime("%Y-%m")
+                day = now.day
                 if "attendance" not in server_state: server_state["attendance"] = {}
                 if month not in server_state["attendance"]: server_state["attendance"][month] = {}
                 if nickname not in server_state["attendance"][month]: server_state["attendance"][month][nickname] = []
                 if day not in server_state["attendance"][month][nickname]:
                     server_state["attendance"][month][nickname].append(day)
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                await persist_state()
                 await manager.broadcast(json.dumps({"type": "attendance_update", "attendance": server_state["attendance"]}))
                 
             elif p_type == "tracker_update":
-                nickname = packet.get("nickname")
-                if "trackers" not in server_state: server_state["trackers"] = {}
-                server_state["trackers"][nickname] = packet.get("tracker_data")
-                asyncio.create_task(asyncio.to_thread(save_data, server_state))
-                await manager.broadcast(json.dumps({"type": "tracker_update", "nickname": nickname, "tracker_data": packet.get("tracker_data")}), exclude=websocket)
-                
+                current = normalize_tracker(nickname)
+                incoming = packet.get("tracker_data", {})
+                if not isinstance(incoming, dict): continue
+                for key in ("targetChars", "themeColor", "todos", "monthlyGoals"):
+                    if key in incoming: current[key] = copy.deepcopy(incoming[key])
+                if incoming.get("lastDate") == current["lastDate"]:
+                    current["doneChars"] = incoming.get("doneChars", current.get("doneChars", 0))
+                now = datetime.now(KST)
+                timer = current["timer"]
+                seconds = timer["seconds"] + (max(0, time.time() - timer["started"]) if timer.get("started") else 0)
+                current.setdefault("calendar", {}).setdefault(now.strftime("%Y-%m"), {})[str(now.day)] = {"target": current.get("targetChars", 5000), "done": current.get("doneChars", 0), "seconds": int(seconds)}
+                await persist_state()
+                await publish_tracker(nickname)
+
             else:
                 packet["sender"] = client_id
                 if p_type == "username_change":
@@ -1502,13 +1689,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     if not val.startswith("자리"):
                         if client_id not in manager.active_slots: manager.active_slots[client_id] = []
                         if idx not in manager.active_slots[client_id]: manager.active_slots[client_id].append(idx)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                 elif p_type == "card_bg_change":
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                 elif p_type == "toggle_mosaic":
                     server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
                 elif p_type == "stop_share":
@@ -1516,10 +1703,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     if idx in manager.active_shares: del manager.active_shares[idx]
                 elif p_type == "update_notice":
                     server_state["global_notice"] = packet.get("notice", "")
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                 elif p_type == "status_update":
                     server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
-                    asyncio.create_task(asyncio.to_thread(save_data, server_state))
+                    await persist_state()
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
@@ -1532,7 +1719,7 @@ async def websocket_endpoint(websocket: WebSocket):
         
         if client_id in manager.active_slots:
             del manager.active_slots[client_id]
-            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await persist_state()
 
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
@@ -1541,7 +1728,7 @@ async def websocket_endpoint(websocket: WebSocket):
             log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
             if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
-            asyncio.create_task(asyncio.to_thread(save_data, server_state))
+            await persist_state()
             await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
         
         for idx in freed_indexes:
