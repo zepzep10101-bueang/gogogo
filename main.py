@@ -692,7 +692,7 @@ def read_root():
                 const monthData = window.attendanceData[monthStr] || {}; let rankArr = []; let todayAttendees = [];
                 for (let user in monthData) { const stamps = monthData[user]; rankArr.push({ name: user, count: stamps.length }); if (stamps.includes(today)) { todayAttendees.push(user); } }
                 rankArr.sort((a, b) => b.count - a.count); let rankHtml = '';
-                if (rankArr.length === 0) { rankHtml = '아직 이번 달 출석한 사람이 없어!'; } else { rankArr.forEach((item, idx) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; let medal = ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '🏅'; rankHtml += `<div style="${(idx < 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
+                if (rankArr.length === 0) { rankHtml = '아직 이번 달 출석한 사람이 없어!'; } else { rankArr.forEach((item, idx) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; const medalGroup = attendanceMedalGroup(item.name); let medal = ({1:'🥇',2:'🥈',3:'🥉'})[medalGroup] || '🏅'; rankHtml += `<div style="${(medalGroup > 0 && medalGroup <= 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
                 let todayHtml = todayAttendees.length === 0 ? '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!' : todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${u}</span>`).join('');
                 const rankEl = document.getElementById('attRankingList'); const todayEl = document.getElementById('attTodayList');
                 if (rankEl) rankEl.innerHTML = rankHtml; if (todayEl) todayEl.innerHTML = todayHtml;
@@ -1554,8 +1554,15 @@ def read_root():
                 if(!count) return 0;
                 return 1+Object.values(month).filter(days=>new Set(days).size>count).length;
             }
+            function attendanceMedalGroup(name) {
+                const month = window.attendanceData[monthKey()] || {};
+                const count = new Set(month[name] || []).size;
+                if (!count) return 0;
+                const higherCounts = new Set(Object.values(month).map(days => new Set(days).size).filter(value => value > count));
+                return higherCounts.size + 1;
+            }
             function badgeFor(name) {
-                const rank=attendanceRank(name);
+                const rank=attendanceMedalGroup(name);
                 const medal=({1:'🥇',2:'🥈',3:'🥉'})[rank] || '';
                 const goal=Number(window.trackersData[name]?.monthlyGoals?.[monthKey()]) || 0;
                 return medal+(goal>0 && monthlyDone(name)>=goal ? '🏆':'');
