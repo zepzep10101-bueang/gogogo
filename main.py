@@ -698,12 +698,20 @@ def read_root():
                 const history = document.getElementById('chatHistory');
                 const row = document.createElement('div');
                 const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
-                row.append(name, document.createTextNode(': ' + msg + ' ' + (timeStr || '')));
+                row.append(name, document.createTextNode(': ' + msg));
+                const metadata = document.createElement('span');
+                metadata.style.cssText = 'display:inline-block;margin-left:5px;font-size:9px;color:rgba(180,190,200,0.38);font-weight:normal;white-space:nowrap;';
+                const timestamp = document.createElement('span');
+                timestamp.textContent = timeStr || '';
+                timestamp.style.cssText = 'font-size:9px;color:rgba(180,190,200,0.38);font-weight:normal;';
+                metadata.append(timestamp);
                 if (id && sender === window.myNickname) {
                     const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'chat-delete-btn'; button.title = '이 메시지 삭제';
                     button.onclick = () => { if(confirm('이 메시지를 삭제할까요?')) ws.send(JSON.stringify({type:'delete_chat', id})); };
-                    row.append(button);
+                    button.style.cssText = 'font-size:9px;color:rgba(180,190,200,0.38);background:transparent;border:0;padding:0 2px;margin-left:4px;line-height:1.2;font-weight:normal;cursor:pointer;';
+                    metadata.append(button);
                 }
+                row.append(metadata);
                 history.append(row); history.scrollTop = history.scrollHeight;
             }
             function renderChatHistory(messages) { document.getElementById('chatHistory').replaceChildren(); messages.forEach(c => logChat(c.senderName,c.msg,c.time,c.id)); }
