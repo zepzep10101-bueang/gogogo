@@ -135,9 +135,7 @@ class ConnectionManager:
         self.active_connections = []
         self.active_shares = {}
         self.active_users = {}
-        self.active_slots = {}
-        self.outboxes = {}
-        self.writers = {} 
+        self.active_slots = {} 
 
     async def connect(self, websocket):
         await websocket.accept()
@@ -145,17 +143,12 @@ class ConnectionManager:
         self.active_users[websocket] = "연결중..."
 
     def disconnect(self, websocket):
-        self.outboxes.pop(websocket, None)
-        writer = self.writers.pop(websocket, None)
-        if writer and writer is not asyncio.current_task():
-            writer.cancel()
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         if websocket in self.active_users:
             del self.active_users[websocket]
             
         disconnected_client = str(id(websocket))
-        self.active_slots.pop(disconnected_client, None)
         freed_indexes = []
         to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
         for idx in to_remove:
@@ -163,53 +156,33 @@ class ConnectionManager:
             freed_indexes.append(idx)
         return freed_indexes
 
-    def enqueue(self, conn, message):
-        if conn not in self.active_connections:
-            return
-        queue = self.outboxes.get(conn)
-        if queue is None:
-            queue = asyncio.Queue(maxsize=256)
-            self.outboxes[conn] = queue
-            self.writers[conn] = asyncio.create_task(self.deliver(conn, queue))
-        try:
-            queue.put_nowait(message)
-        except asyncio.QueueFull:
-            # Close only the overloaded recipient; never block every sender.
-            writer = self.writers.get(conn)
-            if writer:
-                writer.cancel()
-
-    async def deliver(self, conn, queue):
-        try:
-            while True:
-                message = await queue.get()
-                await asyncio.wait_for(conn.send_text(message), timeout=15)
-        except asyncio.CancelledError:
-            if conn not in self.active_connections:
-                return
-            print("Room outgoing queue full:", str(id(conn)), flush=True)
-        except Exception as exc:
-            print("Room send failure:", str(id(conn)), type(exc).__name__, flush=True)
-        try:
-            await asyncio.wait_for(conn.close(code=1013), timeout=2)
-        except Exception:
-            pass
-
     async def broadcast(self, message, exclude=None):
-        packet = json.loads(message)
-        target = packet.get("target")
-        for conn in list(self.active_connections):
-            if conn != exclude and (not target or str(id(conn)) == str(target)):
-                self.enqueue(conn, message)
-        await asyncio.sleep(0)
+        async def send_to_client(conn):
+            if conn != exclude:
+                try:
+                    await conn.send_text(message)
+                except Exception:
+                    self.disconnect(conn)
+
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def broadcast_user_list(self):
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
-        users_info.sort(key=lambda item: item["nickname"].casefold())
-        await self.broadcast(json.dumps({"type": "user_list", "count": len(users_info), "users": users_info}))
+        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
+        
+        async def send_to_client(conn):
+            try:
+                await conn.send_text(msg)
+            except Exception:
+                self.disconnect(conn)
+
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 manager = ConnectionManager()
-
 
 KST = timezone(timedelta(hours=9))
 
@@ -248,22 +221,18 @@ def state_for(nickname):
     result = {k: copy.deepcopy(v) for k, v in server_state.items() if k not in ("trackers", "identity_keys")}
     result["trackers"] = {name: (copy.deepcopy(normalize_tracker(name)) if name == nickname else public_tracker(normalize_tracker(name))) for name in list(server_state.get("trackers", {}))}
     return result
-
 async def publish_tracker(nickname):
-    data = copy.deepcopy(normalize_tracker(nickname))
-    async def send_one(conn):
+    current = normalize_tracker(nickname)
+    async def send(conn):
         name = manager.active_users.get(conn)
-        if not name or name == "연결중...":
-            return
-        packet = {"type": "tracker_update", "nickname": nickname,
-                  "tracker_data": data if name == nickname else public_tracker(data)}
-        manager.enqueue(conn, json.dumps(packet))
-    await asyncio.gather(*(send_one(conn) for conn in list(manager.active_connections)))
-
+        packet = {"type":"tracker_update", "nickname":nickname, "tracker_data":copy.deepcopy(current) if name == nickname else public_tracker(current)}
+        try:
+            await conn.send_text(json.dumps(packet))
+        except Exception:
+            pass
+    await asyncio.gather(*(send(conn) for conn in list(manager.active_connections)))
 
 background_read_lock = asyncio.Lock()
-background_cache = {}
-background_retry_after = {}
 
 def read_card_background(index):
     if collection is None:
@@ -287,19 +256,14 @@ async def card_background(index: int):
         card = server_state["cards"][index]
         if "card_bg" in card:
             return {"ok": True, "card_bg": card["card_bg"]}
-        if index in background_cache:
-            return {"ok": True, "card_bg": background_cache[index]}
-        if time.monotonic() < background_retry_after.get(index, 0):
-            return {"ok": False}
         try:
             value = await asyncio.to_thread(read_card_background, index)
-            background_cache[index] = value
             # A concurrent upload takes precedence over the older DB value.
             return {"ok": True, "card_bg": card.get("card_bg", value)}
         except Exception as exc:
-            background_retry_after[index] = time.monotonic() + 120
             print("Background read deferred:", index, exc)
             return {"ok": False}
+
 
 @app.get("/user_count")
 def get_user_count():
@@ -758,7 +722,7 @@ def read_root():
                 } 
                 window.myNickname = inputNick; 
                 localStorage.setItem('mySavedNickname', inputNick); 
-                loginNotice('입장 확인 중…'); 
+                document.getElementById('loginOverlay').style.display = 'none'; 
                 initCards(); 
                 connectWebSocket(); 
                 loadLocalBackground(); 
@@ -767,7 +731,7 @@ def read_root():
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null;
-            let loginWaitTimer = null; let reconnectTimer = null; let pendingDisconnect = null;
+            let loginWaitTimer = null; let reconnectTimer = null;
             function loginNotice(message) {
                 document.getElementById('loginOverlay').style.display='flex';
                 document.getElementById('loginStatus').textContent=message;
@@ -909,7 +873,6 @@ def read_root():
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
                 applyEmptySlotVisibility(); 
             }
-
             let backgroundLoading = false;
             const knownBackgrounds = new Set();
             async function loadSavedBackgrounds() {
@@ -957,18 +920,6 @@ def read_root():
                 } catch (err) { console.error("미디어 캡처 에러:", err); }
             }
 
-
-            function continueLocalPreview(index) {
-                const stream = myStreams[index];
-                if (!stream || !stream.getVideoTracks().some(track => track.readyState === 'live')) return;
-                const box = document.getElementById(`stream-box-${index}`);
-                if (!box) return;
-                let video = box.querySelector('video');
-                if (!video) { video=document.createElement('video'); video.autoplay=true; video.playsInline=true; video.muted=true; box.replaceChildren(video); }
-                video.srcObject=stream;
-                video.style.filter=cardData[index].is_mosaic ? 'blur(5px)' : '';
-                video.play().catch(()=>{});
-            }
             function stopShare(index) {
                 if (myStreams[index]) { myStreams[index].getTracks().forEach(track => track.stop()); delete myStreams[index]; }
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "stop_share", index: index })); }
@@ -993,24 +944,11 @@ def read_root():
             function connectWebSocket() {
                 const loc = window.location; let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://"; const wsUrl = wsProtocol + loc.host + "/ws";
                 try {
-                    clearTimeout(loginWaitTimer);
-                    clearTimeout(reconnectTimer);
-                    if(ws) { ws.onclose=null; ws.onmessage=null; ws.onopen=null; ws.close(); }
                     ws = new WebSocket(wsUrl);
-                    const socket = ws;
-                    loginWaitTimer = setTimeout(() => {
-                        if(ws !== socket) return;
-                        if(ws) { ws.onclose=null; ws.close(); }
-                        if(pingInterval) clearInterval(pingInterval);
-                        loginNotice('입장 확인이 지연되고 있어요. 잠시 후 입장하기를 다시 눌러주세요.');
-                    },15000);
                     ws.onopen = function() {
-                        if(ws !== socket) return;
-                        const statusEl = document.getElementById('connStatus'); statusEl.innerText = "입장 확인 중"; statusEl.className = "status-indicator status-offline";
+                        const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
-                        if (pendingDisconnect) { ws.send(JSON.stringify({type:"connection_diagnostic", ...pendingDisconnect})); pendingDisconnect=null; }
-                        autoStampToday();
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
                         
                         for (let idx in myStreams) {
                             if (myStreams[idx]) {
@@ -1028,15 +966,14 @@ def read_root():
                         if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 5000); 
                     };
                     ws.onmessage = async function(event) {
-                        if(ws !== socket) return;
                         try {
                             const data = JSON.parse(event.data);
+                            if (data.type === "private_tracker_state") { window.trackersData=data.trackers; loadMyLocalTrackerData(); refreshBadges(); return; }
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
                             else if (data.type === "duplicate_kicked") {
                                 alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
-                                clearTimeout(loginWaitTimer); clearTimeout(reconnectTimer);
                                 if (pingInterval) clearInterval(pingInterval);
                                 ws.onclose = null;
                                 ws.close();
@@ -1051,11 +988,6 @@ def read_root():
                             else if (data.type === "update_notice") { window.rawNotice = data.notice; document.getElementById('noticeText').innerHTML = formatNotice(data.notice); }
                             else if (data.type === "status_update") { cardData[data.index].status = data.status; updateStatusUI(data.index, data.status); const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } }
                             else if (data.type === "init_state") {
-                                clearTimeout(loginWaitTimer);
-                                document.getElementById('loginOverlay').style.display='none';
-                                document.getElementById('loginStatus').textContent='';
-                                const statusEl=document.getElementById('connStatus');
-                                statusEl.textContent='연결됨'; statusEl.className='status-indicator status-online';
                                 const state = data.state;
                                 if (state.global_notice) { window.rawNotice = state.global_notice; document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice); }
                                 if (state.attendance) { window.attendanceData = state.attendance; }
@@ -1064,7 +996,7 @@ def read_root():
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
-                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card, "card_bg")) { cardData[i].card_bg = card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0;
+                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card,"card_bg")) { cardData[i].card_bg=card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0;
                                             cardData[i].is_local_hidden = cardData[i].is_local_hidden || false; 
                                             
                                             applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status);
@@ -1085,17 +1017,13 @@ def read_root():
                                         }
                                     });
                                 }
-                                for (const index in myStreams) continueLocalPreview(index);
-                                loadSavedBackgrounds();
                                 if (state.chat_history) { renderChatHistory(state.chat_history); }
-                                loadMyLocalTrackerData(); refreshBadges();
+                                loadMyLocalTrackerData(); refreshBadges(); loadSavedBackgrounds();
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
-                                window.trackersData[data.nickname] = data.tracker_data;
-                                if (data.nickname === window.myNickname) restoreTimer();
-                                refreshBadges();
+                                window.trackersData[data.nickname] = data.tracker_data; if(data.nickname===window.myNickname) restoreTimer(); refreshBadges();
                                 if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
                                     loadRecordDataIntoUI(data.nickname);
                                 }
@@ -1135,34 +1063,24 @@ def read_root():
                             } 
                             else if (data.type === "answer" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp)); } 
                             else if (data.type === "ice" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc && pc.remoteDescription && pc.remoteDescription.type) { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e)); } else { if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = []; candidateBuffers[pcKey].push(data.candidate); } } 
-                            else if (data.type === "stop_share") { const index = data.index;
-                                if (myStreams[index] && myStreams[index].getVideoTracks().some(track => track.readyState === 'live')) {
-                                    ws.send(JSON.stringify({type:'start_share', index:parseInt(index)}));
-                                    continueLocalPreview(index);
-                                    return;
-                                }
-                                if (data.sender && expectedShares[index] && expectedShares[index] !== data.sender) return;
-                                delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
+                            else if (data.type === "stop_share") { const index = data.index; delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
                             else if (data.type === "welcome") { ws.clientId = data.clientId; setTimeout(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in myStreams) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) })); } } }, 800); }
                             else if (data.type === "request_existing_shares") { for (let idx in myStreams) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender })); } } }
                         } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
                     
-                    ws.onclose = function(event) {
-                        if(ws !== socket) return;
-                        clearTimeout(loginWaitTimer); 
+                    ws.onclose = function() { 
                         if (pingInterval) clearInterval(pingInterval); 
                         const statusEl = document.getElementById('connStatus'); 
                         if (statusEl) { 
                             statusEl.innerText = "서버 재연결 중..."; 
                             statusEl.className = "status-indicator status-offline"; 
                         } 
-                        pendingDisconnect = {code:event.code, clean:event.wasClean, at:new Date().toISOString()};
-                        console.warn('Room connection closed', pendingDisconnect);
-                        // Keep existing media alive while signalling reconnects.
-                        reconnectTimer = setTimeout(connectWebSocket, 3000); 
+                        for (let key in peerConnections) { try { peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; }
+                        for (let k in expectedShares) delete expectedShares[k];
+                        setTimeout(connectWebSocket, 3000); 
                     };
-                } catch(e) { clearTimeout(loginWaitTimer); loginNotice('연결을 시작하지 못했어요. 입장하기를 다시 눌러주세요.'); }
+                } catch(e) { setTimeout(connectWebSocket, 2000); }
             }
 
             async function createOfferForViewer(index, viewerId) {
@@ -1688,26 +1606,19 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-        # Initial state is sent after the nickname is registered.
+        await websocket.send_text(json.dumps({"type": "init_state", "state": state_for(None)}))
         
         while True:
             data = await websocket.receive_text()
             packet = json.loads(data)
             p_type = packet.get("type")
 
-            if p_type == "connection_diagnostic":
-                print("Client reconnect:", client_id, "code=", packet.get("code"), "clean=", packet.get("clean"), "at=", str(packet.get("at", ""))[:40], flush=True)
-                continue
-
             if p_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
 
             if p_type == "set_nickname":
-                nickname = str(packet.get("nickname", "")).strip()[:40]
-                if not nickname:
-                    await websocket.close(code=1008)
-                    return
+                nickname = packet.get("nickname", "익명")
                 owned = packet.get("owned", [])
                 
                 to_close = []
@@ -1715,22 +1626,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     if name == nickname and existing_ws != websocket:
                         to_close.append(existing_ws)
                 
-                freed_old = []
-                for old_ws in to_close:
-                    freed_old.extend(manager.disconnect(old_ws))
-                manager.active_users[websocket] = nickname
                 for old_ws in to_close:
                     try:
-                        await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "duplicate_kicked"})), timeout=1)
-                        await asyncio.wait_for(old_ws.close(), timeout=1)
+                        await old_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
+                        await old_ws.close()
                     except:
                         pass
 
                 manager.active_users[websocket] = nickname
-                for idx in freed_old:
-                    if idx not in manager.active_shares:
-                        await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}), exclude=websocket)
-                await websocket.send_json({"type": "init_state", "state": state_for(nickname)})
+                await websocket.send_text(json.dumps({"type":"private_tracker_state", "trackers": state_for(nickname)["trackers"]}))
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
                     manager.active_slots[client_id] = []
@@ -1782,16 +1686,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_text(change_packet)
                 continue
 
-            nickname = manager.active_users.get(websocket)
-            if not nickname or nickname == "연결중...":
-                continue
-
-            if p_type == "request_existing_shares":
-                for idx, owner in list(manager.active_shares.items()):
-                    if owner != client_id:
-                        await websocket.send_json({"type": "start_share", "index": idx, "sender": owner, "target": client_id})
-                continue
-
+            nickname = manager.active_users.get(websocket, "")
             if p_type == "timer_action":
                 tracker = normalize_tracker(nickname)
                 timer = tracker["timer"]
@@ -1831,16 +1726,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "chat":
-                chat_obj = {"id": uuid.uuid4().hex, "senderName": nickname, "msg": str(packet.get("msg", ""))[:4000], "time": datetime.now(KST).strftime("%m/%d %H:%M")}
+                chat_obj = {"id":uuid.uuid4().hex, "senderName":nickname, "msg":str(packet.get("msg", ""))[:4000], "time":datetime.now(KST).strftime("%m/%d %H:%M")}
                 server_state["chat_history"].append(chat_obj)
                 if len(server_state["chat_history"]) > 100: server_state["chat_history"].pop(0)
-                await manager.broadcast(json.dumps({"type": "chat", **chat_obj}))
+                await manager.broadcast(json.dumps({"type":"chat", **chat_obj}))
                 await persist_state()
                 
             elif p_type == "attendance":
-                now = datetime.now(KST)
-                month = now.strftime("%Y-%m")
-                day = now.day
+                month = packet.get("month")
+                day = packet.get("day")
+                nickname = packet.get("nickname")
                 if "attendance" not in server_state: server_state["attendance"] = {}
                 if month not in server_state["attendance"]: server_state["attendance"][month] = {}
                 if nickname not in server_state["attendance"][month]: server_state["attendance"][month][nickname] = []
@@ -1894,24 +1789,29 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
-    except WebSocketDisconnect as exc:
-        print("Room disconnect:", client_id, "code=", getattr(exc, "code", None), flush=True)
-    except Exception as exc:
-        print("WebSocket 처리 오류:", type(exc).__name__, str(exc))
+    except (WebSocketDisconnect, Exception):
+        pass
 
     finally:
+        client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
+        
+        if client_id in manager.active_slots:
+            del manager.active_slots[client_id]
+            await persist_state()
+
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
-        for idx in freed_indexes:
-            if idx not in manager.active_shares:
-                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx, "sender": client_id}))
+        
         if nickname and nickname != "연결중...":
-            log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": time.time()}
+            log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
-            server_state["admin_log"] = server_state["admin_log"][-100:]
+            if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
             await persist_state()
             await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+        
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
