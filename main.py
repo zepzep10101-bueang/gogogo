@@ -88,42 +88,12 @@ def save_data(data):
 server_state = load_data()
 for message in server_state.get("chat_history", []):
     message.setdefault("id", uuid.uuid4().hex)
-save_task = None
-save_dirty = False
-save_error = None
-
-async def save_worker():
-    """One writer, bounded pending work, retry without blocking room traffic."""
-    global save_dirty, save_error
-    while save_dirty:
-        save_dirty = False
-        snapshot = copy.deepcopy(server_state)
-        try:
-            if collection is None:
-                raise RuntimeError("MONGO_URI 연결이 없어 기록을 DB에 저장할 수 없습니다.")
-            await asyncio.to_thread(save_data, snapshot)
-            save_error = None
-        except Exception as exc:
-            save_error = str(exc)
-            save_dirty = True
-            print("DB 저장 재시도 예정:", exc)
-            await asyncio.sleep(2)
+save_lock = asyncio.Lock()
 
 async def persist_state():
-    global save_dirty, save_task
-    save_dirty = True
-    if save_task is None or save_task.done():
-        save_task = asyncio.create_task(save_worker())
-
+    async with save_lock:
+        await asyncio.to_thread(save_data, copy.deepcopy(server_state))
 app = FastAPI()
-
-@app.on_event("shutdown")
-async def flush_pending_save():
-    if save_task is not None and not save_task.done():
-        try:
-            await asyncio.wait_for(asyncio.shield(save_task), timeout=25)
-        except asyncio.TimeoutError:
-            print("종료 전 DB 저장을 완료하지 못했습니다:", save_error)
 
 class ConnectionManager:
     def __init__(self):
@@ -144,7 +114,6 @@ class ConnectionManager:
             del self.active_users[websocket]
             
         disconnected_client = str(id(websocket))
-        self.active_slots.pop(disconnected_client, None)
         freed_indexes = []
         to_remove = [idx for idx, cid in self.active_shares.items() if cid == disconnected_client]
         for idx in to_remove:
@@ -156,7 +125,7 @@ class ConnectionManager:
         async def send_to_client(conn):
             if conn != exclude:
                 try:
-                    await asyncio.wait_for(conn.send_text(message), timeout=3)
+                    await conn.send_text(message)
                 except Exception:
                     self.disconnect(conn)
 
@@ -166,11 +135,11 @@ class ConnectionManager:
 
     async def broadcast_user_list(self):
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
-        msg = json.dumps({"type": "user_list", "count": len(users_info), "users": users_info})
+        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
         
         async def send_to_client(conn):
             try:
-                await asyncio.wait_for(conn.send_text(msg), timeout=3)
+                await conn.send_text(msg)
             except Exception:
                 self.disconnect(conn)
 
@@ -220,19 +189,13 @@ def state_for(nickname):
     return result
 
 async def publish_tracker(nickname):
-    data = copy.deepcopy(normalize_tracker(nickname))
-    async def send_one(conn):
-        name = manager.active_users.get(conn)
-        if not name or name == "연결중...":
-            return
-        packet = {"type": "tracker_update", "nickname": nickname,
-                  "tracker_data": data if name == nickname else public_tracker(data)}
-        try:
-            await asyncio.wait_for(conn.send_json(packet), timeout=3)
-        except Exception:
-            # A departed recipient must never disconnect the person saving.
-            manager.disconnect(conn)
-    await asyncio.gather(*(send_one(conn) for conn in list(manager.active_connections)))
+    data = normalize_tracker(nickname)
+    for conn in list(manager.active_connections):
+        if manager.active_users.get(conn) == "연결중...":
+            continue
+        own = manager.active_users.get(conn) == nickname
+        await conn.send_json({"type": "tracker_update", "nickname": nickname, "tracker_data": copy.deepcopy(data) if own else public_tracker(data)})
+
 
 @app.get("/user_count")
 def get_user_count():
@@ -735,20 +698,12 @@ def read_root():
                 const history = document.getElementById('chatHistory');
                 const row = document.createElement('div');
                 const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
-                row.append(name, document.createTextNode(': ' + msg));
-                const metadata = document.createElement('span');
-                metadata.style.cssText = 'display:inline-block;margin-left:5px;font-size:9px;color:rgba(180,190,200,0.38);font-weight:normal;white-space:nowrap;';
-                const timestamp = document.createElement('span');
-                timestamp.textContent = timeStr || '';
-                timestamp.style.cssText = 'font-size:9px;color:rgba(180,190,200,0.38);font-weight:normal;';
-                metadata.append(timestamp);
+                row.append(name, document.createTextNode(': ' + msg + ' ' + (timeStr || '')));
                 if (id && sender === window.myNickname) {
                     const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'chat-delete-btn'; button.title = '이 메시지 삭제';
                     button.onclick = () => { if(confirm('이 메시지를 삭제할까요?')) ws.send(JSON.stringify({type:'delete_chat', id})); };
-                    button.style.cssText = 'font-size:9px;color:rgba(180,190,200,0.38);background:transparent;border:0;padding:0 2px;margin-left:4px;line-height:1.2;font-weight:normal;cursor:pointer;';
-                    metadata.append(button);
+                    row.append(button);
                 }
-                row.append(metadata);
                 history.append(row); history.scrollTop = history.scrollHeight;
             }
             function renderChatHistory(messages) { document.getElementById('chatHistory').replaceChildren(); messages.forEach(c => logChat(c.senderName,c.msg,c.time,c.id)); }
@@ -896,15 +851,12 @@ def read_root():
                     clearTimeout(reconnectTimer);
                     if(ws) { ws.onclose=null; ws.onmessage=null; ws.onopen=null; ws.close(); }
                     ws = new WebSocket(wsUrl);
-                    const socket = ws;
                     loginWaitTimer = setTimeout(() => {
-                        if(ws !== socket) return;
                         if(ws) { ws.onclose=null; ws.close(); }
                         if(pingInterval) clearInterval(pingInterval);
                         loginNotice('입장 확인이 지연되고 있어요. 잠시 후 입장하기를 다시 눌러주세요.');
                     },15000);
                     ws.onopen = function() {
-                        if(ws !== socket) return;
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "입장 확인 중"; statusEl.className = "status-indicator status-offline";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
@@ -925,7 +877,6 @@ def read_root():
                         if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 5000); 
                     };
                     ws.onmessage = async function(event) {
-                        if(ws !== socket) return;
                         try {
                             const data = JSON.parse(event.data);
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
@@ -933,7 +884,6 @@ def read_root():
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
                             else if (data.type === "duplicate_kicked") {
                                 alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
-                                clearTimeout(loginWaitTimer); clearTimeout(reconnectTimer);
                                 if (pingInterval) clearInterval(pingInterval);
                                 ws.onclose = null;
                                 ws.close();
@@ -1037,7 +987,6 @@ def read_root():
                     };
                     
                     ws.onclose = function() {
-                        if(ws !== socket) return;
                         clearTimeout(loginWaitTimer); 
                         if (pingInterval) clearInterval(pingInterval); 
                         const statusEl = document.getElementById('connStatus'); 
@@ -1598,21 +1547,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     if name == nickname and existing_ws != websocket:
                         to_close.append(existing_ws)
                 
-                freed_old = []
-                for old_ws in to_close:
-                    freed_old.extend(manager.disconnect(old_ws))
-                manager.active_users[websocket] = nickname
                 for old_ws in to_close:
                     try:
-                        await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "duplicate_kicked"})), timeout=1)
-                        await asyncio.wait_for(old_ws.close(), timeout=1)
+                        await old_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
+                        await old_ws.close()
                     except:
                         pass
 
                 manager.active_users[websocket] = nickname
-                for idx in freed_old:
-                    if idx not in manager.active_shares:
-                        await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
                 await websocket.send_json({"type": "init_state", "state": state_for(nickname)})
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
@@ -1667,12 +1609,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
             nickname = manager.active_users.get(websocket)
             if not nickname or nickname == "연결중...":
-                continue
-
-            if p_type == "request_existing_shares":
-                for idx, owner in list(manager.active_shares.items()):
-                    if owner != client_id:
-                        await websocket.send_json({"type": "start_share", "index": idx, "sender": owner, "target": client_id})
                 continue
 
             if p_type == "timer_action":
@@ -1777,24 +1713,29 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, Exception):
         pass
-    except Exception as exc:
-        print("WebSocket 처리 오류:", type(exc).__name__, str(exc))
 
     finally:
+        client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
+        
+        if client_id in manager.active_slots:
+            del manager.active_slots[client_id]
+            await persist_state()
+
         freed_indexes = manager.disconnect(websocket)
         await manager.broadcast_user_list()
-        for idx in freed_indexes:
-            if idx not in manager.active_shares:
-                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+        
         if nickname and nickname != "연결중...":
-            log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": time.time()}
+            log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": __import__('time').time()}
             server_state.setdefault("admin_log", []).append(log_entry)
-            server_state["admin_log"] = server_state["admin_log"][-100:]
+            if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
             await persist_state()
             await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+        
+        for idx in freed_indexes:
+            await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
