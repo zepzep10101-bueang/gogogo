@@ -6,7 +6,6 @@ import uvicorn
 import asyncio
 import copy
 import uuid
-import hashlib
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 
@@ -327,10 +326,6 @@ def read_root():
                 <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 10px;">닉네임은 한 번만 적으면 저장 돼!</p>
                 <div id="loginUserCount" style="margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894; background: rgba(0, 184, 148, 0.15); padding: 8px; border-radius: 6px; border: 1px solid rgba(0, 184, 148, 0.4);">🔥 현재 달리고 있는 작가님: 확인 중...</div>
                 <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
-                <div id="identityHelp" style="display:none;max-width:300px;margin:12px auto;color:#ffeaa7;font-size:14px;line-height:1.6;">
-                    이 닉네임은 다른 브라우저에 등록되어 있어요. 기존 브라우저의 ‘내 접속키’를 복사해서 아래에 붙여넣어주세요.
-                    <input id="identityInput" type="password" autocomplete="off" placeholder="개인 접속키 붙여넣기">
-                </div>
                 <p id="loginStatus" role="status" style="max-width:300px;color:#ffeaa7;margin:8px auto;"></p>
                 <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()"><br>
                 <button onclick="login()">입장하기</button>
@@ -512,7 +507,7 @@ def read_root():
                         <h3 style="font-size: 14px; white-space: nowrap;">💬 실시간 채팅</h3>
                         <div style="display:flex; gap: 2px;">
                             <button onclick="forceRecoverWebRTC()" class="recovery-btn" style="font-size:9px; padding:2px 4px;">🔄 복구</button>
-                            <button id="chatToggle" onclick="toggleChatPanel()" class="recovery-btn">접기</button><button onclick="showIdentityKey()" class="recovery-btn">내 접속키</button><button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
+                            <button id="chatToggle" onclick="toggleChatPanel()" class="recovery-btn">접기</button><button onclick="clearChat()" style="font-size:9px; padding:2px 4px; background:#636e72; border:none; color:white; border-radius:3px; cursor:pointer;">청소</button>
                         </div>
                     </div>
                     <div id="chatHistory"></div>
@@ -656,11 +651,6 @@ def read_root():
                 } 
                 window.myNickname = inputNick; 
                 localStorage.setItem('mySavedNickname', inputNick); 
-                const enteredKey = document.getElementById('identityInput').value.trim();
-                if (enteredKey) {
-                    try { localStorage.setItem('room-key:' + inputNick, enteredKey); }
-                    catch(e) { loginNotice('브라우저의 사이트 저장을 허용한 뒤 다시 시도해주세요.'); return; }
-                }
                 loginNotice('입장 확인 중…'); 
                 initCards(); 
                 connectWebSocket(); 
@@ -866,7 +856,7 @@ def read_root():
                     ws.onopen = function() {
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "입장 확인 중"; statusEl.className = "status-indicator status-offline";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr, identity_key: identityKey() })); autoStampToday();
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
                         
                         for (let idx in myStreams) {
                             if (myStreams[idx]) {
@@ -886,16 +876,6 @@ def read_root():
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
-                            if (data.type === "identity_error") {
-                                clearTimeout(loginWaitTimer); clearTimeout(reconnectTimer);
-                                if(pingInterval) clearInterval(pingInterval);
-                                ws.onclose = null; ws.close();
-                                document.getElementById('identityHelp').style.display='block';
-                                document.getElementById('identityInput').value='';
-                                loginNotice('개인 접속키를 입력한 뒤 입장하기를 눌러주세요.');
-                                document.getElementById('identityInput').focus();
-                                return;
-                            }
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
@@ -917,8 +897,6 @@ def read_root():
                             else if (data.type === "init_state") {
                                 clearTimeout(loginWaitTimer);
                                 document.getElementById('loginOverlay').style.display='none';
-                                document.getElementById('identityHelp').style.display='none';
-                                document.getElementById('identityInput').value='';
                                 document.getElementById('loginStatus').textContent='';
                                 const statusEl=document.getElementById('connStatus');
                                 statusEl.textContent='연결됨'; statusEl.className='status-indicator status-online';
@@ -1457,23 +1435,6 @@ def read_root():
             function monthKey() { const d=kstNow(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
             function dayKey() { const d=kstNow(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
             function escapeText(value) { const el=document.createElement('span'); el.textContent=String(value ?? ''); return el.innerHTML; }
-            function identityKey() {
-                const storageKey='room-key:'+window.myNickname;
-                let value=localStorage.getItem(storageKey);
-                if (!value) { value=crypto.randomUUID()+crypto.randomUUID(); localStorage.setItem(storageKey,value); }
-                return value;
-            }
-            function showIdentityKey() {
-                let box=document.getElementById('identityKeyOverlay');
-                if(!box) {
-                    box=document.createElement('div'); box.id='identityKeyOverlay'; box.className='modal-overlay';
-                    box.innerHTML='<div class="modal-box"><h3>내 접속키</h3><p style="margin:12px 0">다른 브라우저에서 같은 닉네임으로 입장할 때 사용해요. 아래 키를 복사해서 본인만 보관하세요.</p><textarea id="identityKeyText" readonly style="width:100%;height:100px"></textarea><button class="rec-btn" id="closeIdentityKey">닫기</button></div>';
-                    document.body.append(box);
-                    document.getElementById('closeIdentityKey').onclick=()=>box.style.display='none';
-                }
-                box.style.display='flex';
-                const field=document.getElementById('identityKeyText'); field.value=identityKey(); field.focus(); field.select();
-            }
             function timerAction(action) {
                 if (!ws || ws.readyState!==WebSocket.OPEN) { alert('재연결 후 타이머를 조작해주세요.'); return; }
                 ws.send(JSON.stringify({type:'timer_action',action}));
@@ -1560,7 +1521,7 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-        # Initial state is sent only after identity verification.
+        # Initial state is sent after the nickname is registered.
         
         while True:
             data = await websocket.receive_text()
@@ -1573,17 +1534,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if p_type == "set_nickname":
                 nickname = str(packet.get("nickname", "")).strip()[:40]
-                token = str(packet.get("identity_key", ""))
-                if not nickname or len(token) < 24:
+                if not nickname:
                     await websocket.close(code=1008)
                     return
-                digest = hashlib.sha256(token.encode()).hexdigest()
-                keys = server_state.setdefault("identity_keys", {})
-                if nickname in keys and keys[nickname] != digest:
-                    await websocket.send_json({"type": "identity_error"})
-                    continue
-                keys[nickname] = digest
-                await persist_state()
                 owned = packet.get("owned", [])
                 
                 to_close = []
