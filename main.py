@@ -295,6 +295,9 @@ def read_root():
             .rec-todo-input-box { display: flex; gap: 5px; width: 100%; margin-top: 5px; }
             .rec-todo-input-box input { flex: 1; padding: 8px; border: 1px solid var(--rec-border); border-radius: 5px; font-size: 13px; background: #fff; color: #333; }
             
+            .chat-delete-btn { display: inline; margin-left: 4px; padding: 0 2px; border: none; background: transparent; color: #b2bec3; font: inherit; font-size: 10px; line-height: 1.2; vertical-align: baseline; white-space: nowrap; cursor: pointer; }
+            .chat-delete-btn:hover { color: #ff9999; text-decoration: underline; }
+            .chat-delete-btn:focus-visible { outline: 1px solid #b2bec3; outline-offset: 2px; }
             .rec-btn { background: var(--rec-border); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #4a4a4a; font-size: 12px; white-space: nowrap; }
             .rec-btn:hover { opacity: 0.8; }
             .rec-btn-del { background: #ff9999; color: #fff; }
@@ -697,7 +700,7 @@ def read_root():
                 const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
                 row.append(name, document.createTextNode(': ' + msg + ' ' + (timeStr || '')));
                 if (id && sender === window.myNickname) {
-                    const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'rec-btn';
+                    const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'chat-delete-btn'; button.title = '이 메시지 삭제';
                     button.onclick = () => { if(confirm('이 메시지를 삭제할까요?')) ws.send(JSON.stringify({type:'delete_chat', id})); };
                     row.append(button);
                 }
