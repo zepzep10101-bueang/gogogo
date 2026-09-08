@@ -699,13 +699,6 @@ def read_root():
                 const row = document.createElement('div');
                 const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
                 row.append(name, document.createTextNode(': ' + msg + ' ' + (timeStr || '')));
-                row.append(name, document.createTextNode(': ' + msg));
-                if (timeStr) {
-                    const timestamp = document.createElement('span');
-                    timestamp.textContent = timeStr;
-                    timestamp.style.cssText = 'font-size:10px;color:#929aa0;margin-left:5px;white-space:nowrap;';
-                    row.append(timestamp);
-                }
                 if (id && sender === window.myNickname) {
                     const button = document.createElement('button'); button.textContent = '삭제'; button.className = 'chat-delete-btn'; button.title = '이 메시지 삭제';
                     button.onclick = () => { if(confirm('이 메시지를 삭제할까요?')) ws.send(JSON.stringify({type:'delete_chat', id})); };
