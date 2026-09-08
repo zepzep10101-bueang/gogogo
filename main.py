@@ -135,7 +135,9 @@ class ConnectionManager:
         self.active_connections = []
         self.active_shares = {}
         self.active_users = {}
-        self.active_slots = {} 
+        self.active_slots = {}
+        self.outboxes = {}
+        self.writers = {} 
 
     async def connect(self, websocket):
         await websocket.accept()
@@ -143,6 +145,10 @@ class ConnectionManager:
         self.active_users[websocket] = "연결중..."
 
     def disconnect(self, websocket):
+        self.outboxes.pop(websocket, None)
+        writer = self.writers.pop(websocket, None)
+        if writer and writer is not asyncio.current_task():
+            writer.cancel()
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         if websocket in self.active_users:
@@ -157,31 +163,50 @@ class ConnectionManager:
             freed_indexes.append(idx)
         return freed_indexes
 
-    async def broadcast(self, message, exclude=None):
-        async def send_to_client(conn):
-            if conn != exclude:
-                try:
-                    await asyncio.wait_for(conn.send_text(message), timeout=3)
-                except Exception:
-                    self.disconnect(conn)
+    def enqueue(self, conn, message):
+        if conn not in self.active_connections:
+            return
+        queue = self.outboxes.get(conn)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=256)
+            self.outboxes[conn] = queue
+            self.writers[conn] = asyncio.create_task(self.deliver(conn, queue))
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # Close only the overloaded recipient; never block every sender.
+            writer = self.writers.get(conn)
+            if writer:
+                writer.cancel()
 
-        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+    async def deliver(self, conn, queue):
+        try:
+            while True:
+                message = await queue.get()
+                await asyncio.wait_for(conn.send_text(message), timeout=15)
+        except asyncio.CancelledError:
+            if conn not in self.active_connections:
+                return
+            print("Room outgoing queue full:", str(id(conn)), flush=True)
+        except Exception as exc:
+            print("Room send failure:", str(id(conn)), type(exc).__name__, flush=True)
+        try:
+            await asyncio.wait_for(conn.close(code=1013), timeout=2)
+        except Exception:
+            pass
+
+    async def broadcast(self, message, exclude=None):
+        packet = json.loads(message)
+        target = packet.get("target")
+        for conn in list(self.active_connections):
+            if conn != exclude and (not target or str(id(conn)) == str(target)):
+                self.enqueue(conn, message)
+        await asyncio.sleep(0)
 
     async def broadcast_user_list(self):
         users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
-        msg = json.dumps({"type": "user_list", "count": len(users_info), "users": users_info})
-        
-        async def send_to_client(conn):
-            try:
-                await asyncio.wait_for(conn.send_text(msg), timeout=3)
-            except Exception:
-                self.disconnect(conn)
-
-        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        users_info.sort(key=lambda item: item["nickname"].casefold())
+        await self.broadcast(json.dumps({"type": "user_list", "count": len(users_info), "users": users_info}))
 
 manager = ConnectionManager()
 
@@ -232,15 +257,13 @@ async def publish_tracker(nickname):
             return
         packet = {"type": "tracker_update", "nickname": nickname,
                   "tracker_data": data if name == nickname else public_tracker(data)}
-        try:
-            await asyncio.wait_for(conn.send_json(packet), timeout=3)
-        except Exception:
-            # A departed recipient must never disconnect the person saving.
-            manager.disconnect(conn)
+        manager.enqueue(conn, json.dumps(packet))
     await asyncio.gather(*(send_one(conn) for conn in list(manager.active_connections)))
 
 
 background_read_lock = asyncio.Lock()
+background_cache = {}
+background_retry_after = {}
 
 def read_card_background(index):
     if collection is None:
@@ -264,11 +287,17 @@ async def card_background(index: int):
         card = server_state["cards"][index]
         if "card_bg" in card:
             return {"ok": True, "card_bg": card["card_bg"]}
+        if index in background_cache:
+            return {"ok": True, "card_bg": background_cache[index]}
+        if time.monotonic() < background_retry_after.get(index, 0):
+            return {"ok": False}
         try:
             value = await asyncio.to_thread(read_card_background, index)
+            background_cache[index] = value
             # A concurrent upload takes precedence over the older DB value.
             return {"ok": True, "card_bg": card.get("card_bg", value)}
         except Exception as exc:
+            background_retry_after[index] = time.monotonic() + 120
             print("Background read deferred:", index, exc)
             return {"ok": False}
 
@@ -738,7 +767,7 @@ def read_root():
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null;
-            let loginWaitTimer = null; let reconnectTimer = null;
+            let loginWaitTimer = null; let reconnectTimer = null; let pendingDisconnect = null;
             function loginNotice(message) {
                 document.getElementById('loginOverlay').style.display='flex';
                 document.getElementById('loginStatus').textContent=message;
@@ -928,6 +957,18 @@ def read_root():
                 } catch (err) { console.error("미디어 캡처 에러:", err); }
             }
 
+
+            function continueLocalPreview(index) {
+                const stream = myStreams[index];
+                if (!stream || !stream.getVideoTracks().some(track => track.readyState === 'live')) return;
+                const box = document.getElementById(`stream-box-${index}`);
+                if (!box) return;
+                let video = box.querySelector('video');
+                if (!video) { video=document.createElement('video'); video.autoplay=true; video.playsInline=true; video.muted=true; box.replaceChildren(video); }
+                video.srcObject=stream;
+                video.style.filter=cardData[index].is_mosaic ? 'blur(5px)' : '';
+                video.play().catch(()=>{});
+            }
             function stopShare(index) {
                 if (myStreams[index]) { myStreams[index].getTracks().forEach(track => track.stop()); delete myStreams[index]; }
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "stop_share", index: index })); }
@@ -967,7 +1008,9 @@ def read_root():
                         if(ws !== socket) return;
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "입장 확인 중"; statusEl.className = "status-indicator status-offline";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr }));
+                        if (pendingDisconnect) { ws.send(JSON.stringify({type:"connection_diagnostic", ...pendingDisconnect})); pendingDisconnect=null; }
+                        autoStampToday();
                         
                         for (let idx in myStreams) {
                             if (myStreams[idx]) {
@@ -1042,6 +1085,7 @@ def read_root():
                                         }
                                     });
                                 }
+                                for (const index in myStreams) continueLocalPreview(index);
                                 loadSavedBackgrounds();
                                 if (state.chat_history) { renderChatHistory(state.chat_history); }
                                 loadMyLocalTrackerData(); refreshBadges();
@@ -1091,13 +1135,20 @@ def read_root():
                             } 
                             else if (data.type === "answer" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp)); } 
                             else if (data.type === "ice" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc && pc.remoteDescription && pc.remoteDescription.type) { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e)); } else { if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = []; candidateBuffers[pcKey].push(data.candidate); } } 
-                            else if (data.type === "stop_share") { const index = data.index; delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
+                            else if (data.type === "stop_share") { const index = data.index;
+                                if (myStreams[index] && myStreams[index].getVideoTracks().some(track => track.readyState === 'live')) {
+                                    ws.send(JSON.stringify({type:'start_share', index:parseInt(index)}));
+                                    continueLocalPreview(index);
+                                    return;
+                                }
+                                if (data.sender && expectedShares[index] && expectedShares[index] !== data.sender) return;
+                                delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
                             else if (data.type === "welcome") { ws.clientId = data.clientId; setTimeout(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in myStreams) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) })); } } }, 800); }
                             else if (data.type === "request_existing_shares") { for (let idx in myStreams) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender })); } } }
                         } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
                     
-                    ws.onclose = function() {
+                    ws.onclose = function(event) {
                         if(ws !== socket) return;
                         clearTimeout(loginWaitTimer); 
                         if (pingInterval) clearInterval(pingInterval); 
@@ -1106,8 +1157,9 @@ def read_root():
                             statusEl.innerText = "서버 재연결 중..."; 
                             statusEl.className = "status-indicator status-offline"; 
                         } 
-                        for (let key in peerConnections) { try { peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; }
-                        for (let k in expectedShares) delete expectedShares[k];
+                        pendingDisconnect = {code:event.code, clean:event.wasClean, at:new Date().toISOString()};
+                        console.warn('Room connection closed', pendingDisconnect);
+                        // Keep existing media alive while signalling reconnects.
                         reconnectTimer = setTimeout(connectWebSocket, 3000); 
                     };
                 } catch(e) { clearTimeout(loginWaitTimer); loginNotice('연결을 시작하지 못했어요. 입장하기를 다시 눌러주세요.'); }
@@ -1643,6 +1695,10 @@ async def websocket_endpoint(websocket: WebSocket):
             packet = json.loads(data)
             p_type = packet.get("type")
 
+            if p_type == "connection_diagnostic":
+                print("Client reconnect:", client_id, "code=", packet.get("code"), "clean=", packet.get("clean"), "at=", str(packet.get("at", ""))[:40], flush=True)
+                continue
+
             if p_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
@@ -1673,7 +1729,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 manager.active_users[websocket] = nickname
                 for idx in freed_old:
                     if idx not in manager.active_shares:
-                        await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+                        await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}), exclude=websocket)
                 await websocket.send_json({"type": "init_state", "state": state_for(nickname)})
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
@@ -1838,8 +1894,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
 
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as exc:
+        print("Room disconnect:", client_id, "code=", getattr(exc, "code", None), flush=True)
     except Exception as exc:
         print("WebSocket 처리 오류:", type(exc).__name__, str(exc))
 
@@ -1849,7 +1905,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await manager.broadcast_user_list()
         for idx in freed_indexes:
             if idx not in manager.active_shares:
-                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
+                await manager.broadcast(json.dumps({"type": "stop_share", "index": idx, "sender": client_id}))
         if nickname and nickname != "연결중...":
             log_entry = {"msg": f"{nickname} 님이 잠시 튕겼거나 퇴장했습니다.", "time": time.time()}
             server_state.setdefault("admin_log", []).append(log_entry)
