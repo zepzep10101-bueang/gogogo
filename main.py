@@ -37,7 +37,7 @@ except Exception as e:
 def load_data():
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "reserved_by": None} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
         "attendance": {},
@@ -52,13 +52,17 @@ def load_data():
                 if len(cards) > 16:
                     data["cards"] = cards[:16]
                 elif len(cards) < 16:
-                    new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0} for i in range(len(cards), 16)]
+                    new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "reserved_by": None} for i in range(len(cards), 16)]
                     data["cards"].extend(new_cards)
                 for i, card in enumerate(data["cards"]):
                     card["user"] = card.get("user") or f"자리{i+1}"
                     card["is_mosaic"] = card.get("is_mosaic", False)
                     card["is_large"] = card.get("is_large", False)
                     card["status"] = card.get("status", 0)
+                    reserved_by = card.get("reserved_by")
+                    card["reserved_by"] = reserved_by if isinstance(reserved_by, str) and reserved_by.strip() else None
+                    if card["reserved_by"]:
+                        card["user"] = card["reserved_by"]
                 if "global_notice" not in data:
                     data["global_notice"] = "📌 다 함께 모여서 열심히 마감해 봅시다!"
                 if "attendance" not in data:
@@ -185,8 +189,19 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 KST = timezone(timedelta(hours=9))
+ADMIN_NICKNAME = "부엉"
 PRESENCE_RECONNECT_GRACE_SECONDS = 5
 pending_presence_leaves = {}
+
+async def send_seat_error(websocket, index, message):
+    card = server_state["cards"][index]
+    await websocket.send_text(json.dumps({
+        "type": "seat_reservation_error",
+        "index": index,
+        "user": card["user"],
+        "reserved_by": card.get("reserved_by"),
+        "message": message
+    }))
 
 async def post_presence_chat(message):
     chat_obj = {
@@ -741,8 +756,8 @@ def read_root():
             function addNotice() { const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)"); if (newVal !== null && newVal.trim() !== "") { const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: combined })); window.rawNotice = combined; document.getElementById('noticeText').innerHTML = formatNotice(combined); } } }
             function editNotice() { const newVal = prompt("기존 공지를 전부 지우고 새로 쓰거나, 직접 글을 수정하세요!", window.rawNotice); if (newVal !== null) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: newVal })); window.rawNotice = newVal; document.getElementById('noticeText').innerHTML = formatNotice(newVal); } } }
             function toggleEmptySlots() { window.isHideEmpty = !window.isHideEmpty; applyEmptySlotVisibility(); }
-            function applyEmptySlotVisibility() { cardData.forEach((card, index) => { const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { if (window.isHideEmpty && card.user.startsWith("자리")) { cardEl.style.display = "none"; } else { cardEl.style.display = "flex"; } } }); }
-            function addMySlot() { const myName = window.myNickname || "익명"; let emptyIdx = -1; for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리")) { emptyIdx = i; break; } } if (emptyIdx !== -1) { const inputEl = document.getElementById(`username-${emptyIdx}`); if (inputEl) inputEl.value = myName; updateUsername(emptyIdx, myName); } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); } }
+            function applyEmptySlotVisibility() { cardData.forEach((card, index) => { const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { if (window.isHideEmpty && card.user.startsWith("자리") && !card.reserved_by) { cardEl.style.display = "none"; } else { cardEl.style.display = "flex"; } } }); }
+            function addMySlot() { const myName = window.myNickname || "익명"; let emptyIdx = -1; for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리") && !cardData[i].reserved_by) { emptyIdx = i; break; } } if (emptyIdx !== -1) { const inputEl = document.getElementById(`username-${emptyIdx}`); if (inputEl) inputEl.value = myName; updateUsername(emptyIdx, myName); } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); } }
             function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
             
             function login() { 
@@ -774,11 +789,66 @@ def read_root():
                 const status=document.getElementById('connStatus');
                 status.textContent='입장 대기'; status.className='status-indicator status-offline';
             } 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, is_local_hidden: false }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, reserved_by: null, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
-            function getEmptySlotHTML(username) { if (!username || username.startsWith("자리")) { return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } else { return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${username}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; } }
+            function getEmptySlotHTML(card) {
+                const username = card.user || "";
+                if (card.reserved_by) {
+                    return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:12px; color:#ffeaa7; font-weight:bold;">🔒 ${escapeText(card.reserved_by)} 작가님 고정석</span><span style="font-size:10px; color:#aaa; margin-top:3px;">화면 미공유 중</span></div>`;
+                }
+                if (!username || username.startsWith("자리")) { return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; }
+                return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
+            }
+
+            function applySeatReservationUI(index) {
+                const card = cardData[index]; if (!card) return;
+                const owner = card.reserved_by;
+                const myName = window.myNickname || "";
+                const isMine = !!owner && owner === myName;
+                const button = document.getElementById(`seat-lock-btn-${index}`);
+                if (button) {
+                    if (isMine) { button.textContent = "🔓 고정 해제"; button.style.background = "#00b894"; button.disabled = false; button.title = "내 고정석을 해제합니다"; }
+                    else if (owner && window.isAdmin) { button.textContent = "🔓 강제 해제"; button.style.background = "#d63031"; button.disabled = false; button.title = `${owner} 작가님의 고정석을 방장 권한으로 해제합니다`; }
+                    else if (owner) { button.textContent = "🔒 고정석"; button.style.background = "#636e72"; button.disabled = true; button.title = `${owner} 작가님의 고정석입니다`; }
+                    else { button.textContent = "📌 자리 고정"; button.style.background = "#e1a400"; button.disabled = false; button.title = "이 자리를 내 고정석으로 저장합니다"; }
+                    button.style.opacity = button.disabled ? "0.72" : "1";
+                    button.style.cursor = button.disabled ? "not-allowed" : "pointer";
+                }
+                const input = document.getElementById(`username-${index}`);
+                if (input) {
+                    input.readOnly = !!owner;
+                    input.title = owner ? `${owner} 작가님의 고정석이라 이름을 바꿀 수 없습니다` : "";
+                    input.style.borderColor = owner ? "#ffeaa7" : "rgba(255,255,255,0.4)";
+                }
+                const cardEl = document.getElementById(`card-card-${index}`);
+                if (cardEl) cardEl.style.boxShadow = owner ? "0 0 0 2px rgba(255,234,167,0.9), 0 8px 18px rgba(0,0,0,0.25)" : "";
+            }
+
+            function applySeatCardState(index, user, reservedBy) {
+                if (!cardData[index]) return;
+                cardData[index].user = user;
+                cardData[index].reserved_by = reservedBy || null;
+                const input = document.getElementById(`username-${index}`); if (input) input.value = user;
+                const myName = window.myNickname || "익명";
+                if (user === myName) myOwnedSlots.add(index); else myOwnedSlots.delete(index);
+                const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) cardEl.style.order = (user === myName && myName) ? -1 : 0;
+                applySeatReservationUI(index);
+                const box = document.getElementById(`stream-box-${index}`); if (box && !box.querySelector('video')) renderBox(index);
+                applyEmptySlotVisibility();
+            }
+
+            function toggleSeatReservation(index) {
+                const card = cardData[index];
+                const myName = window.myNickname || "";
+                if (!card || !myName) return;
+                if (!ws || ws.readyState !== WebSocket.OPEN) { alert("서버에 연결된 뒤 다시 눌러줘!"); return; }
+                if (card.reserved_by && card.reserved_by !== myName && !window.isAdmin) { alert(`${card.reserved_by} 작가님의 고정석이야!`); return; }
+                if (card.reserved_by && card.reserved_by !== myName && window.isAdmin && !confirm(`${card.reserved_by} 작가님의 고정석을 강제로 해제할까?`)) return;
+                if (!card.reserved_by && card.user !== myName) { alert("자기 카드에서만 자리를 고정할 수 있어!"); return; }
+                ws.send(JSON.stringify({ type: "seat_reservation", index: index, reserved: !card.reserved_by }));
+            }
             
             function renderBox(index) { 
                 const box = document.getElementById(`stream-box-${index}`); if (!box) return; 
@@ -788,7 +858,7 @@ def read_root():
                     let textMsg = ""; if (card.status === 1) textMsg = "🍽️ 식사중"; else if (card.status === 2) textMsg = "☕ 휴식중"; else if (card.status === 3) textMsg = "💤 수면중"; else if (card.status === 4) textMsg = "😭 눈물좀 닦고"; 
                     box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;"><div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div></div>`; 
                 } else { 
-                    box.innerHTML = getEmptySlotHTML(card.user); 
+                    box.innerHTML = getEmptySlotHTML(card); 
                 } 
             }
             
@@ -861,10 +931,11 @@ def read_root():
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
                             <div class="card-header">
-                                <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
-                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
-                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
-                                </div>
+	                                <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
+	                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+	                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
+	                                    <button onclick="toggleSeatReservation(${index})" id="seat-lock-btn-${index}" class="share-btn" style="background:#e1a400; padding:4px 6px; flex-grow:0; white-space:nowrap;">📌 자리 고정</button>
+	                                </div>
                                 <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -891,7 +962,7 @@ def read_root():
                         </div>
                     `;
                 });
-                cardData.forEach((_, i) => renderBox(i)); applyEmptySlotVisibility();
+                cardData.forEach((_, i) => { renderBox(i); applySeatReservationUI(i); }); applyEmptySlotVisibility();
             }
 
             function toggleSize(index) { const newState = !cardData[index].is_large; cardData[index].is_large = newState; applySizeUI(index, newState); }
@@ -900,8 +971,15 @@ def read_root():
             function toggleViewerSound(index) { const vid = document.getElementById(`remote-video-${index}`); const btn = document.getElementById(`sound-toggle-btn-${index}`); if (!vid) return; vid.muted = !vid.muted; if (vid.muted) { btn.innerText = "소리켜기"; btn.style.background = "#b2bec3"; } else { btn.innerText = "음소거"; btn.style.background = "#00b894"; } }
             function applyMosaicUI(index, isMosaic) { const btn = document.getElementById(`share-btn-mosaic-${index}`); if (btn) { btn.innerText = isMosaic ? "해제" : "모자이크"; btn.style.background = isMosaic ? "#e17055" : "#636e72"; } const remoteVideo = document.getElementById(`remote-video-${index}`); const localVideo = document.getElementById(`video-${index}`); const activeFilter = isMosaic ? 'blur(5px)' : 'none'; if (remoteVideo) { remoteVideo.style.filter = activeFilter; } if (localVideo) { localVideo.style.filter = activeFilter; } }
             function updateUsername(index, val) { 
+                const myName = window.myNickname || "익명";
+                const reservationOwner = cardData[index].reserved_by;
+                if (reservationOwner) {
+                    const inputEl = document.getElementById(`username-${index}`);
+                    if (inputEl) inputEl.value = cardData[index].user;
+                    alert(reservationOwner === myName ? "고정석은 먼저 고정을 해제해야 이름을 바꿀 수 있어!" : `${reservationOwner} 작가님의 고정석이야!`);
+                    return;
+                }
                 cardData[index].user = val; 
-                const myName = window.myNickname || "익명"; 
                 if (val === myName) { myOwnedSlots.add(index); } else { myOwnedSlots.delete(index); } 
                 const cardEl = document.getElementById(`card-card-${index}`);
                 if (cardEl) { cardEl.style.order = (val === myName && myName) ? -1 : 0; }
@@ -938,6 +1016,7 @@ def read_root():
             async function toggleShare(index, type) {
                 const box = document.getElementById(`stream-box-${index}`); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 if (myStreams[index]) { stopShare(index); return; }
+                if (cardData[index].reserved_by && cardData[index].reserved_by !== window.myNickname) { alert(`${cardData[index].reserved_by} 작가님의 고정석이라 사용할 수 없어!`); return; }
                 if (cardData[index].status > 0) { cardData[index].status = 0; updateStatusUI(index, 0); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 })); } }
                 try {
                     let stream;
@@ -1024,6 +1103,8 @@ def read_root():
                             else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time, data.id); } 
                             else if (data.type === "update_notice") { window.rawNotice = data.notice; document.getElementById('noticeText').innerHTML = formatNotice(data.notice); }
                             else if (data.type === "status_update") { cardData[data.index].status = data.status; updateStatusUI(data.index, data.status); const box = document.getElementById(`stream-box-${data.index}`); if (box && !box.querySelector('video')) { renderBox(data.index); } }
+                            else if (data.type === "seat_reservation_update") { applySeatCardState(data.index, data.user, data.reserved_by); }
+                            else if (data.type === "seat_reservation_error") { applySeatCardState(data.index, data.user, data.reserved_by); alert(data.message || "고정석이라 사용할 수 없어!"); }
                             else if (data.type === "init_state") {
                                 const state = data.state;
                                 if (state.global_notice) { window.rawNotice = state.global_notice; document.getElementById('noticeText').innerHTML = formatNotice(state.global_notice); }
@@ -1033,10 +1114,10 @@ def read_root():
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
-                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card,"card_bg")) { cardData[i].card_bg=card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0;
+                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card,"card_bg")) { cardData[i].card_bg=card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0; cardData[i].reserved_by = card.reserved_by || null;
                                             cardData[i].is_local_hidden = cardData[i].is_local_hidden || false; 
                                             
-                                            applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status);
+                                            applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status); applySeatReservationUI(i);
                                             const userEl = document.getElementById(`username-${i}`); if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`); 
                                             if (cardEl) {
@@ -1067,18 +1148,7 @@ def read_root():
                             }
                             else if (data.type === "attendance_update") { window.attendanceData = data.attendance; refreshBadges(); if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
-                            else if (data.type === "username_change") { 
-                                cardData[data.index].user = data.user; 
-                                const inputEl = document.getElementById(`username-${data.index}`); 
-                                if (inputEl) { inputEl.value = data.user; } 
-                                const myName = window.myNickname || "익명"; 
-                                if (data.user === myName) { myOwnedSlots.add(data.index); } else { myOwnedSlots.delete(data.index); } 
-                                const cardEl = document.getElementById(`card-card-${data.index}`);
-                                if (cardEl) { cardEl.style.order = (data.user === myName && myName) ? -1 : 0; }
-                                const box = document.getElementById(`stream-box-${data.index}`); 
-                                if (box && !box.querySelector('video')) { renderBox(data.index); }
-                                applyEmptySlotVisibility(); 
-                            } 
+                            else if (data.type === "username_change") { applySeatCardState(data.index, data.user, cardData[data.index].reserved_by); } 
                             else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
                             else if (data.type === "toggle_mosaic") { if (cardData[data.index]) { cardData[data.index].is_mosaic = data.is_mosaic; applyMosaicUI(data.index, data.is_mosaic); } }
                             else if (data.type === "start_share") { const targetIndex = data.index; const sharerId = data.sender; if (data.target && data.target !== ws.clientId) return; expectedShares[targetIndex] = sharerId; if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId })); } }
@@ -1760,18 +1830,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 if owned:
                     for idx in owned:
                         if 0 <= idx < 16:
-                            current_user = server_state["cards"][idx]["user"]
-                            if current_user.startswith("자리") or current_user == nickname:
+                            card = server_state["cards"][idx]
+                            current_user = card["user"]
+                            reservation_owner = card.get("reserved_by")
+                            if (not reservation_owner or reservation_owner == nickname) and (current_user.startswith("자리") or current_user == nickname):
                                 if idx not in manager.active_slots[client_id]:
                                     manager.active_slots[client_id].append(idx)
-                                server_state["cards"][idx]["user"] = nickname
+                                card["user"] = nickname
                                 recovered = True
                                 change_packet = json.dumps({"type": "username_change", "index": idx, "user": nickname})
                                 await manager.broadcast(change_packet)
                                 await websocket.send_text(change_packet)
                 
                 for i, card in enumerate(server_state["cards"]):
-                    if card["user"] == nickname:
+                    if card.get("reserved_by") == nickname or card["user"] == nickname:
+                        card["user"] = nickname
                         if i not in manager.active_slots[client_id]:
                             manager.active_slots[client_id].append(i)
                             recovered = True
@@ -1785,7 +1858,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 assigned_idx = None
                 for i, card in enumerate(server_state["cards"]):
-                    if card["user"].startswith("자리"):
+                    if card["user"].startswith("자리") and not card.get("reserved_by"):
                         assigned_idx = i
                         break
                 if assigned_idx is not None:
@@ -1798,6 +1871,42 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             nickname = manager.active_users.get(websocket, "")
+            if p_type == "seat_reservation":
+                try:
+                    idx = int(packet.get("index"))
+                except (TypeError, ValueError):
+                    continue
+                if not 0 <= idx < len(server_state["cards"]):
+                    continue
+                card = server_state["cards"][idx]
+                wants_reservation = packet.get("reserved") is True
+                reservation_owner = card.get("reserved_by")
+
+                if wants_reservation:
+                    owns_active_slot = idx in manager.active_slots.get(client_id, [])
+                    if reservation_owner and reservation_owner != nickname:
+                        await send_seat_error(websocket, idx, f"{reservation_owner} 작가님의 고정석입니다.")
+                        continue
+                    if card["user"] != nickname or not owns_active_slot:
+                        await send_seat_error(websocket, idx, "자기 카드에서만 자리를 고정할 수 있습니다.")
+                        continue
+                    card["reserved_by"] = nickname
+                    card["user"] = nickname
+                else:
+                    if reservation_owner != nickname and nickname != ADMIN_NICKNAME:
+                        await send_seat_error(websocket, idx, "본인의 고정석만 해제할 수 있습니다.")
+                        continue
+                    card["reserved_by"] = None
+
+                await persist_state()
+                await manager.broadcast(json.dumps({
+                    "type": "seat_reservation_update",
+                    "index": idx,
+                    "user": card["user"],
+                    "reserved_by": card.get("reserved_by")
+                }))
+                continue
+
             if p_type == "goal_celebration_chat":
                 chat_obj = {
                     "id": uuid.uuid4().hex,
@@ -1886,9 +1995,29 @@ async def websocket_endpoint(websocket: WebSocket):
 
             else:
                 packet["sender"] = client_id
+                protected_card_types = {"username_change", "card_bg_change", "toggle_mosaic", "start_share", "stop_share", "status_update"}
+                if p_type in protected_card_types:
+                    try:
+                        scoped_idx = int(packet.get("index"))
+                    except (TypeError, ValueError):
+                        continue
+                    if not 0 <= scoped_idx < len(server_state["cards"]):
+                        continue
+                    packet["index"] = scoped_idx
+                    reservation_owner = server_state["cards"][scoped_idx].get("reserved_by")
+                    if reservation_owner and reservation_owner != nickname:
+                        await send_seat_error(websocket, scoped_idx, f"{reservation_owner} 작가님의 고정석이라 사용할 수 없습니다.")
+                        continue
+
                 if p_type == "username_change":
                     idx = packet["index"]
                     val = packet["user"]
+                    if not isinstance(val, str):
+                        continue
+                    reservation_owner = server_state["cards"][idx].get("reserved_by")
+                    if reservation_owner == nickname and val != nickname:
+                        await send_seat_error(websocket, idx, "고정을 해제한 뒤 이름을 바꿔주세요.")
+                        continue
                     server_state["cards"][idx]["user"] = val
                     if not val.startswith("자리"):
                         if client_id not in manager.active_slots: manager.active_slots[client_id] = []
