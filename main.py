@@ -603,7 +603,7 @@ def read_root():
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
-                                <button class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
+                                <button id="empty-slot-toggle-btn" class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
                                 <button class="settings-toggle-btn" style="background:#0984e3; color:white; flex: 1; padding: 6px 0;" onclick="addMySlot()">➕ 자리</button>
                             </div>
                             <div style="display: flex; gap: 4px; width: 100%;">
@@ -755,8 +755,22 @@ def read_root():
             function formatNotice(text) { return !text ? "" : makeLinksClickable(text).replace(/\n/g, '<br>'); }
             function addNotice() { const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)"); if (newVal !== null && newVal.trim() !== "") { const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: combined })); window.rawNotice = combined; document.getElementById('noticeText').innerHTML = formatNotice(combined); } } }
             function editNotice() { const newVal = prompt("기존 공지를 전부 지우고 새로 쓰거나, 직접 글을 수정하세요!", window.rawNotice); if (newVal !== null) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: newVal })); window.rawNotice = newVal; document.getElementById('noticeText').innerHTML = formatNotice(newVal); } } }
-            function toggleEmptySlots() { window.isHideEmpty = !window.isHideEmpty; applyEmptySlotVisibility(); }
-            function applyEmptySlotVisibility() { cardData.forEach((card, index) => { const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { if (window.isHideEmpty && card.user.startsWith("자리") && !card.reserved_by) { cardEl.style.display = "none"; } else { cardEl.style.display = "flex"; } } }); }
+            window.activeNicknames = new Set();
+            function toggleEmptySlots() {
+                window.isHideEmpty = !window.isHideEmpty;
+                const button = document.getElementById('empty-slot-toggle-btn');
+                if (button) button.textContent = window.isHideEmpty ? '🪑 전체 자리' : '👀 빈자리';
+                applyEmptySlotVisibility();
+            }
+            function applyEmptySlotVisibility() {
+                const activeNicknames = window.activeNicknames || new Set();
+                cardData.forEach((card, index) => {
+                    const cardEl = document.getElementById(`card-card-${index}`);
+                    if (!cardEl) return;
+                    const isConnectedUser = !!card.user && !card.user.startsWith("자리") && activeNicknames.has(card.user);
+                    cardEl.style.display = (window.isHideEmpty && !isConnectedUser) ? "none" : "flex";
+                });
+            }
             function addMySlot() { const myName = window.myNickname || "익명"; let emptyIdx = -1; for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리") && !cardData[i].reserved_by) { emptyIdx = i; break; } } if (emptyIdx !== -1) { const inputEl = document.getElementById(`username-${emptyIdx}`); if (inputEl) inputEl.value = myName; updateUsername(emptyIdx, myName); } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); } }
             function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
             
@@ -772,6 +786,7 @@ def read_root():
                     window.isAdmin = false; 
                 } 
                 window.myNickname = inputNick; 
+                window.activeNicknames.add(inputNick);
                 localStorage.setItem('mySavedNickname', inputNick); 
                 document.getElementById('loginOverlay').style.display = 'none'; 
                 initCards(); 
@@ -1097,8 +1112,10 @@ def read_root():
                             else if (data.type === "chat_cleared") { document.getElementById('chatHistory').innerHTML = ""; }
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
+                                window.activeNicknames = new Set(data.users.map(u => u.nickname));
                                 let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b style="color:white;">${u.nickname}</b>${kickBtn}</span>`; }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
+                                applyEmptySlotVisibility();
                             }
                             else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time, data.id); } 
                             else if (data.type === "update_notice") { window.rawNotice = data.notice; document.getElementById('noticeText').innerHTML = formatNotice(data.notice); }
