@@ -468,7 +468,7 @@ def read_root():
                     <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">빨간 테두리(오늘)를 눌러서 도장을 찍어봐!</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                    <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 최근 7일 출석 랭킹</div>
+                    <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 주 출석 랭킹</div>
                     <div id="attRankingList" style="font-size: 12px; color: #ddd; line-height: 1.6; max-height: 100px; overflow-y: auto;">랭킹 로딩 중...</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px;">
@@ -738,12 +738,12 @@ def read_root():
                     }
                     grid.innerHTML = html;
                 }
-                const titleEl = document.getElementById('rankTitle'); if (titleEl) titleEl.innerText = '🏆 최근 7일 모두의 랭킹';
+                const titleEl = document.getElementById('rankTitle'); if (titleEl) titleEl.innerText = '🏆 이번 주 모두의 랭킹';
                 const monthData = window.attendanceData[monthStr] || {}; const weeklyCounts = weeklyAttendanceCounts(); let rankArr = []; let todayAttendees = [];
                 for (let user in weeklyCounts) { rankArr.push({ name: user, count: weeklyCounts[user] }); }
                 for (let user in monthData) { if ((monthData[user] || []).includes(today)) { todayAttendees.push(user); } }
                 rankArr.sort((a, b) => b.count - a.count); let rankHtml = '';
-                if (rankArr.length === 0) { rankHtml = '아직 최근 7일 동안 출석한 사람이 없어!'; } else { rankArr.forEach((item) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; let medal = ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '🏅'; rankHtml += `<div style="${(rank > 0 && rank <= 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
+                if (rankArr.length === 0) { rankHtml = '아직 이번 주에 출석한 사람이 없어!'; } else { rankArr.forEach((item) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; let medal = ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '🏅'; rankHtml += `<div style="${(rank > 0 && rank <= 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
                 let todayHtml = todayAttendees.length === 0 ? '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!' : todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${u}</span>`).join('');
                 const rankEl = document.getElementById('attRankingList'); const todayEl = document.getElementById('attTodayList');
                 if (rankEl) rankEl.innerHTML = rankHtml; if (todayEl) todayEl.innerHTML = todayHtml;
@@ -1686,7 +1686,11 @@ def read_root():
                 const dates = [];
                 const today = kstNow();
                 today.setHours(12, 0, 0, 0);
-                for (let offset = 0; offset < 7; offset++) {
+
+                // 이번 주 월요일부터 오늘까지만 계산
+                const daysSinceMonday = (today.getDay() + 6) % 7;
+
+                for (let offset = 0; offset <= daysSinceMonday; offset++) {
                     const date = new Date(today);
                     date.setDate(today.getDate() - offset);
                     dates.push({
@@ -1755,7 +1759,7 @@ def read_root():
                     if(!input) return;
                     let badge=document.getElementById(`badge-${i}`);
                     if(!badge) { badge=document.createElement('span'); badge.id=`badge-${i}`; input.before(badge); }
-                    badge.textContent=badgeFor(card.user); badge.title='최근 7일 출석 순위 / 월 목표 달성';
+                    badge.textContent=badgeFor(card.user); badge.title='이번 주 출석 순위 / 월 목표 달성';
                 });
                 document.querySelectorAll('#userListStr b').forEach(el=>{
                     const name=el.dataset.name || el.textContent; el.dataset.name=name; el.textContent=badgeFor(name)+name;
