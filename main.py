@@ -37,7 +37,7 @@ except Exception as e:
 def load_data():
     initial_data = {
         "_id": "main_state",
-        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "reserved_by": None} for i in range(16)],
+        "cards": [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": "", "reserved_by": None} for i in range(16)],
         "chat_history": [],
         "global_notice": "📌 다 함께 모여서 열심히 마감해 봅시다!",
         "attendance": {},
@@ -52,13 +52,14 @@ def load_data():
                 if len(cards) > 16:
                     data["cards"] = cards[:16]
                 elif len(cards) < 16:
-                    new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": 0, "reserved_by": None} for i in range(len(cards), 16)]
+                    new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": "", "reserved_by": None} for i in range(len(cards), 16)]
                     data["cards"].extend(new_cards)
                 for i, card in enumerate(data["cards"]):
                     card["user"] = card.get("user") or f"자리{i+1}"
                     card["is_mosaic"] = card.get("is_mosaic", False)
                     card["is_large"] = card.get("is_large", False)
-                    card["status"] = card.get("status", 0)
+                    raw_status = card.get("status", "")
+                    card["status"] = raw_status.strip()[:30] if isinstance(raw_status, str) else ""
                     reserved_by = card.get("reserved_by")
                     card["reserved_by"] = reserved_by if isinstance(reserved_by, str) and reserved_by.strip() else None
                     if card["reserved_by"]:
@@ -128,6 +129,21 @@ app = FastAPI()
 
 @app.on_event("shutdown")
 async def flush_pending_save():
+    shutdown_at = time.time()
+    shutdown_dt = datetime.fromtimestamp(shutdown_at, KST)
+    paused_any = False
+    for nickname in set(manager.active_users.values()):
+        if not nickname or nickname == "연결중...":
+            continue
+        tracker = normalize_tracker(nickname, shutdown_dt)
+        timer = tracker["timer"]
+        if timer.get("started"):
+            timer["seconds"] += max(0, shutdown_at - timer["started"])
+            timer["started"] = None
+            normalize_tracker(nickname, shutdown_dt)
+            paused_any = True
+    if paused_any:
+        await persist_state()
     if save_task is not None and not save_task.done():
         try:
             await asyncio.wait_for(asyncio.shield(save_task), timeout=25)
@@ -216,12 +232,13 @@ async def post_presence_chat(message):
     await manager.broadcast(json.dumps({"type": "chat", **chat_obj}))
     await persist_state()
 
-async def post_leave_after_reconnect_grace(nickname):
+async def post_leave_after_reconnect_grace(nickname, disconnected_at):
     current_task = asyncio.current_task()
     try:
         await asyncio.sleep(PRESENCE_RECONNECT_GRACE_SECONDS)
         if any(name == nickname for name in manager.active_users.values()):
             return
+        await set_tracker_timer_running(nickname, False, disconnected_at)
         await post_presence_chat(f"🚪 {nickname} 작가님이 퇴장하셨습니다.")
     except asyncio.CancelledError:
         return
@@ -274,6 +291,43 @@ async def publish_tracker(nickname):
         except Exception:
             pass
     await asyncio.gather(*(send(conn) for conn in list(manager.active_connections)))
+
+async def set_tracker_timer_running(nickname, should_run, event_time=None):
+    if not nickname or nickname == "연결중...":
+        return
+    timestamp = event_time if event_time is not None else time.time()
+    event_dt = datetime.fromtimestamp(timestamp, KST)
+    current = normalize_tracker(nickname, event_dt)
+    timer = current["timer"]
+    changed = False
+    if should_run:
+        if timer.get("started") is None:
+            timer["started"] = timestamp
+            changed = True
+    elif timer.get("started") is not None:
+        timer["seconds"] += max(0, timestamp - timer["started"])
+        timer["started"] = None
+        changed = True
+    normalize_tracker(nickname, event_dt)
+    if changed:
+        await persist_state()
+        await publish_tracker(nickname)
+
+@app.on_event("startup")
+async def pause_stale_timers_before_first_login():
+    startup_at = time.time()
+    startup_dt = datetime.fromtimestamp(startup_at, KST)
+    changed = False
+    for nickname in list(server_state.get("trackers", {})):
+        tracker = normalize_tracker(nickname, startup_dt)
+        timer = tracker["timer"]
+        if timer.get("started") is not None:
+            timer["seconds"] += max(0, startup_at - timer["started"])
+            timer["started"] = None
+            normalize_tracker(nickname, startup_dt)
+            changed = True
+    if changed:
+        await persist_state()
 
 background_read_lock = asyncio.Lock()
 
@@ -376,6 +430,7 @@ def read_root():
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
             .recovery-btn { background: #d63031; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 10px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+            .level-up-name { color: #ffd54a !important; text-shadow: 0 0 7px rgba(255, 213, 74, 0.75) !important; }
             
             .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
             .cal-day { background: rgba(0,0,0,0.5); padding: 5px 0; text-align: center; border-radius: 3px; font-size: 11px; font-weight: bold; }
@@ -383,19 +438,19 @@ def read_root():
             .cal-day.today:hover { background: rgba(255, 118, 117, 0.5); }
             .cal-day.stamped { background: rgba(39, 174, 96, 0.4); border: none; cursor: default; }
             
-            .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 15px; width: 100%; border-radius: 10px; box-sizing: border-box; }
-            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 10px; padding-right: 35px; }
-            .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 20px; font-weight: bold; }
+            .rec-container { background-color: var(--rec-bg); font-family: 'Malgun Gothic', sans-serif; color: #4a4a4a; padding: 24px; width: 100%; border-radius: 10px; box-sizing: border-box; }
+            .rec-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; flex-wrap: wrap; gap: 12px; border-bottom: 2px solid var(--rec-primary); padding-bottom: 14px; padding-right: 35px; }
+            .rec-header-bar h1 { margin: 0; color: var(--rec-primary); font-size: 22px; font-weight: bold; }
             .rec-color-picker-box { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: var(--rec-primary); }
             .rec-color-picker-box input[type="color"] { width: 25px; height: 25px; border: none; border-radius: 50%; cursor: pointer; padding: 0; background: none; }
             
-            .rec-section { margin-bottom: 15px; padding: 15px; background: var(--rec-sec); border-radius: 10px; border: 1px solid var(--rec-border); display: flex; flex-direction: column; gap: 12px; }
-            .rec-section h3 { margin: 0; color: var(--rec-primary); font-size: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--rec-border); }
+            .rec-section { margin-bottom: 22px; padding: 20px; background: var(--rec-sec); border-radius: 12px; border: 1px solid var(--rec-border); display: flex; flex-direction: column; gap: 16px; }
+            .rec-section h3 { margin: 0; color: var(--rec-primary); font-size: 17px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-bottom: 12px; border-bottom: 1px dashed var(--rec-border); }
             
-            .rec-record-box { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 15px; width: 100%; }
-            .rec-timer-container { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 140px; }
-            .rec-timer-display { font-size: 26px; font-weight: bold; color: var(--rec-primary); line-height: 1; }
-            .rec-input-edit { width: 70px; padding: 4px; border: 1px solid var(--rec-border); border-radius: 4px; font-size: 14px; text-align: right; background: #fff; color: #333; }
+            .rec-record-box { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px; width: 100%; }
+            .rec-timer-container { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 190px; }
+            .rec-timer-display { font-size: 30px; font-weight: bold; color: var(--rec-primary); line-height: 1; }
+            .rec-input-edit { width: 110px; padding: 8px; border: 1px solid var(--rec-border); border-radius: 6px; font-size: 15px; text-align: right; background: #fff; color: #333; }
             
             .rec-banner { display: none; margin-top: 10px; padding: 8px; background: #fffacd; border: 1px solid #ffd700; border-radius: 5px; text-align: center; font-weight: bold; color: #b8860b; font-size: 13px; }
             .rec-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -413,15 +468,19 @@ def read_root():
             .rec-btn:hover { opacity: 0.8; }
             .rec-btn-del { background: #ff9999; color: #fff; }
             
-            .rec-cal-wrap { display: none; margin-top: 10px; }
-            .rec-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
-            .rec-cal-header { font-weight: bold; color: var(--rec-primary); font-size: 12px; padding-bottom: 5px; }
-            .rec-cal-day { background: #fff; border: 1px solid var(--rec-border); border-radius: 4px; padding: 3px 1px; min-height: 50px; display: flex; flex-direction: column; justify-content: flex-start; overflow: hidden; color: #333;}
+            .rec-cal-wrap { display: none; margin-top: 12px; overflow-x: auto; padding: 2px 2px 10px; }
+            .rec-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(105px, 1fr)); gap: 8px; text-align: center; font-size: 13px; min-width: 820px; }
+            .rec-cal-header { font-weight: bold; color: var(--rec-primary); font-size: 14px; padding: 4px 0 8px; }
+            .rec-cal-day { background: #fff; border: 1px solid var(--rec-border); border-radius: 7px; padding: 10px 7px; min-height: 104px; display: flex; flex-direction: column; justify-content: flex-start; gap: 4px; overflow: hidden; color: #333; line-height: 1.35; }
             .rec-cal-day.done { background: var(--rec-done); }
-            .rec-cal-day .date-num { font-weight: bold; font-size: 10px; margin-bottom: 2px; }
-            .rec-cal-day .goal { font-size: 8.5px; color: #666; white-space: nowrap; }
-            .rec-cal-day .act { font-size: 8.5px; font-weight: bold; color: var(--rec-primary); white-space: nowrap; }
-            .rec-cal-day .time { font-size: 8.5px; color: #555; white-space: nowrap; margin-top: 1px; }
+            .rec-cal-day .date-num { font-weight: bold; font-size: 14px; margin-bottom: 3px; }
+            .rec-cal-day .goal { font-size: 12px; color: #666; white-space: nowrap; }
+            .rec-cal-day .act { font-size: 12px; font-weight: bold; color: var(--rec-primary); white-space: nowrap; }
+            .rec-cal-day .time { font-size: 12px; color: #555; white-space: nowrap; margin-top: 2px; }
+            @media (max-width: 600px) {
+                .rec-container { padding: 14px; }
+                .rec-section { padding: 14px; margin-bottom: 16px; }
+            }
         </style>
     </head>
     <body>
@@ -503,7 +562,7 @@ def read_root():
         </div>
 
         <div id="recordModal" class="modal-overlay" onclick="if(event.target===this) closeModal('recordModal')">
-            <div class="modal-box" style="width: 650px; max-width: 95vw; padding: 0; border: 2px solid var(--rec-border); background: #ffffff; overflow-x: hidden;">
+            <div class="modal-box" style="width: 980px; max-width: 96vw; max-height: 90vh; padding: 0; border: 2px solid var(--rec-border); background: #ffffff; overflow-x: hidden;">
                 <button class="close-btn" onclick="closeModal('recordModal')" style="color: var(--rec-primary); text-shadow: 0 0 3px #fff; top: 18px;">❌</button>
                 
                 <div class="rec-container">
@@ -512,7 +571,7 @@ def read_root():
                         <div class="rec-color-picker-box">
                             <div>
                                 <label for="themeColorPicker">🎨 테마 색상:</label>
-                                <input type="color" id="themeColorPicker" value="#d87093" oninput="changeThemeColor(this.value)" onchange="saveRecordData(true)">
+                                <input type="color" id="themeColorPicker" value="#d87093" oninput="changeThemeColor(this.value)" onchange="flushRecordAutoSave()">
                             </div>
                         </div>
                     </div>
@@ -520,20 +579,16 @@ def read_root():
                     <div class="rec-section">
                         <h3>
                             ⏱️ 오늘의 집필 기록
-                            <button id="rec-save-btn" class="rec-btn" onclick="saveRecordData()" style="background: var(--rec-primary); color: #fff;">💾 기록 저장하기</button>
+                            <span id="rec-autosave-status" style="font-size:12px; color:#777; font-weight:normal;">☁️ 자동 저장</span>
                         </h3>
                         <div class="rec-record-box">
                             <div style="display: flex; flex-direction: column; gap: 8px;">
-                                <div>목표: <input type="number" id="rec-target-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
-                                <div>완료: <input type="number" id="rec-done-chars" class="rec-input-edit" oninput="checkGoalAchievement()">자</div>
+                                <div>목표: <input type="number" id="rec-target-chars" class="rec-input-edit" oninput="checkGoalAchievement(); scheduleRecordAutoSave()" onchange="flushRecordAutoSave()">자</div>
+                                <div>완료: <input type="number" id="rec-done-chars" class="rec-input-edit" oninput="checkGoalAchievement(); scheduleRecordAutoSave()" onchange="flushRecordAutoSave()">자</div>
                             </div>
                             <div class="rec-timer-container" id="rec-my-timer-area">
                                 <div class="rec-timer-display" id="rec-main-timer">00:00:00</div>
-                                <div style="display: flex; gap: 5px;">
-                                    <button class="rec-btn" onclick="startMainTimer()">시작</button>
-                                    <button class="rec-btn" onclick="pauseMainTimer()" style="background: #dda7a7; color:#fff;">정지</button>
-                                    <button class="rec-btn" onclick="resetMainTimer()">리셋</button>
-                                </div>
+                                <div style="font-size:12px; color:#777;">🟢 접속 중 자동 기록</div>
                             </div>
                         </div>
                         <div id="rec-congrats-banner" class="rec-banner">
@@ -554,7 +609,7 @@ def read_root():
                         </div>
                     </div>
 
-                    <div class="rec-section"><h3>🏆 이번 달 목표</h3><label>월 목표 <input id="rec-month-goal" type="number" min="0" step="1000" class="rec-input-edit" onchange="saveRecordData(true)"> 자</label><div id="rec-month-progress"></div></div>
+                    <div class="rec-section"><h3>🏆 이번 달 목표</h3><label>월 목표 <input id="rec-month-goal" type="number" min="0" step="1000" class="rec-input-edit" oninput="scheduleRecordAutoSave()" onchange="flushRecordAutoSave()"> 자</label><div id="rec-month-progress"></div></div>
                         <div class="rec-section" id="rec-pomo-section">
                         <h3>
                             🍅 개인 뽀모도로
@@ -654,6 +709,8 @@ def read_root():
             window.goalCelebrationChoiceMade = false;
             let recTotalSeconds = 0;
             let recMainTimerInterval = null;
+            let recordAutoSaveTimer = null;
+            let recordAutoSaveNeedsSync = false;
             let recPomoInterval = null;
             let recPomoSeconds = 25 * 60;
             let recIsWorking = true;
@@ -713,6 +770,7 @@ def read_root():
                 if (modalId === 'adminLogModal') { renderAdminLog(); } 
             }
             function closeModal(modalId) { 
+                if (modalId === 'recordModal') flushRecordAutoSave();
                 document.getElementById(modalId).style.display = 'none'; 
                 if (modalId === 'recordModal' && window.myNickname && window.trackersData[window.myNickname]) {
                     changeThemeColor(window.trackersData[window.myNickname].themeColor || "#d87093");
@@ -804,17 +862,18 @@ def read_root():
                 const status=document.getElementById('connStatus');
                 status.textContent='입장 대기'; status.className='status-indicator status-offline';
             } 
-            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: 0, reserved_by: null, is_local_hidden: false }));
+            const cardData = Array.from({length: 16}, (_, i) => ({ id: i+1, user: `자리${i+1}`, card_bg: null, is_mosaic: false, is_large: false, status: "", reserved_by: null, is_local_hidden: false }));
             const myStreams = {}; const peerConnections = {}; const candidateBuffers = {}; const expectedShares = {}; const myOwnedSlots = new Set(); 
             const rtcConfig = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ] };
 
             function getEmptySlotHTML(card) {
                 const username = card.user || "";
+                const nameColor = isMonthlyLevelUp(username) ? '#ffd54a' : '#fff';
                 if (card.reserved_by) {
-                    return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:12px; color:#ffeaa7; font-weight:bold;">🔒 ${escapeText(card.reserved_by)} 작가님 고정석</span><span style="font-size:10px; color:#aaa; margin-top:3px;">화면 미공유 중</span></div>`;
+                    return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:${nameColor}; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:12px; color:#ffeaa7; font-weight:bold;">🔒 ${escapeText(card.reserved_by)} 작가님 고정석</span><span style="font-size:10px; color:#aaa; margin-top:3px;">화면 미공유 중</span></div>`;
                 }
                 if (!username || username.startsWith("자리")) { return `<div style="position:relative; z-index:2; width:100%; text-align:center;"><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`; }
-                return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:#fff; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
+                return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center; padding:10px; width:100%; height:100%;"><span style="font-size:22px; font-weight:900; color:${nameColor}; text-shadow: 2px 2px 5px rgba(0,0,0,0.9); margin-bottom:4px;">${escapeText(username)}</span><span style="font-size:11px; color:#aaa;">화면 미공유 중</span></div>`;
             }
 
             function applySeatReservationUI(index) {
@@ -869,24 +928,47 @@ def read_root():
                 const box = document.getElementById(`stream-box-${index}`); if (!box) return; 
                 const existingVideo = box.querySelector('video'); if (existingVideo) existingVideo.remove(); 
                 const card = cardData[index]; 
-                if (card.status > 0) { 
-                    let textMsg = ""; if (card.status === 1) textMsg = "🍽️ 식사중"; else if (card.status === 2) textMsg = "☕ 휴식중"; else if (card.status === 3) textMsg = "💤 수면중"; else if (card.status === 4) textMsg = "😭 눈물좀 닦고"; 
-                    box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0;"><div style="font-size: 28px; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${textMsg}</div></div>`; 
+                if (hasCustomStatus(card.status)) {
+                    box.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 5; position: absolute; top:0; left:0; padding:18px;"><div style="font-size: 26px; line-height:1.35; text-align:center; word-break:keep-all; overflow-wrap:anywhere; font-weight: 900; color: #fff; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);">${escapeText(card.status)}</div></div>`;
                 } else { 
                     box.innerHTML = getEmptySlotHTML(card); 
                 } 
             }
             
-            function updateStatusUI(index, status) { const btn = document.getElementById(`share-btn-status-${index}`); if (btn) { if (status > 0) { btn.innerText = "끄기"; btn.style.background = "#d63031"; } else { btn.innerText = "상태"; btn.style.background = "#8e44ad"; } } }
-            function handleStatusMainClick(index) { const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin; if (!isMine) { alert("자기 자리 상태만 바꿀 수 있어 누나!"); return; } if (cardData[index].status > 0) { setStatus(index, 0); } else { toggleStatusMenu(index); } }
-            function toggleStatusMenu(index) { for(let i=0; i<16; i++) { if (i !== index) { const m = document.getElementById(`status-menu-${i}`); if (m) m.style.display = 'none'; } } const menu = document.getElementById(`status-menu-${index}`); if (menu) { menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex'; } }
-            function setStatus(index, s) { const menu = document.getElementById(`status-menu-${index}`); if(menu) menu.style.display = 'none'; cardData[index].status = s; updateStatusUI(index, s); if (s !== 0 && myStreams[index]) { stopShare(index); } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: s })); } renderBox(index); }
-            document.addEventListener('click', function(event) { if (!event.target.closest('.status-wrap')) { for(let i=0; i<16; i++) { const m = document.getElementById(`status-menu-${i}`); if(m) m.style.display = 'none'; } } });
+            function hasCustomStatus(status) { return typeof status === 'string' && status.trim().length > 0; }
+            function normalizeCustomStatus(value) { return Array.from(String(value || '').trim()).slice(0, 30).join(''); }
+            function updateStatusUI(index, status) {
+                const btn = document.getElementById(`share-btn-status-${index}`);
+                if (!btn) return;
+                const active = hasCustomStatus(status);
+                btn.innerText = active ? "수정" : "상태";
+                btn.style.background = active ? "#00b894" : "#8e44ad";
+                btn.title = active ? `현재 상태: ${status} (눌러서 수정·삭제)` : "눌러서 내 상태를 직접 입력";
+            }
+            function editCustomStatus(index) {
+                const isMine = ((cardData[index].user === window.myNickname) && window.myNickname) || window.isAdmin;
+                if (!isMine) { alert("자기 자리 상태만 바꿀 수 있어 누나!"); return; }
+                const current = hasCustomStatus(cardData[index].status) ? cardData[index].status : '';
+                const entered = prompt("지금 상태를 적어주세요. (최대 30자)\n비워두고 확인하면 상태가 해제됩니다.", current);
+                if (entered === null) return;
+                const status = normalizeCustomStatus(entered);
+                setCustomStatus(index, status);
+            }
+            function setCustomStatus(index, status) {
+                cardData[index].status = status;
+                updateStatusUI(index, status);
+                if (hasCustomStatus(status) && myStreams[index]) stopShare(index);
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "status_update", index: index, status: status }));
+                renderBox(index);
+            }
             
             function logChat(sender, msg, timeStr, id) {
                 const history = document.getElementById('chatHistory');
                 const row = document.createElement('div');
-                const name = document.createElement('b'); name.textContent = badgeFor(sender) + sender;
+                const name = document.createElement('b');
+                name.dataset.name = sender;
+                name.classList.toggle('level-up-name', isMonthlyLevelUp(sender));
+                name.textContent = badgeFor(sender) + sender;
                 row.append(name, document.createTextNode(': ' + msg));
                 const metadata = document.createElement('span');
                 metadata.style.cssText = 'display:inline-block;margin-left:5px;font-size:9px;color:rgba(180,190,200,0.38);font-weight:normal;white-space:nowrap;';
@@ -940,7 +1022,7 @@ def read_root():
             function initCards() {
                 const grid = document.getElementById('cardGrid'); grid.innerHTML = '';
                 cardData.forEach((card, index) => {
-                    let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = card.status > 0 ? '끄기' : '상태'; let statusBtnBg = card.status > 0 ? '#d63031' : '#8e44ad';
+                    let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = hasCustomStatus(card.status) ? '수정' : '상태'; let statusBtnBg = hasCustomStatus(card.status) ? '#00b894' : '#8e44ad';
                     let hideBtnText = card.is_local_hidden ? '보기' : '가리기'; let hideBtnBg = card.is_local_hidden ? '#e84393' : '#2d3436'; let boxVisibility = card.is_local_hidden ? 'hidden' : 'visible';
                     let myOrder = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                     grid.innerHTML += `
@@ -954,15 +1036,7 @@ def read_root():
                                 <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
-                                    <div style="position:relative; display:flex; flex-grow:1;" class="status-wrap">
-                                        <button class="share-btn" id="share-btn-status-${index}" style="background:${statusBtnBg}; width:100%;" onclick="handleStatusMainClick(${index})">${statusBtnText}</button>
-                                        <div id="status-menu-${index}" style="display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); background:rgba(30,30,40,0.95); border:1px solid #8e44ad; border-radius:4px; flex-direction:column; z-index:100; min-width:80px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding: 4px; margin-top: 2px;">
-                                            <button onclick="setStatus(${index}, 1)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">🍽️ 식사</button>
-                                            <button onclick="setStatus(${index}, 2)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">☕ 휴식</button>
-                                            <button onclick="setStatus(${index}, 3)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">💤 수면</button>
-                                            <button onclick="setStatus(${index}, 4)" style="background:transparent; border:none; color:white; padding:6px 4px; text-align:center; cursor:pointer; font-size:12px; width:100%; border-radius:3px; white-space:nowrap;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">😭 눈물좀 닦고</button>
-                                        </div>
-                                    </div>
+                                    <button class="share-btn" id="share-btn-status-${index}" style="background:${statusBtnBg};" onclick="editCustomStatus(${index})" title="눌러서 내 상태를 직접 입력">${statusBtnText}</button>
                                     <button class="share-btn" id="share-btn-mosaic-${index}" style="background:${mosaicBtnBg};" onclick="handleMosaicClick(${index})">${mosaicBtnText}</button>
                                     <button class="share-btn" id="size-btn-${index}" style="background:${sizeBtnBg};" onclick="toggleSize(${index})">${sizeBtnText}</button>
                                     <button class="share-btn" id="sound-toggle-btn-${index}" style="background:#00b894; display:none;" onclick="toggleViewerSound(${index})">음소거</button>
@@ -1032,7 +1106,7 @@ def read_root():
                 const box = document.getElementById(`stream-box-${index}`); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`);
                 if (myStreams[index]) { stopShare(index); return; }
                 if (cardData[index].reserved_by && cardData[index].reserved_by !== window.myNickname) { alert(`${cardData[index].reserved_by} 작가님의 고정석이라 사용할 수 없어!`); return; }
-                if (cardData[index].status > 0) { cardData[index].status = 0; updateStatusUI(index, 0); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: 0 })); } }
+                if (hasCustomStatus(cardData[index].status)) { cardData[index].status = ""; updateStatusUI(index, ""); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "status_update", index: index, status: "" })); } }
                 try {
                     let stream;
                     if (type === 'screen') { 
@@ -1080,6 +1154,7 @@ def read_root():
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
                         ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
+                        if (recordAutoSaveNeedsSync) flushRecordAutoSave();
                         
                         for (let idx in myStreams) {
                             if (myStreams[idx]) {
@@ -1113,8 +1188,9 @@ def read_root():
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 window.activeNicknames = new Set(data.users.map(u => u.nickname));
-                                let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b style="color:white;">${u.nickname}</b>${kickBtn}</span>`; }).join("");
+                                let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b data-name="${escapeText(u.nickname)}" style="color:white;">${escapeText(u.nickname)}</b>${kickBtn}</span>`; }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
+                                refreshBadges();
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "chat") { logChat(data.senderName, data.msg, data.time, data.id); } 
@@ -1131,7 +1207,7 @@ def read_root():
                                 if (state.cards) {
                                     state.cards.forEach((card, i) => {
                                         if (cardData[i]) {
-                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card,"card_bg")) { cardData[i].card_bg=card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = card.status || 0; cardData[i].reserved_by = card.reserved_by || null;
+                                            cardData[i].user = card.user; if (Object.prototype.hasOwnProperty.call(card,"card_bg")) { cardData[i].card_bg=card.card_bg; knownBackgrounds.add(i); } cardData[i].is_mosaic = card.is_mosaic || false; cardData[i].is_large = card.is_large || false; cardData[i].status = typeof card.status === 'string' ? card.status : ''; cardData[i].reserved_by = card.reserved_by || null;
                                             cardData[i].is_local_hidden = cardData[i].is_local_hidden || false; 
                                             
                                             applyMosaicUI(i, cardData[i].is_mosaic); applySizeUI(i, cardData[i].is_large); updateStatusUI(i, cardData[i].status); applySeatReservationUI(i);
@@ -1159,7 +1235,7 @@ def read_root():
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
                                 window.trackersData[data.nickname] = data.tracker_data; if(data.nickname===window.myNickname) restoreTimer(); refreshBadges();
-                                if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
+                                if (data.nickname !== window.myNickname && window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
                                     loadRecordDataIntoUI(data.nickname);
                                 }
                             }
@@ -1303,8 +1379,13 @@ def read_root():
                 document.getElementById('rec-done-chars').readOnly = !isMe;
                 document.getElementById('themeColorPicker').disabled = !isMe;
                 
-                document.getElementById('rec-save-btn').style.display = isMe ? "inline-block" : "none";
-                document.getElementById('rec-my-timer-area').style.display = isMe ? "block" : "none";
+                const autoSaveStatus = document.getElementById('rec-autosave-status');
+                if (autoSaveStatus) {
+                    autoSaveStatus.style.display = isMe ? "inline" : "none";
+                    autoSaveStatus.textContent = "☁️ 자동 저장";
+                    autoSaveStatus.style.color = "#777";
+                }
+                document.getElementById('rec-my-timer-area').style.display = isMe ? "flex" : "none";
                 
                 const todoInputArea = document.getElementById('rec-todo-input-area');
                 if (todoInputArea) todoInputArea.style.display = isMe ? "flex" : "none";
@@ -1332,7 +1413,7 @@ def read_root():
                 const goalMonth = monthKey();
                 document.getElementById('rec-month-goal').value = (data.monthlyGoals || {})[goalMonth] || 0;
                 document.getElementById('rec-month-goal').disabled = !isMe;
-                document.getElementById('rec-month-progress').textContent = '이번 달 완료: ' + monthlyDone(nickname).toLocaleString() + '자 ' + badgeFor(nickname);
+                updateMonthlyProgress(nickname);
                 if (isMe) restoreTimer();
                 checkGoalAchievement();
             }
@@ -1460,6 +1541,34 @@ def read_root():
                 }
             }
 
+            function setRecordAutoSaveStatus(message, color = '#777') {
+                const status = document.getElementById('rec-autosave-status');
+                if (!status) return;
+                status.textContent = message;
+                status.style.color = color;
+            }
+
+            function scheduleRecordAutoSave() {
+                if (!window.myNickname || window.currentViewingUser !== window.myNickname) return;
+                setRecordAutoSaveStatus('⏳ 저장 중…', '#a66b00');
+                if (recordAutoSaveTimer) clearTimeout(recordAutoSaveTimer);
+                recordAutoSaveTimer = setTimeout(() => {
+                    recordAutoSaveTimer = null;
+                    saveRecordData(true);
+                }, 500);
+            }
+
+            function flushRecordAutoSave() {
+                if (!window.myNickname || window.currentViewingUser !== window.myNickname) return;
+                if (recordAutoSaveTimer) {
+                    clearTimeout(recordAutoSaveTimer);
+                    recordAutoSaveTimer = null;
+                }
+                saveRecordData(true);
+            }
+
+            window.addEventListener('pagehide', flushRecordAutoSave);
+
             function saveRecordData(isSilent = false) {
                 if (!window.myNickname || window.currentViewingUser !== window.myNickname) return;
                 
@@ -1524,16 +1633,22 @@ def read_root():
                 if (!myData.calendar[monthStr]) myData.calendar[monthStr] = {};
                 myData.calendar[monthStr][dayStr] = { target: target, done: done, seconds: totalSecs };
 
+                let syncedToServer = false;
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "tracker_update", nickname: window.myNickname, tracker_data: myData }));
+                    try {
+                        ws.send(JSON.stringify({ type: "tracker_update", nickname: window.myNickname, tracker_data: myData }));
+                        syncedToServer = true;
+                    } catch (error) {
+                        console.warn('집필 기록 자동 저장 재시도 대기:', error);
+                    }
                 }
+                recordAutoSaveNeedsSync = !syncedToServer;
 
                 buildRecordCalendar(window.myNickname, myData.calendar);
+                updateMonthlyProgress(window.myNickname);
+                refreshBadges();
                 checkGoalAchievement();
-
-                if (!isSilent) {
-                    alert('✨ 목표, 완료 글자수와 집필 시간, 오늘의 할 일까지 서버에 안전하게 저장되었습니다! 💾');
-                }
+                setRecordAutoSaveStatus(syncedToServer ? '☁️ 자동 저장됨' : '⚠️ 재연결 후 다시 저장', syncedToServer ? '#2e7d32' : '#b45309');
             }
 
             function changeThemeColor(hex) {
@@ -1553,16 +1668,10 @@ def read_root():
                 document.getElementById('rec-main-timer').textContent = `${hrs}:${mins}:${secs}`;
             }
 
-            function startMainTimer() { timerAction('start'); }
-            function pauseMainTimer() { timerAction('pause'); }
-            function resetMainTimer() { if(confirm('오늘 집필 시간을 0으로 초기화할까요?')) timerAction('reset'); }
-
-
             function startPomodoro() {
                 if (recPomoInterval) return;
                 const workMins = parseInt(document.getElementById('rec-pomo-work').value) || 25;
                 if (recPomoSeconds === 25 * 60) recPomoSeconds = workMins * 60;
-                startMainTimer();
                 recPomoInterval = setInterval(() => {
                     if (recPomoSeconds > 0) {
                         recPomoSeconds--;
@@ -1590,7 +1699,6 @@ def read_root():
             function pausePomodoro() {
                 clearInterval(recPomoInterval);
                 recPomoInterval = null;
-                pauseMainTimer();
             }
 
             function resetPomodoro() {
@@ -1680,6 +1788,12 @@ def read_root():
                 return new Date(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second);
             }
             function monthKey() { const d=kstNow(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+            function previousMonthKey() {
+                const d = kstNow();
+                d.setDate(1);
+                d.setMonth(d.getMonth() - 1);
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            }
             function dayKey() { const d=kstNow(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
             function escapeText(value) { const el=document.createElement('span'); el.textContent=String(value ?? ''); return el.innerHTML; }
             function lastSevenAttendanceDates() {
@@ -1734,9 +1848,24 @@ def read_root():
                 }
             },1000);
             document.addEventListener('visibilitychange', () => { if(!document.hidden) restoreTimer(); });
-            function monthlyDone(name) {
-                const month=(window.trackersData[name]?.calendar || {})[monthKey()] || {};
+            function monthlyDoneFor(name, targetMonth) {
+                const month=(window.trackersData[name]?.calendar || {})[targetMonth] || {};
                 return Object.values(month).reduce((sum,r)=>sum+Math.max(0,Number(r.done)||0),0);
+            }
+            function monthlyDone(name) { return monthlyDoneFor(name, monthKey()); }
+            function isMonthlyLevelUp(name) {
+                const earnedMonth = previousMonthKey();
+                const goal = Number(window.trackersData[name]?.monthlyGoals?.[earnedMonth]) || 0;
+                return goal > 0 && monthlyDoneFor(name, earnedMonth) >= goal;
+            }
+            function updateMonthlyProgress(name) {
+                const progress = document.getElementById('rec-month-progress');
+                if (!progress) return;
+                const done = monthlyDone(name);
+                const goal = Number(window.trackersData[name]?.monthlyGoals?.[monthKey()]) || 0;
+                const goalText = goal > 0 ? ` / 목표 ${goal.toLocaleString()}자` : ' / 월 목표 미설정';
+                const nextMonthText = goal > 0 && done >= goal ? ' · 다음 달 노란 닉네임 확정 ✨' : '';
+                progress.textContent = `이번 달 완료: ${done.toLocaleString()}자${goalText}${nextMonthText}`;
             }
             function attendanceRank(name) {
                 const counts=weeklyAttendanceCounts();
@@ -1757,12 +1886,27 @@ def read_root():
                 cardData.forEach((card,i)=>{
                     const input=document.getElementById(`username-${i}`);
                     if(!input) return;
+                    const levelUp=isMonthlyLevelUp(card.user);
+                    const levelChanged=input.dataset.levelUp!==String(levelUp);
+                    input.dataset.levelUp=String(levelUp);
+                    input.classList.toggle('level-up-name',levelUp);
                     let badge=document.getElementById(`badge-${i}`);
                     if(!badge) { badge=document.createElement('span'); badge.id=`badge-${i}`; input.before(badge); }
                     badge.textContent=badgeFor(card.user); badge.title='이번 주 출석 순위 / 월 목표 달성';
+                    if(levelChanged) {
+                        const box=document.getElementById(`stream-box-${i}`);
+                        if(box && !box.querySelector('video') && !hasCustomStatus(card.status)) renderBox(i);
+                    }
                 });
                 document.querySelectorAll('#userListStr b').forEach(el=>{
-                    const name=el.dataset.name || el.textContent; el.dataset.name=name; el.textContent=badgeFor(name)+name;
+                    const name=el.dataset.name || el.textContent; el.dataset.name=name;
+                    el.classList.toggle('level-up-name',isMonthlyLevelUp(name));
+                    el.textContent=badgeFor(name)+name;
+                });
+                document.querySelectorAll('#chatHistory b[data-name]').forEach(el=>{
+                    const name=el.dataset.name;
+                    el.classList.toggle('level-up-name',isMonthlyLevelUp(name));
+                    el.textContent=badgeFor(name)+name;
                 });
             }
             function toggleDashboard() {
@@ -1834,6 +1978,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         pass
 
                 manager.active_users[websocket] = nickname
+                await set_tracker_timer_running(nickname, True)
                 await websocket.send_text(json.dumps({"type":"private_tracker_state", "trackers": state_for(nickname)["trackers"]}))
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
@@ -1943,19 +2088,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "timer_action":
-                tracker = normalize_tracker(nickname)
-                timer = tracker["timer"]
-                action = packet.get("action")
-                if action in ("pause", "reset"):
-                    if timer.get("started"):
-                        timer["seconds"] += max(0, time.time() - timer["started"])
-                    timer["started"] = None
-                    if action == "reset": timer["seconds"] = 0
-                elif action == "start" and timer.get("started") is None:
-                    timer["started"] = time.time()
-                normalize_tracker(nickname)
-                await persist_state()
-                await publish_tracker(nickname)
+                # 집필 시간은 접속 중 자동 기록됩니다. 구버전 화면의 수동 명령도
+                # 기록을 멈추거나 초기화하지 않고 현재 접속 상태만 동기화합니다.
+                await set_tracker_timer_running(nickname, True)
                 continue
 
             if p_type == "delete_chat":
@@ -2059,7 +2194,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     server_state["global_notice"] = packet.get("notice", "")
                     await persist_state()
                 elif p_type == "status_update":
-                    server_state["cards"][packet["index"]]["status"] = packet.get("status", 0)
+                    idx = packet["index"]
+                    card = server_state["cards"][idx]
+                    if card.get("user") != nickname and nickname != ADMIN_NICKNAME:
+                        continue
+                    raw_status = packet.get("status", "")
+                    status = raw_status.strip()[:30] if isinstance(raw_status, str) else ""
+                    card["status"] = status
+                    packet["status"] = status
                     await persist_state()
                 
                 await manager.broadcast(json.dumps(packet), exclude=websocket)
@@ -2070,6 +2212,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         client_id = str(id(websocket))
         nickname = manager.active_users.get(websocket, "")
+        disconnected_at = time.time()
         
         if client_id in manager.active_slots:
             del manager.active_slots[client_id]
@@ -2089,7 +2232,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 old_pending_leave = pending_presence_leaves.pop(nickname, None)
                 if old_pending_leave is not None:
                     old_pending_leave.cancel()
-                pending_presence_leaves[nickname] = asyncio.create_task(post_leave_after_reconnect_grace(nickname))
+                pending_presence_leaves[nickname] = asyncio.create_task(post_leave_after_reconnect_grace(nickname, disconnected_at))
         
         for idx in freed_indexes:
             await manager.broadcast(json.dumps({"type": "stop_share", "index": idx}))
