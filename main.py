@@ -435,6 +435,12 @@ def read_root():
             .chat-box.chat-light .chat-input input { background: #fff; color: #2d3436; border: 1px solid #ddd; }
             .chat-box.chat-light .chat-delete-btn { color: #a06a6a !important; }
             .chat-box.chat-light .level-up-name { color: #c48a00 !important; text-shadow: none !important; }
+            #dashboardPanel.dashboard-light { background: rgba(255, 253, 248, 0.96); color: #2d3436; border-color: rgba(70, 70, 70, 0.2); }
+            #dashboardPanel.dashboard-light h3 { color: #2d3436; }
+            #dashboardPanel.dashboard-light p { color: #666 !important; }
+            #dashboardPanel.dashboard-light #userListStr > span { background: rgba(45, 52, 54, 0.08) !important; }
+            #dashboardPanel.dashboard-light #userListStr b { color: #2d3436 !important; }
+            #dashboardPanel.dashboard-light #userListStr b.level-up-name { color: #c48a00 !important; text-shadow: none !important; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
@@ -533,7 +539,7 @@ def read_root():
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px; text-align: center;" id="calMonthTitle">🍀 내 출석부</div>
                     <div class="calendar-grid" id="calendarGrid"></div>
-                    <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">빨간 테두리(오늘)를 눌러서 도장을 찍어봐!</div>
+                    <div style="font-size: 10px; color: #aaa; text-align: center; margin-top: 6px;">일주일마다 출석 매달 등급이 바뀜!</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
                     <div style="font-size: 13px; font-weight: bold; color: #ffeaa7; margin-bottom: 8px;" id="rankTitle">🏆 이번 주 출석 랭킹</div>
@@ -668,7 +674,7 @@ def read_root():
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button id="empty-slot-toggle-btn" class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
-                                <button id="chat-theme-btn" class="settings-toggle-btn" style="background:#f5f5f5; color:#2d3436; flex: 1; padding: 6px 0;" onclick="toggleChatTheme()">☀️ 채팅 흰색</button>
+                                <button id="chat-theme-btn" class="settings-toggle-btn" style="background:#f5f5f5; color:#2d3436; flex: 1; padding: 6px 0;" onclick="toggleChatTheme()">☀️ 패널 흰색</button>
                             </div>
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="openModal('settingsModal')">⚙️ 내 배경</button>
@@ -1945,14 +1951,16 @@ def read_root():
             }
             function applyChatTheme(theme) {
                 const panel=document.querySelector('.chat-box');
+                const dashboard=document.getElementById('dashboardPanel');
                 const button=document.getElementById('chat-theme-btn');
                 const isLight=theme==='light';
                 if(panel) panel.classList.toggle('chat-light',isLight);
+                if(dashboard) dashboard.classList.toggle('dashboard-light',isLight);
                 if(button) {
-                    button.textContent=isLight?'🌙 채팅 검정':'☀️ 채팅 흰색';
+                    button.textContent=isLight?'🌙 패널 검정':'☀️ 패널 흰색';
                     button.style.background=isLight?'#2d3436':'#f5f5f5';
                     button.style.color=isLight?'#fff':'#2d3436';
-                    button.title=isLight?'채팅창을 검정색으로 바꾸기':'채팅창을 흰색으로 바꾸기';
+                    button.title=isLight?'대시보드와 채팅창을 검정색으로 바꾸기':'대시보드와 채팅창을 흰색으로 바꾸기';
                 }
                 localStorage.setItem('chatTheme',isLight?'light':'dark');
             }
