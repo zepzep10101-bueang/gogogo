@@ -400,7 +400,7 @@ def read_root():
             #bgMediaWrapper img, #bgMediaWrapper iframe { width: 100vw; height: 100vh; object-fit: cover; display: block; border: none; pointer-events: none; }
             .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.05); z-index: 1; pointer-events: none; }
             
-            .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
+            .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
             
             .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
             @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -421,11 +421,20 @@ def read_root():
             .modal-box { background: rgba(30, 30, 40, 0.95); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; width: 350px; max-height: 80vh; overflow-y: auto; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
             .close-btn { position: absolute; top: 12px; right: 15px; background: transparent; border: none; color: white; font-size: 14px; cursor: pointer; font-weight: bold; transition: 0.2s; z-index: 100;}
             .close-btn:hover { color: #ff7675; }
-            .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; }
-            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 13px; color: #ddd; line-height: 1.5; word-break: break-all; padding-right: 4px; }
+            .chat-box { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; height: 100%; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
+            #chatHistory { flex-grow: 1; overflow-y: auto; margin-top: 8px; font-size: 14px; color: #ddd; line-height: 1.65; word-break: break-all; padding-right: 5px; }
+            #chatHistory > div { padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,0.07); }
             .chat-input { display: flex; margin-top: 8px; gap: 4px; }
-            .chat-input input { flex-grow: 1; padding: 7px; border-radius: 4px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 12px; }
-            .chat-input button { padding: 7px 10px; background: #ff7675; border: none; color: white; border-radius: 4px; cursor: pointer; flex-shrink: 0; font-size: 12px; }
+            .chat-input input { flex-grow: 1; padding: 9px; border-radius: 5px; border: none; background: rgba(255, 255, 255, 0.9); color: black; min-width: 0; font-size: 13px; }
+            .chat-input button { padding: 9px 12px; background: #ff7675; border: none; color: white; border-radius: 5px; cursor: pointer; flex-shrink: 0; font-size: 13px; }
+            .chat-box.chat-light { background: rgba(255, 253, 248, 0.96); color: #2d3436; border-color: rgba(70, 70, 70, 0.2); }
+            .chat-box.chat-light h3, .chat-box.chat-light #chatHistory { color: #2d3436; }
+            .chat-box.chat-light #chatHistory > div { border-bottom-color: rgba(45, 52, 54, 0.1); }
+            .chat-box.chat-light #chatHistory > div > span,
+            .chat-box.chat-light #chatHistory > div > span span { color: #777 !important; }
+            .chat-box.chat-light .chat-input input { background: #fff; color: #2d3436; border: 1px solid #ddd; }
+            .chat-box.chat-light .chat-delete-btn { color: #a06a6a !important; }
+            .chat-box.chat-light .level-up-name { color: #c48a00 !important; text-shadow: none !important; }
             .status-indicator { font-size: 11px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-left: 5px; }
             .status-online { background: #00b894; color: white; }
             .status-offline { background: #d63031; color: white; }
@@ -659,7 +668,7 @@ def read_root():
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button id="empty-slot-toggle-btn" class="settings-toggle-btn" style="background:#27ae60; color:white; flex: 1; padding: 6px 0;" onclick="toggleEmptySlots()">👀 빈자리</button>
-                                <button class="settings-toggle-btn" style="background:#0984e3; color:white; flex: 1; padding: 6px 0;" onclick="addMySlot()">➕ 자리</button>
+                                <button id="chat-theme-btn" class="settings-toggle-btn" style="background:#f5f5f5; color:#2d3436; flex: 1; padding: 6px 0;" onclick="toggleChatTheme()">☀️ 채팅 흰색</button>
                             </div>
                             <div style="display: flex; gap: 4px; width: 100%;">
                                 <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="openModal('settingsModal')">⚙️ 내 배경</button>
@@ -735,7 +744,7 @@ def read_root():
                 
                 if (panel.style.display === 'none') {
                     panel.style.display = 'flex';
-                    container.style.gridTemplateColumns = 'minmax(0, 1fr) 240px';
+                    container.style.gridTemplateColumns = 'minmax(0, 1fr) 320px';
                     restoreBtn.style.display = 'none';
                 } else {
                     panel.style.display = 'none';
@@ -829,7 +838,6 @@ def read_root():
                     cardEl.style.display = (window.isHideEmpty && !isConnectedUser) ? "none" : "flex";
                 });
             }
-            function addMySlot() { const myName = window.myNickname || "익명"; let emptyIdx = -1; for (let i = 0; i < cardData.length; i++) { if (cardData[i].user.startsWith("자리") && !cardData[i].reserved_by) { emptyIdx = i; break; } } if (emptyIdx !== -1) { const inputEl = document.getElementById(`username-${emptyIdx}`); if (inputEl) inputEl.value = myName; updateUsername(emptyIdx, myName); } else { alert("아앗! 방에 빈자리가 하나도 안 남았어 누나!"); } }
             function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
             
             function login() { 
@@ -1064,6 +1072,14 @@ def read_root():
                 const reservationOwner = cardData[index].reserved_by;
                 if (reservationOwner) {
                     const inputEl = document.getElementById(`username-${index}`);
+                    if (reservationOwner === myName && val === myName) {
+                        cardData[index].user = myName;
+                        myOwnedSlots.add(index);
+                        if (inputEl) inputEl.value = myName;
+                        const cardEl = document.getElementById(`card-card-${index}`);
+                        if (cardEl) cardEl.style.order = -1;
+                        return;
+                    }
                     if (inputEl) inputEl.value = cardData[index].user;
                     alert(reservationOwner === myName ? "고정석은 먼저 고정을 해제해야 이름을 바꿀 수 있어!" : `${reservationOwner} 작가님의 고정석이야!`);
                     return;
@@ -1927,6 +1943,24 @@ def read_root():
                 document.getElementById('chatToggle').textContent=collapsed?'펼치기':'접기';
                 localStorage.setItem('chatCollapsed',String(collapsed));
             }
+            function applyChatTheme(theme) {
+                const panel=document.querySelector('.chat-box');
+                const button=document.getElementById('chat-theme-btn');
+                const isLight=theme==='light';
+                if(panel) panel.classList.toggle('chat-light',isLight);
+                if(button) {
+                    button.textContent=isLight?'🌙 채팅 검정':'☀️ 채팅 흰색';
+                    button.style.background=isLight?'#2d3436':'#f5f5f5';
+                    button.style.color=isLight?'#fff':'#2d3436';
+                    button.title=isLight?'채팅창을 검정색으로 바꾸기':'채팅창을 흰색으로 바꾸기';
+                }
+                localStorage.setItem('chatTheme',isLight?'light':'dark');
+            }
+            function toggleChatTheme() {
+                const isLight=document.querySelector('.chat-box')?.classList.contains('chat-light');
+                applyChatTheme(isLight?'dark':'light');
+            }
+            applyChatTheme(localStorage.getItem('chatTheme')==='light'?'light':'dark');
             if(localStorage.getItem('dashboardCollapsed')==='true') toggleDashboard();
             if(localStorage.getItem('chatCollapsed')==='true') toggleChatPanel();
 
