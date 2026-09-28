@@ -1900,9 +1900,7 @@ def read_root():
             }
             function badgeFor(name) {
                 const rank=attendanceMedalGroup(name);
-                const medal=({1:'🥇',2:'🥈',3:'🥉'})[rank] || '';
-                const goal=Number(window.trackersData[name]?.monthlyGoals?.[monthKey()]) || 0;
-                return medal+(goal>0 && monthlyDone(name)>=goal ? '🏆':'');
+                return ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '';
             }
             function refreshBadges() {
                 cardData.forEach((card,i)=>{
@@ -1914,7 +1912,7 @@ def read_root():
                     input.classList.toggle('level-up-name',levelUp);
                     let badge=document.getElementById(`badge-${i}`);
                     if(!badge) { badge=document.createElement('span'); badge.id=`badge-${i}`; input.before(badge); }
-                    badge.textContent=badgeFor(card.user); badge.title='이번 주 출석 순위 / 월 목표 달성';
+                    badge.textContent=badgeFor(card.user); badge.title='이번 주 출석 순위';
                     if(levelChanged) {
                         const box=document.getElementById(`stream-box-${i}`);
                         if(box && !box.querySelector('video') && !hasCustomStatus(card.status)) renderBox(i);
