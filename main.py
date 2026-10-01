@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import HTMLResponse
 import json
 import os
@@ -8,6 +8,39 @@ import copy
 import uuid
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
+
+# 뽀모 시트 주소는 MongoDB가 아니라 main.py 옆의 작은 설정 파일에 저장합니다.
+DEFAULT_POMO_URL = "https://docs.google.com/spreadsheets/d/1biXQLjPWNip4XyXCxLB6uyO-x8sah0CR5JT-fGk_GU0/edit?gid=1626585636#gid=1626585636"
+POMO_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pomo_config.json")
+ADMIN_PASSWORD_SERVER = "4717"
+
+def is_valid_pomo_url(url):
+    if not isinstance(url, str):
+        return False
+    url = url.strip()
+    return url.startswith("https://docs.google.com/spreadsheets/")
+
+def load_pomo_url():
+    try:
+        if os.path.exists(POMO_CONFIG_PATH):
+            with open(POMO_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            url = data.get("url", "") if isinstance(data, dict) else ""
+            if is_valid_pomo_url(url):
+                return url.strip()
+    except Exception as e:
+        print("뽀모 시트 설정 읽기 실패, 기본 주소 사용:", e)
+    return DEFAULT_POMO_URL
+
+def save_pomo_url(url):
+    url = str(url or "").strip()
+    if not is_valid_pomo_url(url):
+        raise ValueError("구글 스프레드시트 주소만 저장할 수 있습니다.")
+    temp_path = POMO_CONFIG_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump({"url": url}, f, ensure_ascii=False, indent=2)
+    os.replace(temp_path, POMO_CONFIG_PATH)
+    return url
 
 # [디오 최종 방어막 수정: 0.5초 기다렸다가 변수를 읽어오게 해서 Empty host 원천 차단!]
 import time
@@ -126,6 +159,27 @@ async def persist_state():
         save_task = asyncio.create_task(save_worker())
 
 app = FastAPI()
+
+@app.get("/pomo-config")
+def get_pomo_config():
+    return {"ok": True, "url": load_pomo_url()}
+
+@app.post("/pomo-config")
+async def update_pomo_config(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="요청 형식이 올바르지 않습니다.")
+    if payload.get("admin_password") != ADMIN_PASSWORD_SERVER:
+        raise HTTPException(status_code=403, detail="방장만 뽀모 시트 주소를 바꿀 수 있습니다.")
+    try:
+        url = save_pomo_url(payload.get("url", ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("뽀모 시트 설정 저장 실패:", e)
+        raise HTTPException(status_code=500, detail="시트 주소를 저장하지 못했습니다.")
+    return {"ok": True, "url": url}
 
 @app.on_event("shutdown")
 async def flush_pending_save():
@@ -402,16 +456,66 @@ def read_root():
             
             .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
             
-            .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
-            @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-            @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-            @media (max-width: 600px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            /* 오른쪽 패널 320px를 뺀 실제 카드 영역 기준으로 열 수를 일찍 줄여 카드 내용이 잘리지 않게 함 */
+            @media (max-width: 1500px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 1220px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 900px) {
+                .main-container { grid-template-columns: 1fr !important; }
+                .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                .side-panel { position: static !important; top: auto; height: auto; width: 100%; }
+                .chat-box { min-height: 360px; }
+            }
+            @media (max-width: 650px) { .card-grid { grid-template-columns: 1fr; } }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); min-height: 250px; min-width: 0; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; container-type: inline-size; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
-            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
-            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
-            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; transition: opacity 0.2s; }
+            @media (max-width: 650px) { .card-large { grid-column: span 1; grid-row: span 1; min-height: 510px; } }
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; min-width: 0; }
+
+            /* 카드 폭이 줄면 상단 컨트롤 자체가 같이 작아지고, 줄바꿈은 하지 않음 */
+            .card-title-row { display: flex; gap: 4px; align-items: center; width: 100%; min-width: 0; flex-wrap: nowrap; }
+            .card-title-row .card-name-input { flex: 1 1 0; min-width: 58px !important; width: 0; }
+            .card-title-row .share-btn { flex: 0 1 auto; min-width: 0; padding: 4px 5px; font-size: 10px; }
+
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; min-width: 0; }
+            .share-btn { padding: 4px 3px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; max-width: 100%; transition: opacity 0.2s; line-height: 1.2; }
+            .btn-group .share-btn { flex: 1 1 0; min-width: 0; padding-left: 2px; padding-right: 2px; }
             .share-btn:hover { opacity: 0.8; }
+
+            /* 오늘 완료는 정확한 숫자를 쓰는 칸이라 입력 폭을 우선 보장 */
+            .quick-done-row { display: none; align-items: center; gap: 5px; width: 100%; min-width: 0; flex-wrap: nowrap; margin-top: 4px; padding: 5px 6px; background: rgba(0,0,0,0.34); border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; font-size: 11px; color: #fff; position: relative; }
+            .quick-done-row input { flex: 1 1 120px; min-width: 105px; width: 120px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; background: rgba(255,255,255,0.92); color: #222; text-align: right; font-size: 11px; font-weight: bold; }
+            .quick-done-row button { flex: 0 0 auto; border: none; border-radius: 4px; padding: 4px 7px; background: #6c5ce7; color: white; font-size: 10px; font-weight: bold; cursor: pointer; }
+            .quick-done-row button:hover { opacity: .85; }
+            .quick-done-saved { position: absolute; right: 6px; bottom: -13px; color: #81ecec; font-size: 9px; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #000; }
+
+            /* 실제 카드 폭 기준으로 버튼 글자/패딩을 단계적으로 축소 */
+            @container (max-width: 360px) {
+                .card-title-row { gap: 3px; }
+                .card-title-row .card-name-input { min-width: 52px !important; font-size: 10px !important; padding-left: 2px !important; padding-right: 2px !important; }
+                .card-title-row .share-btn { font-size: 9px; padding: 4px 3px !important; }
+                .btn-group { gap: 1px; }
+                .btn-group .share-btn { font-size: 9px; padding: 4px 1px; letter-spacing: -0.2px; }
+                .quick-done-row { gap: 4px; padding-left: 5px; padding-right: 5px; font-size: 10px; }
+                .quick-done-row input { min-width: 105px; font-size: 10px; }
+                .quick-done-row button { font-size: 9px; padding: 4px 6px; }
+            }
+            @container (max-width: 300px) {
+                .card-title-row .card-name-input { min-width: 46px !important; font-size: 9px !important; }
+                .card-title-row .share-btn { font-size: 8px; padding: 3px 2px !important; }
+                .btn-group .share-btn { font-size: 8px; padding: 3px 0; letter-spacing: -0.35px; }
+                .quick-done-row { gap: 3px; padding: 4px; font-size: 9px; }
+                .quick-done-row input { min-width: 100px; padding: 4px; font-size: 10px; }
+                .quick-done-row button { font-size: 8px; padding: 4px 5px; }
+            }
+            @container (max-width: 245px) {
+                .card-title-row .card-name-input { min-width: 42px !important; font-size: 8px !important; }
+                .card-title-row .share-btn { font-size: 7px; padding: 3px 1px !important; }
+                .btn-group .share-btn { font-size: 7px; padding: 3px 0; letter-spacing: -0.45px; }
+                .quick-done-row { font-size: 8px; gap: 2px; }
+                .quick-done-row input { min-width: 92px; font-size: 9px; }
+                .quick-done-row button { font-size: 7px; padding: 3px 4px; }
+            }
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: visibility 0.2s; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
@@ -680,6 +784,10 @@ def read_root():
                                 <button class="settings-toggle-btn" style="background:#636e72; color:white; flex: 1; padding: 6px 0;" onclick="openModal('settingsModal')">⚙️ 내 배경</button>
                                 <button class="settings-toggle-btn" style="background:#e1b12c; color:white; flex: 1; padding: 6px 0;" onclick="openModal('attendanceModal')">🏆 출석현황</button>
                             </div>
+                            <div style="display: flex; gap: 4px; width: 100%;">
+                                <button id="pomoSheetBtn" class="settings-toggle-btn" style="background:#d35400; color:white; flex: 1; padding: 6px 0;" onclick="openPomoSheet()">🍅 뽀모 시트</button>
+                                <button id="pomoEditBtn" class="settings-toggle-btn" style="background:#7f8c8d; color:white; flex: 1; padding: 6px 0; display:none;" onclick="editPomoSheetUrl()">🔗 주소 변경</button>
+                            </div>
                             <button class="settings-toggle-btn" style="background:#ff7675; color:white; width: 100%; text-align: center; padding: 6px 0;" onclick="openModal('noticeModal')">📢 공지</button>
                             <button id="adminLogBtn" class="settings-toggle-btn" style="background:#8e44ad; color:white; width: 100%; text-align: center; padding: 6px 0; margin-top: 4px; display: none;" onclick="openModal('adminLogModal')">👑 출입 기록</button>
                         </div>
@@ -717,6 +825,7 @@ def read_root():
             window.isHideEmpty = false; 
             window.attendanceData = {}; 
             window.adminLogData = []; 
+            window.pomoSheetUrl = "";
             
             window.trackersData = {}; 
             window.currentViewingUser = "";
@@ -771,6 +880,7 @@ def read_root():
                 }
             }
             updateLoginUserCount();
+            loadPomoSheetUrl();
             let countInterval = setInterval(() => {
                 if(document.getElementById('loginOverlay').style.display !== 'none') {
                     updateLoginUserCount();
@@ -844,6 +954,49 @@ def read_root():
                     cardEl.style.display = (window.isHideEmpty && !isConnectedUser) ? "none" : "flex";
                 });
             }
+            async function loadPomoSheetUrl() {
+                try {
+                    const res = await fetch('/pomo-config', { cache: 'no-store' });
+                    const data = await res.json();
+                    if (res.ok && data.url) window.pomoSheetUrl = data.url;
+                } catch (e) {
+                    console.warn('뽀모 시트 주소를 불러오지 못했습니다:', e);
+                }
+            }
+
+            function openPomoSheet() {
+                if (!window.pomoSheetUrl) {
+                    alert('뽀모 시트 주소를 불러오는 중이야. 잠깐 뒤에 다시 눌러줘!');
+                    loadPomoSheetUrl();
+                    return;
+                }
+                window.open(window.pomoSheetUrl, '_blank', 'noopener,noreferrer');
+            }
+
+            async function editPomoSheetUrl() {
+                if (!window.isAdmin) { alert('방장만 시트 주소를 바꿀 수 있어!'); return; }
+                const nextUrl = prompt('새 뽀모 구글시트 주소를 붙여넣어줘.', window.pomoSheetUrl || '');
+                if (nextUrl === null) return;
+                const trimmed = nextUrl.trim();
+                if (!trimmed.startsWith('https://docs.google.com/spreadsheets/')) {
+                    alert('구글 스프레드시트 주소만 넣어줘!');
+                    return;
+                }
+                try {
+                    const res = await fetch('/pomo-config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: trimmed, admin_password: ADMIN_PASSWORD })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) throw new Error(data.detail || '저장 실패');
+                    window.pomoSheetUrl = data.url;
+                    alert('🍅 뽀모 시트 주소를 바꿨어!');
+                } catch (e) {
+                    alert(`시트 주소를 저장하지 못했어: ${e.message || e}`);
+                }
+            }
+
             function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
             
             function login() { 
@@ -852,12 +1005,13 @@ def read_root():
                 if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; } 
                 if (inputNick === ADMIN_NICKNAME) { 
                     if (inputPw !== ADMIN_PASSWORD) { alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!"); return; } 
-                    window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; 
+                    window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; document.getElementById('pomoEditBtn').style.display = 'block'; 
                 } else { 
                     if (inputPw !== ROOM_PASSWORD) { alert("비밀번호가 틀렸어! 다시 확인해봐."); return; } 
-                    window.isAdmin = false; 
+                    window.isAdmin = false; document.getElementById('pomoEditBtn').style.display = 'none'; 
                 } 
                 window.myNickname = inputNick; 
+                loadPomoSheetUrl();
                 window.activeNicknames.add(inputNick);
                 localStorage.setItem('mySavedNickname', inputNick); 
                 document.getElementById('loginOverlay').style.display = 'none'; 
@@ -923,8 +1077,103 @@ def read_root():
                 if (user === myName) myOwnedSlots.add(index); else myOwnedSlots.delete(index);
                 const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) cardEl.style.order = (user === myName && myName) ? -1 : 0;
                 applySeatReservationUI(index);
+                renderQuickDoneRow(index);
                 const box = document.getElementById(`stream-box-${index}`); if (box && !box.querySelector('video')) renderBox(index);
                 applyEmptySlotVisibility();
+            }
+
+            function getTodayDoneForCard(nickname) {
+                if (!nickname || nickname.startsWith("자리")) return 0;
+                const data = window.trackersData?.[nickname];
+                if (!data || data.lastDate !== dayKey()) return 0;
+                return Math.max(0, Math.floor(Number(data.doneChars) || 0));
+            }
+
+            function renderQuickDoneRow(index) {
+                const row = document.getElementById(`quick-done-row-${index}`);
+                const card = cardData[index];
+                if (!row || !card) return;
+                const nickname = card.user || "";
+                const isMe = !!window.myNickname && nickname === window.myNickname;
+                if (!isMe) {
+                    row.style.display = 'none';
+                    row.innerHTML = '';
+                    return;
+                }
+                const done = getTodayDoneForCard(nickname);
+                row.style.display = 'flex';
+                row.innerHTML = `
+                    <span style="font-weight:bold; white-space:nowrap;">✍️ 오늘 완료</span>
+                    <input type="number" min="0" step="1" inputmode="numeric" id="quick-done-input-${index}" value="${done}" aria-label="오늘 완료 글자수" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveQuickDone(${index});}">
+                    <span style="white-space:nowrap;">자</span>
+                    <button type="button" onclick="saveQuickDone(${index})">저장</button>
+                    <span class="quick-done-saved" id="quick-done-saved-${index}"></span>
+                `;
+            }
+
+            function refreshQuickDoneRows() {
+                cardData.forEach((_, index) => renderQuickDoneRow(index));
+            }
+
+            function saveQuickDone(index) {
+                const card = cardData[index];
+                const nickname = window.myNickname || "";
+                if (!card || !nickname || card.user !== nickname) {
+                    alert('자기 카드에서만 오늘 완료 글자수를 적을 수 있어!');
+                    return;
+                }
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    alert('서버에 연결된 뒤 저장해줘!');
+                    return;
+                }
+                const input = document.getElementById(`quick-done-input-${index}`);
+                if (!input) return;
+                const raw = String(input.value || '').trim();
+                if (raw === '' || !/^\d+$/.test(raw)) {
+                    alert('오늘 완료 글자수를 0 이상의 숫자로 적어줘!');
+                    input.focus();
+                    return;
+                }
+                const done = Math.max(0, Math.floor(Number(raw)));
+                const now = kstNow();
+                const todayStr = dayKey();
+                const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                const dayStr = String(now.getDate());
+
+                if (!window.trackersData) window.trackersData = {};
+                if (!window.trackersData[nickname]) {
+                    window.trackersData[nickname] = { targetChars: 5000, doneChars: 0, themeColor: "#d87093", calendar: {}, todos: [], monthlyGoals: {}, lastDate: todayStr };
+                }
+                const myData = window.trackersData[nickname];
+                myData.lastDate = todayStr;
+                myData.doneChars = done;
+                myData.calendar = myData.calendar || {};
+                myData.calendar[monthStr] = myData.calendar[monthStr] || {};
+                const currentRecord = myData.calendar[monthStr][dayStr] || {};
+                myData.calendar[monthStr][dayStr] = {
+                    target: myData.targetChars || currentRecord.target || 5000,
+                    done: done,
+                    seconds: currentRecord.seconds || 0
+                };
+
+                localStorage.setItem('doneChars', String(done));
+                localStorage.setItem('lastDate', todayStr);
+                input.value = done;
+
+                if (window.currentViewingUser === nickname && document.getElementById('recordModal').style.display === 'flex') {
+                    const modalDone = document.getElementById('rec-done-chars');
+                    if (modalDone) modalDone.value = done;
+                    buildRecordCalendar(nickname, myData.calendar);
+                    updateMonthlyProgress(nickname);
+                    checkGoalAchievement();
+                }
+
+                ws.send(JSON.stringify({ type: "tracker_update", nickname: nickname, tracker_data: myData }));
+                const saved = document.getElementById(`quick-done-saved-${index}`);
+                if (saved) {
+                    saved.textContent = '저장됨 ✓';
+                    setTimeout(() => { if (saved) saved.textContent = ''; }, 1400);
+                }
             }
 
             function toggleSeatReservation(index) {
@@ -1042,11 +1291,12 @@ def read_root():
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
                             <div class="card-header">
-	                                <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
-	                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+	                                <div class="card-title-row">
+	                                    <input class="card-name-input" type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
 	                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
 	                                    <button onclick="toggleSeatReservation(${index})" id="seat-lock-btn-${index}" class="share-btn" style="background:#e1a400; padding:4px 6px; flex-grow:0; white-space:nowrap;">📌 자리 고정</button>
 	                                </div>
+                                <div class="quick-done-row" id="quick-done-row-${index}"></div>
                                 <div class="btn-group" style="margin-top: 4px;">
                                     <button class="share-btn" id="share-btn-screen-${index}" style="background:#ff7675;" onclick="toggleShare(${index}, 'screen')">화공</button>
                                     <button class="share-btn" id="share-btn-cam-${index}" style="background:#0984e3;" onclick="toggleShare(${index}, 'cam')">캠</button>
@@ -1065,7 +1315,7 @@ def read_root():
                         </div>
                     `;
                 });
-                cardData.forEach((_, i) => { renderBox(i); applySeatReservationUI(i); }); applyEmptySlotVisibility();
+                cardData.forEach((_, i) => { renderBox(i); applySeatReservationUI(i); renderQuickDoneRow(i); }); applyEmptySlotVisibility();
             }
 
             function toggleSize(index) { const newState = !cardData[index].is_large; cardData[index].is_large = newState; applySizeUI(index, newState); }
@@ -1097,6 +1347,7 @@ def read_root():
                 const box = document.getElementById(`stream-box-${index}`); 
                 if (box && !box.querySelector('video')) { renderBox(index); } 
                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "username_change", index: index, user: val })); } 
+                renderQuickDoneRow(index);
                 applyEmptySlotVisibility(); 
             }
             let backgroundLoading = false;
@@ -1196,7 +1447,7 @@ def read_root():
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
-                            if (data.type === "private_tracker_state") { window.trackersData=data.trackers; loadMyLocalTrackerData(); refreshBadges(); return; }
+                            if (data.type === "private_tracker_state") { window.trackersData=data.trackers; loadMyLocalTrackerData(); refreshBadges(); refreshQuickDoneRows(); return; }
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
                             if (data.type === "pong") { return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
@@ -1251,13 +1502,13 @@ def read_root():
                                     });
                                 }
                                 if (state.chat_history) { renderChatHistory(state.chat_history); }
-                                loadMyLocalTrackerData(); refreshBadges(); loadSavedBackgrounds();
+                                loadMyLocalTrackerData(); refreshBadges(); refreshQuickDoneRows(); loadSavedBackgrounds();
                                 applyEmptySlotVisibility();
                             }
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
-                                window.trackersData[data.nickname] = data.tracker_data; if(data.nickname===window.myNickname) restoreTimer(); refreshBadges();
-                                if (data.nickname !== window.myNickname && window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
+                                window.trackersData[data.nickname] = data.tracker_data; if(data.nickname===window.myNickname) restoreTimer(); refreshBadges(); refreshQuickDoneRows();
+                                if (window.currentViewingUser === data.nickname && document.getElementById('recordModal').style.display === 'flex') {
                                     loadRecordDataIntoUI(data.nickname);
                                 }
                             }
@@ -1669,6 +1920,7 @@ def read_root():
                 buildRecordCalendar(window.myNickname, myData.calendar);
                 updateMonthlyProgress(window.myNickname);
                 refreshBadges();
+                refreshQuickDoneRows();
                 checkGoalAchievement();
                 setRecordAutoSaveStatus(syncedToServer ? '☁️ 자동 저장됨' : '⚠️ 재연결 후 다시 저장', syncedToServer ? '#2e7d32' : '#b45309');
             }
@@ -1866,6 +2118,7 @@ def read_root():
                     const mine=window.trackersData[window.myNickname];
                     if(mine) { mine.doneChars=0; mine.lastDate=observedDay; if(mine.timer) mine.timer={date:observedDay,seconds:0,started:null}; }
                     if(window.currentViewingUser===window.myNickname && mine) loadRecordDataIntoUI(window.myNickname);
+                    refreshQuickDoneRows();
                     if(ws && ws.readyState===WebSocket.OPEN) { timerAction('sync'); autoStampToday(); }
                 }
             },1000);
