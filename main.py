@@ -456,21 +456,66 @@ def read_root():
             
             .main-container { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 15px; padding: 15px; min-height: 100vh; color: white; position: relative; z-index: 2; align-items: start; max-width: 1800px; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
             
-            .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; }
-            @media (max-width: 1300px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-            @media (max-width: 950px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-            @media (max-width: 600px) { .card-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
-            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); min-height: 250px; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; }
+            .card-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: dense; width: 100%; align-content: start; min-width: 0; }
+            /* 오른쪽 패널 320px를 뺀 실제 카드 영역 기준으로 열 수를 일찍 줄여 카드 내용이 잘리지 않게 함 */
+            @media (max-width: 1500px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            @media (max-width: 1220px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 900px) {
+                .main-container { grid-template-columns: 1fr !important; }
+                .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                .side-panel { position: static !important; top: auto; height: auto; width: 100%; }
+                .chat-box { min-height: 360px; }
+            }
+            @media (max-width: 650px) { .card-grid { grid-template-columns: 1fr; } }
+            .timer-card { background: rgba(20, 20, 30, 0.85); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255, 255, 255, 0.25); min-height: 250px; min-width: 0; position: relative; overflow: hidden; background-size: cover; background-position: center; transition: all 0.3s ease; container-type: inline-size; }
             .card-large { grid-column: span 2; grid-row: span 2; min-height: 510px; }
-            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; }
-            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; }
-            .share-btn { padding: 4px 2px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; flex-grow: 1; transition: opacity 0.2s; }
+            @media (max-width: 650px) { .card-large { grid-column: span 1; grid-row: span 1; min-height: 510px; } }
+            .card-header { display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 20; width: 100%; min-width: 0; }
+
+            /* 카드 폭이 줄면 상단 컨트롤 자체가 같이 작아지고, 줄바꿈은 하지 않음 */
+            .card-title-row { display: flex; gap: 4px; align-items: center; width: 100%; min-width: 0; flex-wrap: nowrap; }
+            .card-title-row .card-name-input { flex: 1 1 0; min-width: 58px !important; width: 0; }
+            .card-title-row .share-btn { flex: 0 1 auto; min-width: 0; padding: 4px 5px; font-size: 10px; }
+
+            .btn-group { display: flex; gap: 2px; width: 100%; justify-content: center; flex-wrap: nowrap; overflow: visible; min-width: 0; }
+            .share-btn { padding: 4px 3px; font-size: 10px; color: white; border: none; border-radius: 3px; cursor: pointer; white-space: nowrap; font-weight: bold; text-align: center; max-width: 100%; transition: opacity 0.2s; line-height: 1.2; }
+            .btn-group .share-btn { flex: 1 1 0; min-width: 0; padding-left: 2px; padding-right: 2px; }
             .share-btn:hover { opacity: 0.8; }
-            .quick-done-row { display: none; align-items: center; gap: 5px; width: 100%; margin-top: 4px; padding: 5px 6px; background: rgba(0,0,0,0.34); border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; font-size: 11px; color: #fff; }
-            .quick-done-row input { flex: 1; min-width: 0; width: 90px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; background: rgba(255,255,255,0.92); color: #222; text-align: right; font-size: 11px; font-weight: bold; }
-            .quick-done-row button { flex-shrink: 0; border: none; border-radius: 4px; padding: 4px 7px; background: #6c5ce7; color: white; font-size: 10px; font-weight: bold; cursor: pointer; }
+
+            /* 오늘 완료는 정확한 숫자를 쓰는 칸이라 입력 폭을 우선 보장 */
+            .quick-done-row { display: none; align-items: center; gap: 5px; width: 100%; min-width: 0; flex-wrap: nowrap; margin-top: 4px; padding: 5px 6px; background: rgba(0,0,0,0.34); border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; font-size: 11px; color: #fff; position: relative; }
+            .quick-done-row input { flex: 1 1 120px; min-width: 105px; width: 120px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; background: rgba(255,255,255,0.92); color: #222; text-align: right; font-size: 11px; font-weight: bold; }
+            .quick-done-row button { flex: 0 0 auto; border: none; border-radius: 4px; padding: 4px 7px; background: #6c5ce7; color: white; font-size: 10px; font-weight: bold; cursor: pointer; }
             .quick-done-row button:hover { opacity: .85; }
-            .quick-done-saved { color: #81ecec; font-size: 10px; white-space: nowrap; }
+            .quick-done-saved { position: absolute; right: 6px; bottom: -13px; color: #81ecec; font-size: 9px; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #000; }
+
+            /* 실제 카드 폭 기준으로 버튼 글자/패딩을 단계적으로 축소 */
+            @container (max-width: 360px) {
+                .card-title-row { gap: 3px; }
+                .card-title-row .card-name-input { min-width: 52px !important; font-size: 10px !important; padding-left: 2px !important; padding-right: 2px !important; }
+                .card-title-row .share-btn { font-size: 9px; padding: 4px 3px !important; }
+                .btn-group { gap: 1px; }
+                .btn-group .share-btn { font-size: 9px; padding: 4px 1px; letter-spacing: -0.2px; }
+                .quick-done-row { gap: 4px; padding-left: 5px; padding-right: 5px; font-size: 10px; }
+                .quick-done-row input { min-width: 105px; font-size: 10px; }
+                .quick-done-row button { font-size: 9px; padding: 4px 6px; }
+            }
+            @container (max-width: 300px) {
+                .card-title-row .card-name-input { min-width: 46px !important; font-size: 9px !important; }
+                .card-title-row .share-btn { font-size: 8px; padding: 3px 2px !important; }
+                .btn-group .share-btn { font-size: 8px; padding: 3px 0; letter-spacing: -0.35px; }
+                .quick-done-row { gap: 3px; padding: 4px; font-size: 9px; }
+                .quick-done-row input { min-width: 100px; padding: 4px; font-size: 10px; }
+                .quick-done-row button { font-size: 8px; padding: 4px 5px; }
+            }
+            @container (max-width: 245px) {
+                .card-title-row .card-name-input { min-width: 42px !important; font-size: 8px !important; }
+                .card-title-row .share-btn { font-size: 7px; padding: 3px 1px !important; }
+                .btn-group .share-btn { font-size: 7px; padding: 3px 0; letter-spacing: -0.45px; }
+                .quick-done-row { font-size: 8px; gap: 2px; }
+                .quick-done-row input { min-width: 92px; font-size: 9px; }
+                .quick-done-row button { font-size: 7px; padding: 3px 4px; }
+            }
             .card-stream-box { width: 100%; flex-grow: 1; min-height: 135px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: visibility 0.2s; }
             .card-stream-box video { width: 100%; height: 100%; object-fit: contain; background: transparent; position: absolute; top: 0; left: 0; z-index: 10; transition: filter 0.2s ease-in-out; pointer-events: auto; }
             .side-panel { display: flex; flex-direction: column; gap: 15px; position: sticky; top: 15px; height: calc(100vh - 30px); min-width: 0; }
@@ -1246,8 +1291,8 @@ def read_root():
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
                             <div class="card-header">
-	                                <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
-	                                    <input type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+	                                <div class="card-title-row">
+	                                    <input class="card-name-input" type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
 	                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
 	                                    <button onclick="toggleSeatReservation(${index})" id="seat-lock-btn-${index}" class="share-btn" style="background:#e1a400; padding:4px 6px; flex-grow:0; white-space:nowrap;">📌 자리 고정</button>
 	                                </div>
