@@ -2,17 +2,147 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.responses import HTMLResponse
 import json
 import os
+import hmac
+import hashlib
+import secrets
+import unicodedata
+import base64
+import binascii
 import uvicorn
 import asyncio
 import copy
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
+from pymongo.write_concern import WriteConcern
 
 # 뽀모 시트 주소는 MongoDB가 아니라 main.py 옆의 작은 설정 파일에 저장합니다.
 DEFAULT_POMO_URL = "https://docs.google.com/spreadsheets/d/1biXQLjPWNip4XyXCxLB6uyO-x8sah0CR5JT-fGk_GU0/edit?gid=1626585636#gid=1626585636"
 POMO_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pomo_config.json")
-ADMIN_PASSWORD_SERVER = "4717"
+# 암호는 소스에 두지 않고 실행 환경에서 받습니다. 역할별로 닫힙니다(실수로 열리지 않게):
+# 방장 암호가 비면 방장 로그인만, 방 암호가 비면 멤버 로그인만 거절합니다. 둘이 같으면 방장 로그인을 거절합니다.
+# 비었을 때 예전 암호나 다른 인증으로 넘어가는 길은 두지 않습니다.
+ADMIN_PASSWORD_SERVER = os.environ.get("GOGOGO_ADMIN_PASSWORD", "")
+ROOM_PASSWORD_SERVER = os.environ.get("GOGOGO_ROOM_PASSWORD", "")
+if not ADMIN_PASSWORD_SERVER:
+    print("경고: GOGOGO_ADMIN_PASSWORD 가 비어 있어 방장 로그인이 거절됩니다.")
+if not ROOM_PASSWORD_SERVER:
+    print("경고: GOGOGO_ROOM_PASSWORD 가 비어 있어 멤버 로그인이 거절됩니다.")
+# (둘 다 해시로 넣으면 소금이 달라 같은 암호인지 알 수 없습니다 — 다른 암호를 쓰는 것은 운영 절차로 지킵니다.)
+# 이 서버는 프로세스 하나(uvicorn 워커 1개)로만 돌려야 합니다. 이름 잠금·열쇠 캐시·실패 기록이 프로세스 안에 있어,
+# 여러 워커·인스턴스면 재발급이 다른 프로세스에 바로 반영되지 않습니다. 워커 수를 늘리려면 이 부분을 DB 기반으로 바꿔야 합니다.
+if os.environ.get("WEB_CONCURRENCY", "1").strip() not in ("", "1"):
+    print("경고: WEB_CONCURRENCY 가 1이 아닙니다. 이 서버는 워커 1개로만 돌려야 합니다(이름 열쇠 잠금·캐시가 프로세스 안에 있음).")
+if ADMIN_PASSWORD_SERVER and ADMIN_PASSWORD_SERVER == ROOM_PASSWORD_SERVER:
+    print("경고: 방장 암호와 방 암호가 같아 방장 로그인이 거절됩니다.")
+    ADMIN_PASSWORD_SERVER = ""
+
+# env 값은 암호 그대로이거나, make_password_hash.py 가 만든 "pbkdf2_sha256$반복$소금$해시" 입니다.
+# 해시를 넣으면 서버 설정(docker 설정 파일 등)에 암호 원문이 남지 않습니다.
+def password_ok(given, expected):
+    if not expected or not isinstance(given, str):
+        return False
+    if expected.startswith("pbkdf2_sha256$"):
+        try:
+            _, rounds, salt, digest = expected.split("$")
+            got = hashlib.pbkdf2_hmac("sha256", given.encode("utf-8"), base64.b64decode(salt), int(rounds))
+            return hmac.compare_digest(base64.b64encode(got).decode("ascii"), digest)
+        except (ValueError, TypeError, binascii.Error):
+            return False
+    return hmac.compare_digest(given.encode("utf-8"), expected.encode("utf-8"))
+
+async def password_ok_async(given, expected):
+    # 해시 확인은 0.1초 넘게 걸릴 수 있어 방 처리와 따로 돌립니다.
+    return await asyncio.to_thread(password_ok, given, expected)
+
+def identity_hash(key):
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+# 닉네임은 NFC로 맞추고, 보이지 않는 글자·제어 글자·시스템 이름은 받지 않습니다(같아 보이는 다른 이름 방지).
+RESERVED_NICKNAMES = {"연결중...", "익명", "📢시스템", "🎉시스템"}
+
+def normalize_nickname(raw):
+    if not isinstance(raw, str):
+        return ""
+    name = unicodedata.normalize("NFC", raw).strip()
+    if not 1 <= len(name) <= 20 or name in RESERVED_NICKNAMES or name.startswith("자리"):
+        return ""
+    for ch in name:
+        if ch in NICKNAME_FILLERS:
+            return ""
+        if unicodedata.category(ch)[0] in "LN":
+            continue
+        if ch in NICKNAME_SYMBOLS:
+            continue
+        return ""
+    if "  " in name:
+        return ""
+    return name
+
+# 글자(L*)·숫자(N*)와 몇 가지 기호만 받습니다. 한글 채움 글자처럼 글자로 분류되지만 보이지 않는 것은 뺍니다.
+NICKNAME_SYMBOLS = set(" _-.·~!?()[]'")
+NICKNAME_FILLERS = {"\u3164", "\uffa0", "\u115f", "\u1160", "\u2800", "\u17b4", "\u17b5", "\u180b", "\u180c", "\u180d", "\u180e"}
+
+def name_id(nickname):
+    # DB 필드 이름으로 쓰므로 닉네임 대신 해시를 씁니다('.'·'$' 같은 글자가 경로로 해석되지 않게).
+    return hashlib.sha256(nickname.encode("utf-8")).hexdigest()
+
+ENROLL_TTL_SECONDS = 24 * 3600
+ENROLL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+def new_enroll_code():
+    return "".join(secrets.choice(ENROLL_ALPHABET) for _ in range(12))
+
+def normalize_enroll_code(raw):
+    return "".join(ch for ch in raw.upper() if ch in ENROLL_ALPHABET) if isinstance(raw, str) else ""
+
+# 카드 배경은 그림 data URL만 받습니다(따옴표·괄호가 들어갈 수 없는 모양).
+CARD_BG_RE = re.compile(r"data:image/(?:png|jpeg|webp|bmp|avif);base64,[A-Za-z0-9+/]+={0,2}")
+
+MAX_CARD_BG_CHARS = 3_000_000  # 약 2.2MB 그림
+
+def is_safe_card_bg(value):
+    return value is None or (isinstance(value, str) and len(value) <= MAX_CARD_BG_CHARS and CARD_BG_RE.fullmatch(value) is not None)
+
+HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+MONTH_RE = re.compile(r"\d{4}-\d{2}")
+
+def bounded_int(value, top):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 0 <= number <= top else None
+
+def clean_tracker_fields(incoming):
+    # 집필 기록에서 받는 값의 모양과 크기를 정합니다(문서가 커지거나 CSS가 섞이지 않게).
+    out = {}
+    if "targetChars" in incoming and bounded_int(incoming["targetChars"], 10_000_000) is not None:
+        out["targetChars"] = bounded_int(incoming["targetChars"], 10_000_000)
+    if isinstance(incoming.get("themeColor"), str) and HEX_COLOR_RE.fullmatch(incoming["themeColor"]):
+        out["themeColor"] = incoming["themeColor"]
+    if isinstance(incoming.get("todos"), list):
+        todos = []
+        for todo in incoming["todos"][:200]:
+            if isinstance(todo, dict) and isinstance(todo.get("text"), str):
+                todos.append({"text": todo["text"][:500], "done": todo.get("done") is True, "time": str(todo.get("time") or "")[:40]})
+        out["todos"] = todos
+    if isinstance(incoming.get("monthlyGoals"), dict):
+        goals = {}
+        for month, goal in list(incoming["monthlyGoals"].items())[:120]:
+            if isinstance(month, str) and MONTH_RE.fullmatch(month) and bounded_int(goal, 100_000_000) is not None:
+                goals[month] = bounded_int(goal, 100_000_000)
+        out["monthlyGoals"] = goals
+    return out
+
+# 화면이 로그인 뒤 서버로 보내는 type 목록. 이 밖의 type(서버만 보내는 auth_ok·kicked 등 포함)은 받지 않습니다.
+RELAY_TYPES = {"username_change", "card_bg_change", "toggle_mosaic", "start_share", "stop_share", "update_notice",
+               "status_update", "request_existing_shares", "request_offer", "offer", "answer", "ice"}
+CLIENT_TYPES = RELAY_TYPES | {"seat_reservation", "goal_celebration_chat", "timer_action", "delete_chat", "clear_chat",
+                              "kick", "issue_enrollment", "chat", "attendance", "tracker_update"}
+# 화면 공유 신호는 받을 사람(target)에게만 보냅니다.
+TARGETED_TYPES = {"request_offer", "offer", "answer", "ice"}
 
 def is_valid_pomo_url(url):
     if not isinstance(url, str):
@@ -88,7 +218,7 @@ def load_data():
                     new_cards = [{"id": i, "user": f"자리{i+1}", "card_bg": None, "is_mosaic": False, "is_large": False, "status": "", "reserved_by": None} for i in range(len(cards), 16)]
                     data["cards"].extend(new_cards)
                 for i, card in enumerate(data["cards"]):
-                    card["user"] = card.get("user") or f"자리{i+1}"
+                    card["user"] = card.get("user") if isinstance(card.get("user"), str) and card.get("user") else f"자리{i+1}"
                     card["is_mosaic"] = card.get("is_mosaic", False)
                     card["is_large"] = card.get("is_large", False)
                     raw_status = card.get("status", "")
@@ -115,11 +245,155 @@ def load_data():
         print("망고로드 초기화 에러 (하지만 서버는 죽지 않습니다!):", e)
         raise RuntimeError("DB를 읽지 못해 기존 기록 보호를 위해 시작을 중단합니다.") from e
 
+IDENTITY_FIELDS = ("identity_keys", "identity_enroll")
+
+# --- 신원 등록·초기화: DB가 저장을 확인(majority·journal)해야 승인합니다. 실패하면 로그인시키지 않습니다. ---
+def durable_collection():
+    if collection is None:
+        raise RuntimeError("DB 연결이 없어 신원을 저장할 수 없습니다.")
+    return collection.with_options(write_concern=WriteConcern(w="majority", j=True, wtimeout=5000))
+
+def db_claim_identity(nid, key_hash):
+    # 새 이름: 열쇠도 등록 대기도 없을 때만 한 번 저장됩니다(동시 요청 중 하나만 성공).
+    result = durable_collection().update_one(
+        {"_id": "main_state", f"identity_keys.{nid}": {"$exists": False}, f"identity_enroll.{nid}": {"$exists": False}},
+        {"$set": {f"identity_keys.{nid}": key_hash}})
+    return result.modified_count == 1
+
+def db_enroll_identity(nid, code_hash, key_hash, now):
+    # 등록 코드: 맞고 기한 안일 때 열쇠를 저장하며 코드를 지웁니다(한 번만 쓰임).
+    result = durable_collection().update_one(
+        {"_id": "main_state", f"identity_enroll.{nid}.h": code_hash, f"identity_enroll.{nid}.exp": {"$gt": now}},
+        {"$set": {f"identity_keys.{nid}": key_hash}, "$unset": {f"identity_enroll.{nid}": ""}})
+    return result.modified_count == 1
+
+def db_issue_enrollment(nid, code_hash, expires):
+    # 방장: 기존 열쇠를 지우고 새 등록 코드를 둡니다.
+    result = durable_collection().update_one(
+        {"_id": "main_state"},
+        {"$unset": {f"identity_keys.{nid}": ""}, "$set": {f"identity_enroll.{nid}": {"h": code_hash, "exp": expires}}})
+    return result.matched_count == 1
+
+def has_member_data(nickname):
+    # 이미 기록이 있는 이름(집필 기록·출석·고정석·채팅)은 방장 등록 코드 없이 새로 차지할 수 없습니다.
+    return nickname in member_names()
+
+identity_locks = {}
+
+def identity_lock(nickname):
+    return identity_locks.setdefault(name_id(nickname), asyncio.Lock())
+
+def loose_name(raw):
+    # 기존 기록 키 비교용(옛 데이터가 NFC가 아니어도 같은 이름으로 봄)
+    return unicodedata.normalize("NFC", raw).strip() if isinstance(raw, str) else ""
+
+def skeleton(name):
+    # 띄어쓰기·기호·대소문자를 뺀 뼈대. 뼈대가 같은 다른 이름은 새로 만들 수 없습니다(부엉·부 엉·부엉. 등).
+    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", name)).casefold()
+
+def member_names():
+    names = set()
+    for name in server_state.get("trackers", {}):
+        names.add(loose_name(name))
+    for month in server_state.get("attendance", {}).values():
+        if isinstance(month, dict):
+            names.update(loose_name(n) for n in month)
+    for card in server_state.get("cards", []):
+        names.add(loose_name(card.get("reserved_by")))
+    for c in server_state.get("chat_history", []):
+        names.add(loose_name(c.get("senderName")))
+    names.discard("")
+    return names
+
+MAX_SELF_CLAIMS = 500
+
+async def check_member_identity(nickname, packet):
+    """멤버 이름 열쇠 판정. (실패 사유, 새로 준 열쇠)를 돌려줍니다. 호출자는 이름별 잠금을 잡고 있어야 합니다."""
+    stored_keys = server_state.setdefault("identity_keys", {})
+    pending_enrolls = server_state.setdefault("identity_enroll", {})
+    nid = name_id(nickname)
+    if nid in stored_keys:
+        given_key = packet.get("identity_key")
+        if isinstance(given_key, str) and hmac.compare_digest(identity_hash(given_key), stored_keys[nid]):
+            return None, None
+        return "identity", None
+    new_key = secrets.token_urlsafe(32)
+    try:
+        if nid in pending_enrolls or nickname in member_names():
+            code = normalize_enroll_code(packet.get("enroll_code"))
+            if not code:
+                return "enroll_required", None
+            if await asyncio.to_thread(db_enroll_identity, nid, identity_hash(code), identity_hash(new_key), time.time()):
+                stored_keys[nid] = identity_hash(new_key)
+                pending_enrolls.pop(nid, None)
+                return None, new_key
+            return "enroll_invalid", None
+        # 아무 기록도 없는 새 이름: 기존 이름·방장과 뼈대가 같으면 거절, 너무 많으면 방장 코드로
+        bone = skeleton(nickname)
+        if not bone or bone == skeleton(ADMIN_NICKNAME) or bone in {skeleton(n) for n in member_names()}:
+            return "nickname", None
+        if len(stored_keys) >= MAX_SELF_CLAIMS:
+            return "enroll_required", None
+        if await asyncio.to_thread(db_claim_identity, nid, identity_hash(new_key)):
+            stored_keys[nid] = identity_hash(new_key)
+            return None, new_key
+        return "identity", None
+    except Exception as exc:
+        print("신원 저장 실패(로그인 거절):", type(exc).__name__)
+        return "storage", None
+
+# 로그인 실패 제한(무차별 대입 늦추기). 둘 다 메모리에만 있고, 맞는 암호인지 알려 주기 전에 판정합니다.
+# - 출처별: 같은 출처가 5분에 10번 틀리면 그 출처만 5분 쉼. 출처는 프록시가 붙인 X-Forwarded-For 의 마지막 값,
+#   없으면 접속 주소입니다. X-Forwarded-For 가 없으면 모든 외부 접속이 한 출처로 보이므로 출처별 제한을 쓰지 않습니다.
+# - 전역 상한: 모든 출처를 합쳐 1분에 300번 넘게 틀리면 1분 쉼(위조 출처로 피하는 대입의 상한).
+# 회복: 출처별 제한은 5분, 전역 상한은 1분 뒤 저절로 풀립니다. 운영 쪽 컨테이너 재시작으로도 바로 풀립니다(설정은 유지).
+AUTH_FAIL_SOURCE_WINDOW = 300
+AUTH_FAIL_SOURCE_LIMIT = 10
+AUTH_FAIL_GLOBAL_WINDOW = 60
+AUTH_FAIL_GLOBAL_LIMIT = 300
+AUTH_SOURCES_MAX = 5000
+auth_failures = []           # 전역 실패 시각
+auth_failures_by_source = {}  # 출처 → 실패 시각들
+
+def auth_source(websocket):
+    forwarded = websocket.headers.get("x-forwarded-for", "")
+    last = forwarded.split(",")[-1].strip()[:64] if forwarded else ""
+    return ("fwd:" + last) if last else None
+
+def note_auth_failure(source=None):
+    now = time.time()
+    auth_failures.append(now)
+    if source:
+        if source not in auth_failures_by_source and len(auth_failures_by_source) >= AUTH_SOURCES_MAX:
+            auth_failures_by_source.pop(next(iter(auth_failures_by_source)))
+        auth_failures_by_source.setdefault(source, []).append(now)
+
+def auth_throttled(source=None):
+    now = time.time()
+    while auth_failures and auth_failures[0] < now - AUTH_FAIL_GLOBAL_WINDOW:
+        auth_failures.pop(0)
+    if len(auth_failures) >= AUTH_FAIL_GLOBAL_LIMIT:
+        return True
+    if source and source in auth_failures_by_source:
+        recent = [t for t in auth_failures_by_source[source] if t >= now - AUTH_FAIL_SOURCE_WINDOW]
+        if recent:
+            auth_failures_by_source[source] = recent
+        else:
+            auth_failures_by_source.pop(source, None)
+        return len(recent) >= AUTH_FAIL_SOURCE_LIMIT
+    return False
+
+SEND_TIMEOUT_SECONDS = 5
+
+async def send_limited(conn, text):
+    # 읽지 않는 연결 하나가 방 전체를 붙잡지 않게 합니다.
+    await asyncio.wait_for(conn.send_text(text), SEND_TIMEOUT_SECONDS)
+
 def save_data(data):
     try:
         if collection is not None:
             # Patch individual card fields: an unloaded background must remain in MongoDB.
-            fields = {key: value for key, value in data.items() if key not in ("_id", "cards")}
+            fields = {key: value for key, value in data.items() if key not in ("_id", "cards") + IDENTITY_FIELDS}
             for index, card in enumerate(data.get("cards", [])):
                 for key, value in card.items():
                     fields[f"cards.{index}.{key}"] = value
@@ -158,10 +432,15 @@ async def persist_state():
     if save_task is None or save_task.done():
         save_task = asyncio.create_task(save_worker())
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)  # 자동 API 문서 숨김
+
+def require_session(request):
+    if manager.sessions.get(request.headers.get("x-gogogo-session", "")) not in manager.authed_connections:
+        raise HTTPException(status_code=403, detail="로그인 뒤에만 볼 수 있습니다.")
 
 @app.get("/pomo-config")
-def get_pomo_config():
+def get_pomo_config(request: Request):
+    require_session(request)
     return {"ok": True, "url": load_pomo_url()}
 
 @app.post("/pomo-config")
@@ -170,7 +449,8 @@ async def update_pomo_config(request: Request):
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="요청 형식이 올바르지 않습니다.")
-    if payload.get("admin_password") != ADMIN_PASSWORD_SERVER:
+    conn = manager.sessions.get(request.headers.get("x-gogogo-session", ""))
+    if conn not in manager.authed_connections or conn not in admin_sockets:
         raise HTTPException(status_code=403, detail="방장만 뽀모 시트 주소를 바꿀 수 있습니다.")
     try:
         url = save_pomo_url(payload.get("url", ""))
@@ -209,7 +489,9 @@ class ConnectionManager:
         self.active_connections = []
         self.active_shares = {}
         self.active_users = {}
-        self.active_slots = {} 
+        self.active_slots = {}
+        self.authed_connections = set()  # 암호 확인을 마친 연결. 방송·개별 갱신은 여기에만 보냄
+        self.sessions = {}  # HTTP 조회용 세션 값 → 연결(메모리에만)
 
     async def connect(self, websocket):
         await websocket.accept()
@@ -221,6 +503,9 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
         if websocket in self.active_users:
             del self.active_users[websocket]
+        self.authed_connections.discard(websocket)
+        for token in [t for t, conn in self.sessions.items() if conn is websocket]:
+            del self.sessions[token]
             
         disconnected_client = str(id(websocket))
         freed_indexes = []
@@ -234,25 +519,34 @@ class ConnectionManager:
         async def send_to_client(conn):
             if conn != exclude:
                 try:
-                    await conn.send_text(message)
+                    await send_limited(conn, message)
                 except Exception:
                     self.disconnect(conn)
 
-        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.authed_connections)]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def send_to_client_id(self, client_id, message):
+        for conn in list(self.authed_connections):
+            if str(id(conn)) == client_id:
+                try:
+                    await send_limited(conn, message)
+                except Exception:
+                    self.disconnect(conn)
+                return
+
     async def broadcast_user_list(self):
-        users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if name != "연결중..."]
-        msg = json.dumps({"type": "user_list", "count": len(self.active_connections), "users": users_info})
+        users_info = [{"clientId": str(id(ws)), "nickname": name} for ws, name in self.active_users.items() if ws in self.authed_connections]
+        msg = json.dumps({"type": "user_list", "count": len(self.authed_connections), "users": users_info})
         
         async def send_to_client(conn):
             try:
-                await conn.send_text(msg)
+                await send_limited(conn, msg)
             except Exception:
                 self.disconnect(conn)
 
-        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.active_connections)]
+        tasks = [asyncio.create_task(send_to_client(conn)) for conn in list(self.authed_connections)]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -262,6 +556,8 @@ KST = timezone(timedelta(hours=9))
 ADMIN_NICKNAME = "부엉"
 PRESENCE_RECONNECT_GRACE_SECONDS = 5
 pending_presence_leaves = {}
+KICK_BLOCK_SECONDS = 600
+kicked_until = {}  # 강퇴된 닉네임 → 다시 들어올 수 있는 시각(메모리에만)
 
 async def send_seat_error(websocket, index, message):
     card = server_state["cards"][index]
@@ -293,7 +589,7 @@ async def post_leave_after_reconnect_grace(nickname, disconnected_at):
         if any(name == nickname for name in manager.active_users.values()):
             return
         await set_tracker_timer_running(nickname, False, disconnected_at)
-        await post_presence_chat(f"🚪 {nickname} 작가님이 퇴장하셨습니다.")
+        await post_presence_chat(f"🚪 «{nickname}» 작가님이 퇴장하셨습니다.")
     except asyncio.CancelledError:
         return
     finally:
@@ -328,11 +624,82 @@ def normalize_tracker(nickname, now=None):
     record.update(target=data.get("targetChars", 5000), done=data.get("doneChars", 0), seconds=int(elapsed))
     return data
 
+admin_sockets = set()
+
+def state_for_conn(nickname, is_admin):
+    result = state_for(nickname)
+    if not is_admin:
+        result.pop("admin_log", None)
+    return result
+
+REVOKE_TIMEOUT_SECONDS = 2
+revoke_tasks = set()
+
+async def revoke_connection(conn, notice=None):
+    # 권한(인증·방장·HTTP 세션)은 기다림 없이 바로 거둡니다.
+    manager.authed_connections.discard(conn)
+    admin_sockets.discard(conn)
+    for token in [t for t, c in manager.sessions.items() if c is conn]:
+        del manager.sessions[token]
+
+    async def finish():
+        if notice:
+            try:
+                await asyncio.wait_for(conn.send_text(json.dumps(notice)), REVOKE_TIMEOUT_SECONDS)
+            except Exception:
+                pass
+        try:
+            await asyncio.wait_for(conn.close(), REVOKE_TIMEOUT_SECONDS)
+        except Exception:
+            pass
+
+    # 알림과 닫기는 따로 돌려, 느린 연결이 호출한 쪽(이름 잠금 포함)을 붙잡지 않게 합니다. 최대 약 4초 안에 끝납니다.
+    task = asyncio.create_task(finish())
+    revoke_tasks.add(task)
+    task.add_done_callback(revoke_tasks.discard)
+
+pending_revocations = {}  # nid → 닉네임: 열쇠 해제가 아직 DB에 저장되지 않은 이름
+revocation_task = None
+
+async def add_admin_log(message):
+    log_entry = {"msg": message, "time": time.time()}
+    server_state.setdefault("admin_log", []).append(log_entry)
+    if len(server_state["admin_log"]) > 100:
+        server_state["admin_log"].pop(0)
+    await persist_state()
+    await send_admin_log(log_entry)
+
+async def retry_revocations():
+    """재발급 때 DB 저장이 실패한 열쇠 해제를 5초마다 다시 저장합니다(프로세스가 살아 있는 동안).
+    저장되기 전에 서버가 다시 켜지면 DB의 옛 열쇠가 되살아나므로, 방장은 '해제 저장됨' 기록을 확인해야 합니다."""
+    while pending_revocations:
+        await asyncio.sleep(5)
+        for nid, nick in list(pending_revocations.items()):
+            async with identity_lock(nick):
+                if server_state.get("identity_enroll", {}).get(nid, {}).get("h"):
+                    pending_revocations.pop(nid, None)  # 그사이 코드 발급이 저장됨
+                    continue
+                try:
+                    saved = await asyncio.to_thread(db_issue_enrollment, nid, "", 0)  # 열쇠 지움 + 코드 없는 등록 대기
+                except Exception:
+                    saved = False
+                if saved:
+                    pending_revocations.pop(nid, None)
+                    await add_admin_log(f"🔑 {nick} 열쇠 해제가 DB에 저장됨 — 이제 등록 코드를 다시 만들어 주세요")
+
+async def send_admin_log(log_entry):
+    packet = json.dumps({"type": "admin_log_update", "log": log_entry})
+    for conn in list(admin_sockets):
+        try:
+            await send_limited(conn, packet)
+        except Exception:
+            pass
+
 def public_tracker(data):
     return {k: copy.deepcopy(v) for k, v in data.items() if k != "todos"}
 
 def state_for(nickname):
-    result = {k: copy.deepcopy(v) for k, v in server_state.items() if k not in ("trackers", "identity_keys")}
+    result = {k: copy.deepcopy(v) for k, v in server_state.items() if k not in ("trackers",) + IDENTITY_FIELDS}
     result["trackers"] = {name: (copy.deepcopy(normalize_tracker(name)) if name == nickname else public_tracker(normalize_tracker(name))) for name in list(server_state.get("trackers", {}))}
     return result
 async def publish_tracker(nickname):
@@ -341,10 +708,10 @@ async def publish_tracker(nickname):
         name = manager.active_users.get(conn)
         packet = {"type":"tracker_update", "nickname":nickname, "tracker_data":copy.deepcopy(current) if name == nickname else public_tracker(current)}
         try:
-            await conn.send_text(json.dumps(packet))
+            await send_limited(conn, json.dumps(packet))
         except Exception:
             pass
-    await asyncio.gather(*(send(conn) for conn in list(manager.active_connections)))
+    await asyncio.gather(*(send(conn) for conn in list(manager.authed_connections)))
 
 async def set_tracker_timer_running(nickname, should_run, event_time=None):
     if not nickname or nickname == "연결중...":
@@ -399,18 +766,20 @@ def read_card_background(index):
     return rows[0].get("card_bg")
 
 @app.get("/card-background/{index}")
-async def card_background(index: int):
+async def card_background(index: int, request: Request):
+    require_session(request)
     if not 0 <= index < 16:
         return {"ok": False}
     # Serialize large reads; chat and screen-sharing handlers remain available.
     async with background_read_lock:
         card = server_state["cards"][index]
         if "card_bg" in card:
-            return {"ok": True, "card_bg": card["card_bg"]}
+            return {"ok": True, "card_bg": card["card_bg"] if is_safe_card_bg(card["card_bg"]) else None}
         try:
             value = await asyncio.to_thread(read_card_background, index)
             # A concurrent upload takes precedence over the older DB value.
-            return {"ok": True, "card_bg": card.get("card_bg", value)}
+            value = card.get("card_bg", value)
+            return {"ok": True, "card_bg": value if is_safe_card_bg(value) else None}
         except Exception as exc:
             print("Background read deferred:", index, exc)
             return {"ok": False}
@@ -677,6 +1046,7 @@ def read_root():
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
                 <h3 style="margin-bottom: 15px; font-size: 16px; color: #ff7675;">👑 비밀 출입 기록</h3>
                 <div id="adminLogContent" style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 12px; color: #ddd; line-height: 1.6;">기록이 없습니다.</div>
+                <button onclick="issueEnrollmentPrompt()" style="margin-top: 10px; padding: 6px 10px; border: none; border-radius: 5px; background: #636e72; color: white; cursor: pointer; font-size: 12px;">🔑 등록 코드 만들기(열쇠 재발급)</button>
             </div>
         </div>
 
@@ -818,8 +1188,13 @@ def read_root():
         </div>
 
         <script>
-            const ROOM_PASSWORD = "7777"; 
-            const ADMIN_PASSWORD = "4717"; 
+            let sessionPassword = ""; // 로그인 때 입력한 값. 서버가 확인하며 저장소에 남기지 않음
+            let sessionToken = ""; // 로그인 뒤 서버가 준 조회용 값(메모리에만)
+            let pendingEnrollCode = ""; // 방장에게 받은 일회용 등록 코드(메모리에만, 쓰면 지움)
+            function identityKeyFor(nick) { try { return localStorage.getItem('gogogoIdentity:' + nick) || ""; } catch (e) { return ""; } }
+            function saveIdentityKey(nick, key) { try { localStorage.setItem('gogogoIdentity:' + nick, key); } catch (e) {} }
+            function safeBg(value) { return typeof value === 'string' && value.length <= 3000000 && /^data:image\/(?:png|jpeg|webp|bmp|avif);base64,[A-Za-z0-9+\/]+={0,2}$/.test(value) ? value : ''; }
+            function issueEnrollmentPrompt() { const nick = prompt('등록 코드를 만들 닉네임을 적어줘. (그 이름의 기존 열쇠는 해제되고, 코드를 받은 사람만 다시 등록할 수 있어)'); if (nick && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "issue_enrollment", target_nick: nick.trim() })); } }
             const ADMIN_NICKNAME = "부엉";
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
@@ -880,7 +1255,6 @@ def read_root():
                 }
             }
             updateLoginUserCount();
-            loadPomoSheetUrl();
             let countInterval = setInterval(() => {
                 if(document.getElementById('loginOverlay').style.display !== 'none') {
                     updateLoginUserCount();
@@ -903,7 +1277,7 @@ def read_root():
             }
 
             function formatLogTime(ts) { const now = new Date(ts * 1000); const m = now.getMonth() + 1; const d = now.getDate(); return `${m}/${d} ${now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`; }
-            function renderAdminLog() { const container = document.getElementById('adminLogContent'); if (!window.adminLogData || window.adminLogData.length === 0) { container.innerHTML = "기록이 없습니다."; return; } container.innerHTML = window.adminLogData.map(log => `<div style="margin-bottom: 4px;">[${formatLogTime(log.time)}] <b style="color:#ffeaa7;">${log.msg}</b></div>`).join(""); container.scrollTop = container.scrollHeight; }
+            function renderAdminLog() { const container = document.getElementById('adminLogContent'); if (!window.adminLogData || window.adminLogData.length === 0) { container.innerHTML = "기록이 없습니다."; return; } container.innerHTML = window.adminLogData.map(log => `<div style="margin-bottom: 4px;">[${formatLogTime(log.time)}] <b style="color:#ffeaa7;">${escapeText(log.msg)}</b></div>`).join(""); container.scrollTop = container.scrollHeight; }
             
             function renderAttendanceBoard() {
                 const now = kstNow(); const y = now.getFullYear(); const m = now.getMonth() + 1; const today = now.getDate(); const monthStr = `${y}-${String(m).padStart(2, '0')}`;
@@ -927,15 +1301,15 @@ def read_root():
                 for (let user in monthData) { if ((monthData[user] || []).includes(today)) { todayAttendees.push(user); } }
                 rankArr.sort((a, b) => b.count - a.count); let rankHtml = '';
                 if (rankArr.length === 0) { rankHtml = '아직 이번 주에 출석한 사람이 없어!'; } else { rankArr.forEach((item) => { const rank = 1 + rankArr.filter(other => other.count > item.count).length; let medal = ({1:'🥇',2:'🥈',3:'🥉'})[rank] || '🏅'; rankHtml += `<div style="${(rank > 0 && rank <= 3) ? 'font-weight:bold; color:#fff;' : ''} margin-bottom: 4px;">${medal} ${rank}등 ${escapeText(item.name)} : ${item.count}일</div>`; }); }
-                let todayHtml = todayAttendees.length === 0 ? '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!' : todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${u}</span>`).join('');
+                let todayHtml = todayAttendees.length === 0 ? '아직 오늘 출석한 사람이 없어! 빨리 1빠 찍어!' : todayAttendees.map(u => `<span style="background:rgba(39, 174, 96, 0.6); padding:4px 8px; border-radius:4px; font-weight:bold;">🍀 ${escapeText(u)}</span>`).join('');
                 const rankEl = document.getElementById('attRankingList'); const todayEl = document.getElementById('attTodayList');
                 if (rankEl) rankEl.innerHTML = rankHtml; if (todayEl) todayEl.innerHTML = todayHtml;
             }
             function stampAttendance(y, m, d) { const monthStr = `${y}-${String(m).padStart(2, '0')}`; const myName = window.myNickname || "익명"; if (window.attendanceData && window.attendanceData[monthStr] && window.attendanceData[monthStr][myName] && window.attendanceData[monthStr][myName].includes(d)) return; if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "attendance", month: monthStr, day: d, nickname: myName })); } }
             function autoStampToday() { const now = kstNow(); const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; const myName = window.myNickname; if (!myName) return; const myAtt = (window.attendanceData[monthStr] && window.attendanceData[monthStr][myName]) || []; if (!myAtt.includes(now.getDate())) { stampAttendance(now.getFullYear(), now.getMonth() + 1, now.getDate()); } }
             function loadLocalBackground() { const bgType = localStorage.getItem('myBgType'); const bgData = localStorage.getItem('myBgData'); if (bgType === 'image' && bgData) { document.getElementById('bgMediaWrapper').innerHTML = `<img src="${bgData}" alt="Full Background">`; } else if (bgType === 'youtube' && bgData) { document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${bgData}?autoplay=1&mute=1&loop=1&playlist=${bgData}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; } }
-            function makeLinksClickable(text) { return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>'); }
-            function formatNotice(text) { return !text ? "" : makeLinksClickable(text).replace(/\n/g, '<br>'); }
+            function makeLinksClickable(text) { return text.replace(/(https?:\/\/[^\s"'<>]+)/g, '<a href="$1" target="_blank" style="color: #ffeaa7; text-decoration: underline; padding: 0 4px;" onclick="event.stopPropagation()">$1</a>'); }
+            function formatNotice(text) { return !text ? "" : makeLinksClickable(escapeText(text)).replace(/\n/g, '<br>'); }
             function addNotice() { const newVal = prompt("새로 추가할 공지를 적어주세요!\n(새 공지는 맨 위로 올라갑니다)"); if (newVal !== null && newVal.trim() !== "") { const combined = window.rawNotice ? ("📌 " + newVal + "\n\n" + window.rawNotice) : ("📌 " + newVal); if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: combined })); window.rawNotice = combined; document.getElementById('noticeText').innerHTML = formatNotice(combined); } } }
             function editNotice() { const newVal = prompt("기존 공지를 전부 지우고 새로 쓰거나, 직접 글을 수정하세요!", window.rawNotice); if (newVal !== null) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "update_notice", notice: newVal })); window.rawNotice = newVal; document.getElementById('noticeText').innerHTML = formatNotice(newVal); } } }
             window.activeNicknames = new Set();
@@ -956,7 +1330,7 @@ def read_root():
             }
             async function loadPomoSheetUrl() {
                 try {
-                    const res = await fetch('/pomo-config', { cache: 'no-store' });
+                    const res = await fetch('/pomo-config', { cache: 'no-store', headers: { 'X-Gogogo-Session': sessionToken } });
                     const data = await res.json();
                     if (res.ok && data.url) window.pomoSheetUrl = data.url;
                 } catch (e) {
@@ -985,8 +1359,8 @@ def read_root():
                 try {
                     const res = await fetch('/pomo-config', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: trimmed, admin_password: ADMIN_PASSWORD })
+                        headers: { 'Content-Type': 'application/json', 'X-Gogogo-Session': sessionToken },
+                        body: JSON.stringify({ url: trimmed })
                     });
                     const data = await res.json();
                     if (!res.ok || !data.ok) throw new Error(data.detail || '저장 실패');
@@ -1003,15 +1377,14 @@ def read_root():
                 const inputPw = document.getElementById('pwInput').value; 
                 const inputNick = document.getElementById('nickInput').value.trim(); 
                 if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; } 
-                if (inputNick === ADMIN_NICKNAME) { 
-                    if (inputPw !== ADMIN_PASSWORD) { alert("앗! 이 닉네임은 방장(누나) 전용이야! 비밀번호가 틀렸어!"); return; } 
+                if (!inputPw) { alert("비밀번호를 적어줘!"); return; }
+                sessionPassword = inputPw; // 맞는지는 서버가 확인함(auth_ok / auth_failed)
+                if (inputNick === ADMIN_NICKNAME) {
                     window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; document.getElementById('pomoEditBtn').style.display = 'block'; 
-                } else { 
-                    if (inputPw !== ROOM_PASSWORD) { alert("비밀번호가 틀렸어! 다시 확인해봐."); return; } 
+                } else {
                     window.isAdmin = false; document.getElementById('pomoEditBtn').style.display = 'none'; 
                 } 
-                window.myNickname = inputNick; 
-                loadPomoSheetUrl();
+                window.myNickname = inputNick;
                 window.activeNicknames.add(inputNick);
                 localStorage.setItem('mySavedNickname', inputNick); 
                 document.getElementById('loginOverlay').style.display = 'none'; 
@@ -1257,7 +1630,7 @@ def read_root():
             function forceRecoverWebRTC() { 
                 if (ws && ws.readyState === WebSocket.OPEN) { 
                     const ownedArr = Array.from(myOwnedSlots);
-                    ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: ownedArr }));
+                    ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: ownedArr, password: sessionPassword, identity_key: identityKeyFor(window.myNickname), enroll_code: pendingEnrollCode }));
                     ws.send(JSON.stringify({ type: "request_existing_shares" })); 
                     for (let idx in expectedShares) { 
                         const sharerId = expectedShares[idx]; 
@@ -1285,14 +1658,14 @@ def read_root():
             function initCards() {
                 const grid = document.getElementById('cardGrid'); grid.innerHTML = '';
                 cardData.forEach((card, index) => {
-                    let bgStyle = card.card_bg ? `background-image: url('${card.card_bg}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = hasCustomStatus(card.status) ? '수정' : '상태'; let statusBtnBg = hasCustomStatus(card.status) ? '#00b894' : '#8e44ad';
+                    let bgStyle = safeBg(card.card_bg) ? `background-image: url('${safeBg(card.card_bg)}');` : ''; let mosaicBtnBg = card.is_mosaic ? '#e17055' : '#636e72'; let mosaicBtnText = card.is_mosaic ? '해제' : '모자이크'; let sizeBtnText = card.is_large ? '작게' : '크게'; let sizeBtnBg = card.is_large ? '#e67e22' : '#f39c12'; let largeClass = card.is_large ? ' card-large' : ''; let statusBtnText = hasCustomStatus(card.status) ? '수정' : '상태'; let statusBtnBg = hasCustomStatus(card.status) ? '#00b894' : '#8e44ad';
                     let hideBtnText = card.is_local_hidden ? '보기' : '가리기'; let hideBtnBg = card.is_local_hidden ? '#e84393' : '#2d3436'; let boxVisibility = card.is_local_hidden ? 'hidden' : 'visible';
                     let myOrder = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                     grid.innerHTML += `
                         <div class="timer-card${largeClass}" id="card-card-${index}" style="${bgStyle} order: ${myOrder};">
                             <div class="card-header">
 	                                <div class="card-title-row">
-	                                    <input class="card-name-input" type="text" id="username-${index}" value="${card.user}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
+	                                    <input class="card-name-input" type="text" id="username-${index}" value="${escapeText(card.user)}" style="flex-grow: 1; min-width: 0; padding: 4px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; border-radius: 3px;" oninput="updateUsername(${index}, this.value)">
 	                                    <button onclick="openRecordModalByIndex(${index})" class="share-btn" style="background:#6c5ce7; padding:4px 6px; flex-grow:0;">✍️ 집필기록</button>
 	                                    <button onclick="toggleSeatReservation(${index})" id="seat-lock-btn-${index}" class="share-btn" style="background:#e1a400; padding:4px 6px; flex-grow:0; white-space:nowrap;">📌 자리 고정</button>
 	                                </div>
@@ -1360,18 +1733,18 @@ def read_root():
                         if (knownBackgrounds.has(i)) continue;
                         const previous = cardData[i].card_bg;
                         try {
-                            const response = await fetch(`/card-background/${i}`, {cache:'no-store'});
+                            const response = await fetch(`/card-background/${i}`, {cache:'no-store', headers: { 'X-Gogogo-Session': sessionToken }});
                             const result = await response.json();
                             if (!result.ok || cardData[i].card_bg !== previous) continue;
                             cardData[i].card_bg = result.card_bg;
                             knownBackgrounds.add(i);
                             const element = document.getElementById(`card-card-${i}`);
-                            if (element) element.style.backgroundImage = result.card_bg ? `url('${result.card_bg}')` : '';
+                            if (element) element.style.backgroundImage = safeBg(result.card_bg) ? `url('${safeBg(result.card_bg)}')` : '';
                         } catch (error) { console.warn('Background deferred', i); }
                     }
                 } finally { backgroundLoading = false; }
             }
-            function setCardBackground(index, event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; cardData[index].card_bg = dataUrl; const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl })); } }; reader.readAsDataURL(file); }
+            function setCardBackground(index, event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; if (!safeBg(dataUrl)) { alert("PNG·JPG·WEBP 그림만 카드 배경으로 쓸 수 있어!"); return; } cardData[index].card_bg = dataUrl; const cardEl = document.getElementById(`card-card-${index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${dataUrl}')`; } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "card_bg_change", index: index, dataUrl: dataUrl })); } }; reader.readAsDataURL(file); }
             function setLocalBackground(event) { const file = event.target.files[0]; if (!file) return; if (file.type === "image/gif") { alert("움짤(GIF)은 올릴 수 없어 누나!"); event.target.value = ""; return; } const reader = new FileReader(); reader.onload = function(e) { const dataUrl = e.target.result; document.getElementById('bgMediaWrapper').innerHTML = `<img src="${dataUrl}" alt="Full Background">`; localStorage.setItem('myBgType', 'image'); try { localStorage.setItem('myBgData', dataUrl); } catch (err) { alert("사진 용량이 커서 다음 접속 시 풀릴 수 있어!"); } }; reader.readAsDataURL(file); }
             function setYoutubeBackground() { const inputVal = document.getElementById('bgYoutubeInput').value; const videoId = extractYoutubeId(inputVal); if (!videoId) { alert("유튜브 링크가 올바르지 않습니다."); return; } document.getElementById('bgMediaWrapper').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; localStorage.setItem('myBgType', 'youtube'); localStorage.setItem('myBgData', videoId); }
             
@@ -1426,7 +1799,7 @@ def read_root():
                     ws.onopen = function() {
                         const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
                         const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr })); autoStampToday();
+                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr, password: sessionPassword, identity_key: identityKeyFor(myNick), enroll_code: pendingEnrollCode })); autoStampToday();
                         if (recordAutoSaveNeedsSync) flushRecordAutoSave();
                         
                         for (let idx in myStreams) {
@@ -1450,6 +1823,19 @@ def read_root():
                             if (data.type === "private_tracker_state") { window.trackersData=data.trackers; loadMyLocalTrackerData(); refreshBadges(); refreshQuickDoneRows(); return; }
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
                             if (data.type === "pong") { return; }
+                            if (data.type === "auth_ok") { window.isAdmin = !!data.is_admin; if (data.session) sessionToken = data.session; if (data.identity_key) saveIdentityKey(window.myNickname, data.identity_key); pendingEnrollCode = ""; loadPomoSheetUrl(); return; }
+                            if (data.type === "auth_failed") {
+                                if (pingInterval) clearInterval(pingInterval); ws.onclose = null; ws.close();
+                                if (data.reason === "enroll_required" || data.reason === "enroll_invalid") {
+                                    const code = prompt(data.reason === "enroll_invalid" ? "등록 코드가 맞지 않거나 기한(24시간)이 지났어. 방장에게 새 코드를 받아 적어줘." : "이 닉네임은 이미 기록이 있거나 방장이 등록 코드를 만든 이름이라, 방장에게 받은 등록 코드가 필요해. 코드를 적어줘.");
+                                    if (code && code.trim()) { pendingEnrollCode = code.trim(); connectWebSocket(); return; }
+                                }
+                                sessionPassword = ""; sessionToken = ""; pendingEnrollCode = "";
+                                const reasons = { identity: "이 닉네임은 다른 기기(브라우저)에 등록된 이름이야. 그 기기로 들어오거나 방장에게 등록 코드를 받아줘!", kicked: "방장이 내보낸 이름이라 잠시 뒤에 다시 들어와줘.", nickname: "쓸 수 없는 닉네임이야(다른 작가님과 너무 비슷하거나, 글자·숫자 말고 다른 기호가 있어). 다른 이름으로 들어와줘.", storage: "서버가 등록을 저장하지 못했어. 잠시 뒤에 다시 들어와줘.", busy: "지금은 로그인 시도가 너무 많아. 1분 뒤에 다시 해줘.", enroll_required: "등록 코드가 있어야 들어올 수 있어.", enroll_invalid: "등록 코드가 있어야 들어올 수 있어." };
+                                alert(reasons[data.reason] || "비밀번호가 틀렸어! 다시 확인해봐."); window.location.reload(); return;
+                            }
+                            if (data.type === "enrollment_issued") { alert(data.ok ? `${data.target_nick} 등록 코드: ${data.code}\n24시간 안에 한 번만 쓸 수 있어. 본인에게만 따로 전해줘.` : data.retrying ? `${data.target_nick} 열쇠는 지금 막았지만 서버 저장이 안 됐어. 서버가 자동으로 다시 저장하고 있어.\n출입 기록에 '해제 저장됨'이 뜨면 등록 코드를 다시 만들어줘.` : "등록 코드를 만들지 못했어(이름을 확인하거나 잠시 뒤 다시)."); return; }
+                            if (data.type === "identity_revoked") { try { localStorage.removeItem('gogogoIdentity:' + window.myNickname); } catch (e) {} alert("방장이 이 이름의 열쇠를 해제했어. 등록 코드를 받아 다시 들어와줘."); window.location.reload(); return; }
                             else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
                             else if (data.type === "duplicate_kicked") {
                                 alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
@@ -1461,7 +1847,7 @@ def read_root():
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
                                 window.activeNicknames = new Set(data.users.map(u => u.nickname));
-                                let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button onclick="kickUser('${u.nickname}')" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b data-name="${escapeText(u.nickname)}" style="color:white;">${escapeText(u.nickname)}</b>${kickBtn}</span>`; }).join("");
+                                let listHtml = data.users.map(u => { let kickBtn = ''; if (window.isAdmin && u.nickname !== window.myNickname) { kickBtn = `<button data-name="${escapeText(u.nickname)}" onclick="kickUser(this.dataset.name)" style="background:#d63031; border:none; color:white; border-radius:3px; padding:1px 4px; font-size:9px; cursor:pointer; margin-left:4px;">강퇴</button>`; } return `<span style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center;"><b data-name="${escapeText(u.nickname)}" style="color:white;">${escapeText(u.nickname)}</b>${kickBtn}</span>`; }).join("");
                                 document.getElementById('userListStr').innerHTML = listHtml;
                                 refreshBadges();
                                 applyEmptySlotVisibility();
@@ -1487,7 +1873,7 @@ def read_root():
                                             const userEl = document.getElementById(`username-${i}`); if (userEl) userEl.value = card.user;
                                             const cardEl = document.getElementById(`card-card-${i}`); 
                                             if (cardEl) {
-                                                if (card.card_bg) { cardEl.style.backgroundImage = `url('${card.card_bg}')`; }
+                                                if (safeBg(card.card_bg)) { cardEl.style.backgroundImage = `url('${safeBg(card.card_bg)}')`; }
                                                 cardEl.style.order = (card.user === window.myNickname && window.myNickname) ? -1 : 0;
                                             }
                                             const hideBtn = document.getElementById(`hide-btn-${i}`);
@@ -1515,7 +1901,7 @@ def read_root():
                             else if (data.type === "attendance_update") { window.attendanceData = data.attendance; refreshBadges(); if (document.getElementById('attendanceModal').style.display === 'flex') { renderAttendanceBoard(); } }
                             else if (data.type === "admin_log_update") { if (!window.adminLogData) window.adminLogData = []; window.adminLogData.push(data.log); if (window.adminLogData.length > 100) window.adminLogData.shift(); if (window.isAdmin && document.getElementById('adminLogModal').style.display === 'flex') { renderAdminLog(); } }
                             else if (data.type === "username_change") { applySeatCardState(data.index, data.user, cardData[data.index].reserved_by); } 
-                            else if (data.type === "card_bg_change") { cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
+                            else if (data.type === "card_bg_change") { if (!safeBg(data.dataUrl)) return; cardData[data.index].card_bg = data.dataUrl; const cardEl = document.getElementById(`card-card-${data.index}`); if (cardEl) { cardEl.style.backgroundImage = `url('${data.dataUrl}')`; } } 
                             else if (data.type === "toggle_mosaic") { if (cardData[data.index]) { cardData[data.index].is_mosaic = data.is_mosaic; applyMosaicUI(data.index, data.is_mosaic); } }
                             else if (data.type === "start_share") { const targetIndex = data.index; const sharerId = data.sender; if (data.target && data.target !== ws.clientId) return; expectedShares[targetIndex] = sharerId; if (ws.clientId && sharerId !== ws.clientId && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_offer", index: targetIndex, target: sharerId })); } }
                             else if (data.type === "request_offer" && data.target === ws.clientId) { const targetIndex = data.index; const viewerId = data.sender; if (myStreams[targetIndex]) { await createOfferForViewer(targetIndex, viewerId); } }
@@ -1535,7 +1921,7 @@ def read_root():
                                 if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "answer", index: index, target: senderId, sdp: pc.localDescription })); }
                             } 
                             else if (data.type === "answer" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp)); } 
-                            else if (data.type === "ice" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc && pc.remoteDescription && pc.remoteDescription.type) { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e)); } else { if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = []; candidateBuffers[pcKey].push(data.candidate); } } 
+                            else if (data.type === "ice" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc && pc.remoteDescription && pc.remoteDescription.type) { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e)); } else { if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = []; if (candidateBuffers[pcKey].length < 50) candidateBuffers[pcKey].push(data.candidate); } } 
                             else if (data.type === "stop_share") { const index = data.index; delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
                             else if (data.type === "welcome") { ws.clientId = data.clientId; setTimeout(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in myStreams) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) })); } } }, 800); }
                             else if (data.type === "request_existing_shares") { for (let idx in myStreams) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender })); } } }
@@ -1677,7 +2063,7 @@ def read_root():
                     const delBtn = isMe ? `<button class="rec-btn rec-btn-del" onclick="removeRecTodo(this)">삭제</button>` : "";
                     li.innerHTML = `
                         <label><input type="checkbox" onchange="toggleRecTodo(this)" ${checked} ${disabled}> <span class="${compClass}">${escapeText(todo.text)}</span></label>
-                        <div><span class="rec-time-tag">${todo.time || ''}</span> ${delBtn}</div>
+                        <div><span class="rec-time-tag">${escapeText(todo.time || '')}</span> ${delBtn}</div>
                     `;
                     ul.appendChild(li);
                 });
@@ -1701,9 +2087,9 @@ def read_root():
                 document.getElementById('rec-cal-month-title').innerHTML = `
                     <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                         <span>
-                            <button class="rec-btn" onclick="changeRecMonth(-1, '${nickname}')" style="padding: 2px 6px;">◀️</button>
+                            <button class="rec-btn" data-name="${escapeText(nickname)}" onclick="changeRecMonth(-1, this.dataset.name)" style="padding: 2px 6px;">◀️</button>
                             📅 ${y}년 ${m}월 집필 통계
-                            <button class="rec-btn" onclick="changeRecMonth(1, '${nickname}')" style="padding: 2px 6px;">▶️</button>
+                            <button class="rec-btn" data-name="${escapeText(nickname)}" onclick="changeRecMonth(1, this.dataset.name)" style="padding: 2px 6px;">▶️</button>
                         </span>
                         <button class="rec-btn" onclick="toggleRecCalendar()" id="rec-cal-toggle-btn" style="font-size: 11px; padding: 3px 8px;">접기 🔼</button>
                     </div>
@@ -1926,6 +2312,7 @@ def read_root():
             }
 
             function changeThemeColor(hex) {
+                if (!/^#[0-9a-fA-F]{6}$/.test(String(hex))) hex = '#d87093'; // 남이 저장한 값이 CSS로 섞이지 않게
                 const root = document.documentElement;
                 root.style.setProperty('--rec-primary', hex);
                 root.style.setProperty('--rec-border', hex);
@@ -2069,7 +2456,7 @@ def read_root():
                 return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
             }
             function dayKey() { const d=kstNow(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
-            function escapeText(value) { const el=document.createElement('span'); el.textContent=String(value ?? ''); return el.innerHTML; }
+            function escapeText(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]); }
             function lastSevenAttendanceDates() {
                 const dates = [];
                 const today = kstNow();
@@ -2233,14 +2620,25 @@ def read_root():
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     client_id = str(id(websocket))
-    
+    authed = False
+    is_admin = False
+    session_token = None
+    recent_messages = []
+
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
-        await websocket.send_text(json.dumps({"type": "init_state", "state": state_for(None)}))
-        
+
         while True:
             data = await websocket.receive_text()
+            now_mono = time.monotonic()
+            recent_messages.append(now_mono)
+            while recent_messages and now_mono - recent_messages[0] > 2:
+                recent_messages.pop(0)
+            if len(recent_messages) > 120:
+                break  # 너무 많이 보내는 연결은 끊음
             packet = json.loads(data)
+            if not isinstance(packet, dict):
+                continue
             p_type = packet.get("type")
 
             if p_type == "ping":
@@ -2248,29 +2646,78 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "set_nickname":
-                nickname = packet.get("nickname", "익명")
+                nickname = normalize_nickname(packet.get("nickname"))
+                wants_admin = nickname == ADMIN_NICKNAME
+                expected = ADMIN_PASSWORD_SERVER if wants_admin else ROOM_PASSWORD_SERVER
+                # 방 암호는 모두가 같으므로 멤버는 이름 열쇠로 구분합니다.
+                # - 열쇠가 있는 이름: 맞는 열쇠만
+                # - 기록이 있거나 방장이 등록 코드를 만든 이름: 방장이 준 일회용 등록 코드만
+                # - 아무 기록도 없는 새 이름: 처음 온 사람이 등록
+                # 등록은 DB 저장 확인 뒤에만 승인하고, 그 전에는 어떤 방 정보도 보내지 않습니다.
+                stored_keys = server_state.setdefault("identity_keys", {})
+                pending_enrolls = server_state.setdefault("identity_enroll", {})
+                fail_reason = None
+                issued_key = None
+                if not nickname:
+                    fail_reason = "nickname"
+                elif auth_throttled(auth_source(websocket)):
+                    fail_reason = "busy"  # 암호 맞고 틀림을 알려 주기 전에 멈춤(무차별 대입 중 판정 숨김)
+                elif not await password_ok_async(packet.get("password"), expected):
+                    fail_reason = "password"
+                elif authed and nickname != manager.active_users.get(websocket):
+                    fail_reason = "nickname"  # 인증된 연결은 이름을 바꿀 수 없음
+                elif time.time() < kicked_until.get(nickname, 0):
+                    fail_reason = "kicked"
+                to_close = []
+                if not fail_reason:
+                    # 같은 이름의 등록·재발급·승인은 하나씩. 승인과 이름 연결을 잠금 안에서 끝내서,
+                    # 그 뒤의 강퇴·재발급·중복 접속 처리가 이 연결을 반드시 찾게 합니다.
+                    async with identity_lock(nickname):
+                        if not wants_admin:
+                            fail_reason, issued_key = await check_member_identity(nickname, packet)
+                        if not fail_reason and time.time() < kicked_until.get(nickname, 0):
+                            fail_reason = "kicked"  # DB를 기다리는 사이 강퇴된 경우
+                        if not fail_reason:
+                            previous_name = manager.active_users.get(websocket, "연결중...")
+                            is_first_identity = previous_name == "연결중..."
+                            was_already_present = any(name == nickname and existing_ws != websocket for existing_ws, name in manager.active_users.items())
+                            to_close = [existing_ws for existing_ws, name in list(manager.active_users.items()) if name == nickname and existing_ws != websocket]
+                            manager.active_users[websocket] = nickname
+                            manager.authed_connections.add(websocket)
+                            first_auth = not authed
+                            authed = True
+                            is_admin = wants_admin
+                            if is_admin:
+                                admin_sockets.add(websocket)
+                            else:
+                                admin_sockets.discard(websocket)
+                            if session_token is None:
+                                session_token = secrets.token_urlsafe(24)
+                                manager.sessions[session_token] = websocket
+                if fail_reason:
+                    if fail_reason in ("password", "identity", "enroll_invalid"):
+                        note_auth_failure(auth_source(websocket))
+                        await asyncio.sleep(1)
+                    await websocket.send_text(json.dumps({"type": "auth_failed", "reason": fail_reason}))
+                    await revoke_connection(websocket)
+                    break
+                for old_ws in to_close:
+                    await revoke_connection(old_ws, {"type": "duplicate_kicked"})
+                auth_packet = {"type": "auth_ok", "is_admin": is_admin, "session": session_token}
+                if issued_key:
+                    auth_packet["identity_key"] = issued_key
+                await websocket.send_text(json.dumps(auth_packet))
+                if websocket not in manager.authed_connections:
+                    break  # 보내는 사이 강퇴·재발급됨
+                if first_auth:  # 예전에는 연결 직후(암호 확인 전) 보내던 것
+                    await websocket.send_text(json.dumps({"type": "init_state", "state": state_for_conn(nickname, is_admin)}))
                 owned = packet.get("owned", [])
-                previous_name = manager.active_users.get(websocket, "연결중...")
-                is_first_identity = previous_name == "연결중..."
-                was_already_present = any(name == nickname and existing_ws != websocket for existing_ws, name in manager.active_users.items())
                 pending_leave = pending_presence_leaves.pop(nickname, None)
                 resumed_during_grace = pending_leave is not None and not pending_leave.done()
                 if pending_leave is not None:
                     pending_leave.cancel()
-                
-                to_close = []
-                for existing_ws, name in list(manager.active_users.items()):
-                    if name == nickname and existing_ws != websocket:
-                        to_close.append(existing_ws)
-                
-                for old_ws in to_close:
-                    try:
-                        await old_ws.send_text(json.dumps({"type": "duplicate_kicked"}))
-                        await old_ws.close()
-                    except:
-                        pass
-
-                manager.active_users[websocket] = nickname
+                if issued_key and not wants_admin and packet.get("enroll_code"):
+                    await post_presence_chat(f"🔑 «{nickname}» 작가님이 방장 등록 코드로 이름 열쇠를 받았습니다.")
                 await set_tracker_timer_running(nickname, True)
                 await websocket.send_text(json.dumps({"type":"private_tracker_state", "trackers": state_for(nickname)["trackers"]}))
                 await manager.broadcast_user_list()
@@ -2280,15 +2727,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 server_state.setdefault("admin_log", []).append(log_entry)
                 if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
                 await persist_state()
-                await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+                await send_admin_log(log_entry)
                 if is_first_identity and not was_already_present and not resumed_during_grace:
-                    await post_presence_chat(f"👋 {nickname} 작가님이 입장하셨습니다.")
+                    await post_presence_chat(f"👋 «{nickname}» 작가님이 입장하셨습니다.")
                 
                 recovered = False
                 
-                if owned:
+                if isinstance(owned, list):
                     for idx in owned:
-                        if 0 <= idx < 16:
+                        if isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < 16:
                             card = server_state["cards"][idx]
                             current_user = card["user"]
                             reservation_owner = card.get("reserved_by")
@@ -2329,6 +2776,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_text(change_packet)
                 continue
 
+            if not authed or websocket not in manager.authed_connections:
+                continue  # 인증 전이거나 강퇴·중복 접속으로 권한이 거둬진 연결
+            if p_type not in CLIENT_TYPES:
+                continue  # 서버 전용 type(auth_ok·kicked·init_state 등)이나 모르는 type은 받지도 중계하지도 않음
             nickname = manager.active_users.get(websocket, "")
             if p_type == "seat_reservation":
                 try:
@@ -2349,10 +2800,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     if card["user"] != nickname or not owns_active_slot:
                         await send_seat_error(websocket, idx, "자기 카드에서만 자리를 고정할 수 있습니다.")
                         continue
+                    if not is_admin and any(i != idx and c.get("reserved_by") == nickname for i, c in enumerate(server_state["cards"])):
+                        await send_seat_error(websocket, idx, "고정석은 한 사람에 하나만 둘 수 있습니다.")
+                        continue
                     card["reserved_by"] = nickname
                     card["user"] = nickname
                 else:
-                    if reservation_owner != nickname and nickname != ADMIN_NICKNAME:
+                    if reservation_owner != nickname and not is_admin:
                         await send_seat_error(websocket, idx, "본인의 고정석만 해제할 수 있습니다.")
                         continue
                     card["reserved_by"] = None
@@ -2370,7 +2824,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 chat_obj = {
                     "id": uuid.uuid4().hex,
                     "senderName": "🎉시스템",
-                    "msg": f"🎊 {nickname} 작가님이 오늘의 목표 분량을 모두 완료했습니다! 축하해주세요! 🎊",
+                    "msg": f"🎊 «{nickname}» 작가님이 오늘의 목표 분량을 모두 완료했습니다! 축하해주세요! 🎊",
                     "time": datetime.now(KST).strftime("%m/%d %H:%M")
                 }
                 server_state["chat_history"].append(chat_obj)
@@ -2394,6 +2848,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "clear_chat":
+                if not is_admin:
+                    continue
                 server_state["chat_history"] = []
                 await persist_state()
                 await manager.broadcast(json.dumps({"type": "chat_cleared"}))
@@ -2401,11 +2857,53 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if p_type == "kick":
-                target_nick = packet.get("target_nick")
+                if not is_admin:
+                    continue
+                target_nick = normalize_nickname(packet.get("target_nick"))
+                if not target_nick or target_nick == ADMIN_NICKNAME:
+                    continue
+                kicked_until[target_nick] = time.time() + KICK_BLOCK_SECONDS
                 for ws_conn, name in list(manager.active_users.items()):
                     if name == target_nick:
-                        try: await ws_conn.send_text(json.dumps({"type": "kicked"}))
-                        except: pass
+                        await revoke_connection(ws_conn, {"type": "kicked"})  # 인증·방장 권한·세션을 먼저 거두고 닫음
+                continue
+
+            if p_type == "issue_enrollment":
+                # 방장: 이 이름의 열쇠를 지우고(잃어버린·빼앗긴 기기 포함) 24시간 일회용 등록 코드를 만듭니다.
+                if not is_admin:
+                    continue
+                target_nick = normalize_nickname(packet.get("target_nick"))
+                reply = {"type": "enrollment_issued", "target_nick": target_nick, "ok": False}
+                if target_nick and target_nick != ADMIN_NICKNAME:
+                    nid = name_id(target_nick)
+                    async with identity_lock(target_nick):
+                        # 메모리 열쇠부터 지우고 등록 대기로 표시합니다. DB 저장이 실패해도 이 이름은 닫힌 채로 남습니다.
+                        server_state.setdefault("identity_keys", {}).pop(nid, None)
+                        server_state.setdefault("identity_enroll", {})[nid] = {"h": "", "exp": 0}
+                        for ws_conn, name in list(manager.active_users.items()):
+                            if name == target_nick:
+                                await revoke_connection(ws_conn, {"type": "identity_revoked"})
+                        code = new_enroll_code()
+                        expires = time.time() + ENROLL_TTL_SECONDS
+                        try:
+                            if await asyncio.to_thread(db_issue_enrollment, nid, identity_hash(code), expires):
+                                server_state["identity_enroll"][nid] = {"h": identity_hash(code), "exp": expires}
+                                reply.update(ok=True, code=code, expires=expires)
+                                pending_revocations.pop(nid, None)
+                        except Exception as exc:
+                            print("등록 코드 저장 실패:", type(exc).__name__)
+                        if not reply["ok"]:
+                            # 메모리에서는 이미 막혔지만 DB에는 옛 열쇠가 남아 있습니다 → 저장될 때까지 다시 시도
+                            pending_revocations[nid] = target_nick
+                            reply["retrying"] = True
+                            global revocation_task
+                            if revocation_task is None or revocation_task.done():
+                                revocation_task = asyncio.create_task(retry_revocations())
+                    await add_admin_log(f"🔑 {target_nick} 이름 열쇠 해제·등록 코드 발급" if reply["ok"] else
+                                        f"🔑 {target_nick} 열쇠는 지금 막았지만 DB 저장 실패 — 자동 재시도 중. '해제 저장됨' 기록 전에는 서버가 다시 켜지면 옛 열쇠가 살아날 수 있음")
+                    if reply["ok"]:
+                        await post_presence_chat(f"🔑 «{target_nick}» 작가님의 이름 열쇠를 방장이 다시 발급했습니다.")
+                await websocket.send_text(json.dumps(reply))
                 continue
 
             if p_type == "chat":
@@ -2418,7 +2916,13 @@ async def websocket_endpoint(websocket: WebSocket):
             elif p_type == "attendance":
                 month = packet.get("month")
                 day = packet.get("day")
-                nickname = packet.get("nickname")
+                # 출석은 접속한 본인 이름으로만 찍습니다(요청 속 nickname 은 쓰지 않음).
+                now_kst = datetime.now(KST)
+                last_month = (now_kst.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                if not isinstance(month, str) or month not in (now_kst.strftime("%Y-%m"), last_month):
+                    continue  # 이번 달과 지난달만(출석 키가 끝없이 늘지 않게)
+                if not isinstance(day, int) or isinstance(day, bool) or not 1 <= day <= 31:
+                    continue
                 if "attendance" not in server_state: server_state["attendance"] = {}
                 if month not in server_state["attendance"]: server_state["attendance"][month] = {}
                 if nickname not in server_state["attendance"][month]: server_state["attendance"][month][nickname] = []
@@ -2431,10 +2935,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 current = normalize_tracker(nickname)
                 incoming = packet.get("tracker_data", {})
                 if not isinstance(incoming, dict): continue
-                for key in ("targetChars", "themeColor", "todos", "monthlyGoals"):
-                    if key in incoming: current[key] = copy.deepcopy(incoming[key])
-                if incoming.get("lastDate") == current["lastDate"]:
-                    current["doneChars"] = incoming.get("doneChars", current.get("doneChars", 0))
+                current.update(clean_tracker_fields(incoming))
+                if incoming.get("lastDate") == current["lastDate"] and bounded_int(incoming.get("doneChars"), 10_000_000) is not None:
+                    current["doneChars"] = bounded_int(incoming.get("doneChars"), 10_000_000)
                 now = datetime.now(KST)
                 timer = current["timer"]
                 seconds = timer["seconds"] + (max(0, time.time() - timer["started"]) if timer.get("started") else 0)
@@ -2444,8 +2947,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
             else:
                 packet["sender"] = client_id
+                if p_type == "update_notice" and not is_admin:
+                    continue
                 protected_card_types = {"username_change", "card_bg_change", "toggle_mosaic", "start_share", "stop_share", "status_update"}
-                if p_type in protected_card_types:
+                if p_type in protected_card_types | TARGETED_TYPES:
                     try:
                         scoped_idx = int(packet.get("index"))
                     except (TypeError, ValueError):
@@ -2454,14 +2959,53 @@ async def websocket_endpoint(websocket: WebSocket):
                         continue
                     packet["index"] = scoped_idx
                     reservation_owner = server_state["cards"][scoped_idx].get("reserved_by")
-                    if reservation_owner and reservation_owner != nickname:
+                    if p_type in TARGETED_TYPES:
+                        pass  # 신호는 아래에서 공유자·상대 기준으로 확인
+                    elif reservation_owner and reservation_owner != nickname:
                         await send_seat_error(websocket, scoped_idx, f"{reservation_owner} 작가님의 고정석이라 사용할 수 없습니다.")
                         continue
 
+                sharer = manager.active_shares.get(packet.get("index")) if isinstance(packet.get("index"), int) else None
+                if p_type in TARGETED_TYPES:
+                    # 화면 공유 신호: 공유 중인 카드에 대해서만, 공유자와 시청자 사이에서만, 정해진 모양만 넘깁니다.
+                    target = packet.get("target")
+                    if not isinstance(target, str) or target == client_id or sharer is None:
+                        continue
+                    if p_type == "request_offer" and target != sharer:
+                        continue
+                    if p_type == "offer" and client_id != sharer:
+                        continue
+                    if p_type in ("answer", "ice") and sharer not in (client_id, target):
+                        continue
+                    clean = {"type": p_type, "index": packet["index"], "target": target, "sender": client_id}
+                    if p_type in ("offer", "answer"):
+                        sdp = packet.get("sdp")
+                        if not (isinstance(sdp, dict) and sdp.get("type") == p_type and isinstance(sdp.get("sdp"), str) and len(sdp["sdp"]) <= 20000):
+                            continue
+                        clean["sdp"] = {"type": p_type, "sdp": sdp["sdp"]}
+                    elif p_type == "ice":
+                        cand = packet.get("candidate")
+                        if not (isinstance(cand, dict) and len(json.dumps(cand)) <= 2000):
+                            continue
+                        clean["candidate"] = cand
+                    packet = clean
+                elif p_type in ("toggle_mosaic", "stop_share") and sharer != client_id and not is_admin:
+                    continue  # 모자이크·공유 중지는 공유하는 본인이나 방장만(화면 규칙과 같게)
+                elif p_type == "start_share" and (server_state["cards"][packet["index"]]["user"] != nickname or sharer not in (None, client_id)):
+                    continue  # 자기 이름 카드에서, 남이 공유 중이 아닐 때만
+                elif p_type == "username_change" and sharer not in (None, client_id) and not is_admin:
+                    await send_seat_error(websocket, packet["index"], "다른 작가님이 화면 공유 중인 카드입니다.")
+                    continue
+
                 if p_type == "username_change":
                     idx = packet["index"]
-                    val = packet["user"]
-                    if not isinstance(val, str):
+                    val = packet.get("user")
+                    if not isinstance(val, str) or not 1 <= len(val) <= 20:
+                        continue
+                    if sharer == client_id and val != nickname:
+                        continue  # 화면 공유 중인 카드는 공유자 이름표만
+                    if val != nickname and not re.fullmatch(r"자리\d{1,2}", val) and skeleton(val) in ({skeleton(n) for n in member_names() if n != nickname} | {skeleton(ADMIN_NICKNAME)}):
+                        await send_seat_error(websocket, idx, "다른 작가님 이름으로는 카드 이름을 바꿀 수 없습니다.")
                         continue
                     reservation_owner = server_state["cards"][idx].get("reserved_by")
                     if reservation_owner == nickname and val != nickname:
@@ -2473,10 +3017,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         if idx not in manager.active_slots[client_id]: manager.active_slots[client_id].append(idx)
                     await persist_state()
                 elif p_type == "card_bg_change":
+                    if not is_safe_card_bg(packet.get("dataUrl")):
+                        continue
                     server_state["cards"][packet["index"]]["card_bg"] = packet.get("dataUrl")
                     await persist_state()
                 elif p_type == "toggle_mosaic":
-                    server_state["cards"][packet["index"]]["is_mosaic"] = packet.get("is_mosaic", False)
+                    packet["is_mosaic"] = packet.get("is_mosaic") is True
+                    server_state["cards"][packet["index"]]["is_mosaic"] = packet["is_mosaic"]
                     await persist_state()
                 elif p_type == "start_share":
                     manager.active_shares[packet["index"]] = client_id
@@ -2484,12 +3031,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     idx = packet.get("index")
                     if idx in manager.active_shares: del manager.active_shares[idx]
                 elif p_type == "update_notice":
-                    server_state["global_notice"] = packet.get("notice", "")
+                    notice = packet.get("notice", "")
+                    server_state["global_notice"] = notice[:4000] if isinstance(notice, str) else ""
+                    packet["notice"] = server_state["global_notice"]
                     await persist_state()
                 elif p_type == "status_update":
                     idx = packet["index"]
                     card = server_state["cards"][idx]
-                    if card.get("user") != nickname and nickname != ADMIN_NICKNAME:
+                    if card.get("user") != nickname and not is_admin:
                         continue
                     raw_status = packet.get("status", "")
                     status = raw_status.strip()[:30] if isinstance(raw_status, str) else ""
@@ -2497,13 +3046,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     packet["status"] = status
                     await persist_state()
                 
-                await manager.broadcast(json.dumps(packet), exclude=websocket)
+                relay = json.dumps(packet)
+                target = packet.get("target")
+                if p_type in TARGETED_TYPES or (p_type == "start_share" and target is not None):
+                    if isinstance(target, str):
+                        await manager.send_to_client_id(target, relay)
+                    continue
+                await manager.broadcast(relay, exclude=websocket)
 
     except (WebSocketDisconnect, Exception):
         pass
 
     finally:
         client_id = str(id(websocket))
+        admin_sockets.discard(websocket)
         nickname = manager.active_users.get(websocket, "")
         disconnected_at = time.time()
         
@@ -2519,7 +3075,7 @@ async def websocket_endpoint(websocket: WebSocket):
             server_state.setdefault("admin_log", []).append(log_entry)
             if len(server_state["admin_log"]) > 100: server_state["admin_log"].pop(0)
             await persist_state()
-            await manager.broadcast(json.dumps({"type": "admin_log_update", "log": log_entry}))
+            await send_admin_log(log_entry)
             still_connected = any(name == nickname for name in manager.active_users.values())
             if not still_connected:
                 old_pending_leave = pending_presence_leaves.pop(nickname, None)
