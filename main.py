@@ -14,23 +14,45 @@ import copy
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from pymongo import MongoClient
+from contextlib import asynccontextmanager
+from weakref import WeakValueDictionary
+import member_auth
+from member_auth import Busy, LEGACY_KEY_TOMBSTONE, MIN_PASSWORD_CHARS, authenticate_member, normalize_password
+from pymongo import MongoClient, ReadPreference
 from pymongo.write_concern import WriteConcern
 
 # 뽀모 시트 주소는 MongoDB가 아니라 main.py 옆의 작은 설정 파일에 저장합니다.
 DEFAULT_POMO_URL = "https://docs.google.com/spreadsheets/d/1biXQLjPWNip4XyXCxLB6uyO-x8sah0CR5JT-fGk_GU0/edit?gid=1626585636#gid=1626585636"
 POMO_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pomo_config.json")
 # 암호는 소스에 두지 않고 실행 환경에서 받습니다. 역할별로 닫힙니다(실수로 열리지 않게):
-# 방장 암호가 비면 방장 로그인만, 방 암호가 비면 멤버 로그인만 거절합니다. 둘이 같으면 방장 로그인을 거절합니다.
+# 방장 암호가 비면 방장 로그인만, 방 암호가 비면 신규 가입과 기존 기기 전환을 거절합니다. 둘이 같으면 방장 로그인을 거절합니다.
 # 비었을 때 예전 암호나 다른 인증으로 넘어가는 길은 두지 않습니다.
 ADMIN_PASSWORD_SERVER = os.environ.get("GOGOGO_ADMIN_PASSWORD", "")
 ROOM_PASSWORD_SERVER = os.environ.get("GOGOGO_ROOM_PASSWORD", "")
+MEMBER_WRITES = ("signup", "migrate", "recover")
+# Anyone with the room address may sign up with their own nickname and password.
+# The admin can require the room password for new signups with one switch in the
+# admin panel (stored as main_state.signup_room_password). Until the admin uses
+# that switch, GOGOGO_SIGNUP_ROOM_PASSWORD=1 sets the default (off by default).
+SIGNUP_NEEDS_ROOM_PASSWORD = os.environ.get("GOGOGO_SIGNUP_ROOM_PASSWORD", "") == "1"
+
+def signup_needs_room_password():
+    chosen = server_state.get("signup_room_password")
+    return chosen if isinstance(chosen, bool) else SIGNUP_NEEDS_ROOM_PASSWORD
+
+# System protection, not a per-person limit: at most this many connections may be
+# waiting to sign in at once. Members open a connection only when they press the
+# sign-in button and finish within seconds, so normal use never comes near it.
+MAX_PENDING_SIGNIN = 200
+PENDING_REFUSE_SECONDS = 5  # refusing an over-cap connection never takes longer than this
+AUTH_HANDSHAKE_TIMEOUT = 60
+AUTH_CLOSE_CODE = 4001
 if not ADMIN_PASSWORD_SERVER:
     print("경고: GOGOGO_ADMIN_PASSWORD 가 비어 있어 방장 로그인이 거절됩니다.")
 if not ROOM_PASSWORD_SERVER:
-    print("경고: GOGOGO_ROOM_PASSWORD 가 비어 있어 멤버 로그인이 거절됩니다.")
+    print("경고: GOGOGO_ROOM_PASSWORD 가 비어 있어 신규 가입과 기존 기기 전환이 거절됩니다.")
 # (둘 다 해시로 넣으면 소금이 달라 같은 암호인지 알 수 없습니다 — 다른 암호를 쓰는 것은 운영 절차로 지킵니다.)
-# 이 서버는 프로세스 하나(uvicorn 워커 1개)로만 돌려야 합니다. 이름 잠금·열쇠 캐시·실패 기록이 프로세스 안에 있어,
+# 이 서버는 프로세스 하나(uvicorn 워커 1개)로만 돌려야 합니다. 이름 잠금·열쇠 캐시·세션이 프로세스 안에 있어,
 # 여러 워커·인스턴스면 재발급이 다른 프로세스에 바로 반영되지 않습니다. 워커 수를 늘리려면 이 부분을 DB 기반으로 바꿔야 합니다.
 if os.environ.get("WEB_CONCURRENCY", "1").strip() not in ("", "1"):
     print("경고: WEB_CONCURRENCY 가 1이 아닙니다. 이 서버는 워커 1개로만 돌려야 합니다(이름 열쇠 잠금·캐시가 프로세스 안에 있음).")
@@ -52,9 +74,43 @@ def password_ok(given, expected):
             return False
     return hmac.compare_digest(given.encode("utf-8"), expected.encode("utf-8"))
 
-async def password_ok_async(given, expected):
-    # 해시 확인은 0.1초 넘게 걸릴 수 있어 방 처리와 따로 돌립니다.
-    return await asyncio.to_thread(password_ok, given, expected)
+async def password_ok_async(given, expected, ticket):
+    # 해시 확인은 0.1초 넘게 걸릴 수 있어, 인증 전체 상한(member_auth)을 지키는 스레드에서 돌립니다.
+    return await ticket.run(password_ok, given, expected)
+
+
+@asynccontextmanager
+async def auth_admission(lock):
+    """Admit one authentication request server-wide before waiting for its lock.
+
+    Yields the ticket, or None when the server is busy or the lock wait passes
+    the request deadline. The slot is freed only after the request and its
+    workers end.
+    """
+    ticket = member_auth.admit()
+    if ticket is None:
+        yield None
+        return
+    acquired = False
+    try:
+        try:
+            await ticket.hold(lock)
+            acquired = True
+        except Busy:
+            pass
+        try:
+            yield ticket if acquired else None
+        finally:
+            if acquired:
+                lock.release()
+    finally:
+        ticket.close()
+
+
+def member_digest(nickname):
+    record = server_state.get("identity_enroll", {}).get(name_id(nickname))
+    verifier = record.get("pw") if isinstance(record, dict) and record.get("v") == 2 else None
+    return verifier.get("digest") if isinstance(verifier, dict) else None
 
 def identity_hash(key):
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
@@ -140,7 +196,7 @@ def clean_tracker_fields(incoming):
 RELAY_TYPES = {"username_change", "card_bg_change", "toggle_mosaic", "start_share", "stop_share", "update_notice",
                "status_update", "request_existing_shares", "request_offer", "offer", "answer", "ice"}
 CLIENT_TYPES = RELAY_TYPES | {"seat_reservation", "goal_celebration_chat", "timer_action", "delete_chat", "clear_chat",
-                              "kick", "issue_enrollment", "chat", "attendance", "tracker_update"}
+                              "kick", "issue_enrollment", "change_password", "set_signup_room_password", "chat", "attendance", "tracker_update"}
 # 화면 공유 신호는 받을 사람(target)에게만 보냅니다.
 TARGETED_TYPES = {"request_offer", "offer", "answer", "ice"}
 
@@ -246,42 +302,55 @@ def load_data():
         raise RuntimeError("DB를 읽지 못해 기존 기록 보호를 위해 시작을 중단합니다.") from e
 
 IDENTITY_FIELDS = ("identity_keys", "identity_enroll")
+# Written only by db_set_signup_room_password, never by the general room-state save,
+# so an older room snapshot can never put a different signup policy back.
+DURABLE_ONLY_FIELDS = ("signup_room_password",)
 
-# --- 신원 등록·초기화: DB가 저장을 확인(majority·journal)해야 승인합니다. 실패하면 로그인시키지 않습니다. ---
+# --- 신원 등록·초기화: DB가 쓰기를 확인(majority·journal)해야 승인합니다. 실패하면 로그인시키지 않습니다. ---
 def durable_collection():
     if collection is None:
         raise RuntimeError("DB 연결이 없어 신원을 저장할 수 없습니다.")
-    return collection.with_options(write_concern=WriteConcern(w="majority", j=True, wtimeout=5000))
+    return collection.with_options(
+        read_preference=ReadPreference.PRIMARY,
+        write_concern=WriteConcern(w="majority", j=True, wtimeout=5000))
 
-def db_claim_identity(nid, key_hash):
-    # 새 이름: 열쇠도 등록 대기도 없을 때만 한 번 저장됩니다(동시 요청 중 하나만 성공).
-    result = durable_collection().update_one(
-        {"_id": "main_state", f"identity_keys.{nid}": {"$exists": False}, f"identity_enroll.{nid}": {"$exists": False}},
-        {"$set": {f"identity_keys.{nid}": key_hash}})
-    return result.modified_count == 1
+def identity_snapshot(nid, keys, records):
+    return {f"identity_keys.{nid}": keys.get(nid, {"$exists": False}),
+            f"identity_enroll.{nid}": records.get(nid, {"$exists": False})}
 
-def db_enroll_identity(nid, code_hash, key_hash, now):
-    # 등록 코드: 맞고 기한 안일 때 열쇠를 저장하며 코드를 지웁니다(한 번만 쓰임).
-    result = durable_collection().update_one(
-        {"_id": "main_state", f"identity_enroll.{nid}.h": code_hash, f"identity_enroll.{nid}.exp": {"$gt": now}},
-        {"$set": {f"identity_keys.{nid}": key_hash}, "$unset": {f"identity_enroll.{nid}": ""}})
-    return result.modified_count == 1
 
-def db_issue_enrollment(nid, code_hash, expires):
-    # 방장: 기존 열쇠를 지우고 새 등록 코드를 둡니다.
+def read_identity_snapshot(nid):
+    row = durable_collection().find_one({"_id": "main_state"},
+                                        {f"identity_keys.{nid}": 1, f"identity_enroll.{nid}": 1})
+    if row is None:
+        raise RuntimeError("Room storage unavailable")
+    return identity_snapshot(nid, row.get("identity_keys", {}), row.get("identity_enroll", {}))
+
+
+def db_set_signup_room_password(on):
     result = durable_collection().update_one(
-        {"_id": "main_state"},
-        {"$unset": {f"identity_keys.{nid}": ""}, "$set": {f"identity_enroll.{nid}": {"h": code_hash, "exp": expires}}})
+        {"_id": "main_state"}, {"$set": {"signup_room_password": bool(on)}})
+    if result.matched_count != 1:
+        raise RuntimeError("Room storage unavailable")
+
+
+def db_issue_enrollment(nid, code_hash, expires, expected):
+    record = {"h": code_hash, "exp": expires}
+    result = durable_collection().update_one(
+        {"_id": "main_state", "$or": expected},
+        {"$set": {f"identity_keys.{nid}": LEGACY_KEY_TOMBSTONE, f"identity_enroll.{nid}": record}})
     return result.matched_count == 1
 
-def has_member_data(nickname):
-    # 이미 기록이 있는 이름(집필 기록·출석·고정석·채팅)은 방장 등록 코드 없이 새로 차지할 수 없습니다.
-    return nickname in member_names()
 
-identity_locks = {}
+# Weak values release per-name locks after all waiters finish.
+identity_locks = WeakValueDictionary()
+signup_lock = asyncio.Lock()
+signup_setting_lock = asyncio.Lock()  # admin signup-policy changes: save, then apply, one at a time
 
 def identity_lock(nickname):
     return identity_locks.setdefault(name_id(nickname), asyncio.Lock())
+
+
 
 def loose_name(raw):
     # 기존 기록 키 비교용(옛 데이터가 NFC가 아니어도 같은 이름으로 봄)
@@ -305,83 +374,76 @@ def member_names():
     names.discard("")
     return names
 
-MAX_SELF_CLAIMS = 500
+def signup_name_available(nickname):
+    names = member_names() | set(manager.active_users.values()) | {ADMIN_NICKNAME}
+    shape = skeleton(nickname)
+    return bool(shape) and shape not in {skeleton(n) for n in names}
 
-async def check_member_identity(nickname, packet):
-    """멤버 이름 열쇠 판정. (실패 사유, 새로 준 열쇠)를 돌려줍니다. 호출자는 이름별 잠금을 잡고 있어야 합니다."""
-    stored_keys = server_state.setdefault("identity_keys", {})
-    pending_enrolls = server_state.setdefault("identity_enroll", {})
-    nid = name_id(nickname)
-    if nid in stored_keys:
-        given_key = packet.get("identity_key")
-        if isinstance(given_key, str) and hmac.compare_digest(identity_hash(given_key), stored_keys[nid]):
-            return None, None
-        return "identity", None
-    new_key = secrets.token_urlsafe(32)
+
+async def bounded_shared_password(given, expected, ticket):
+    if not isinstance(given, str) or not given or len(given) > 512:
+        return False
     try:
-        if nid in pending_enrolls or nickname in member_names():
-            code = normalize_enroll_code(packet.get("enroll_code"))
-            if not code:
-                return "enroll_required", None
-            if await asyncio.to_thread(db_enroll_identity, nid, identity_hash(code), identity_hash(new_key), time.time()):
-                stored_keys[nid] = identity_hash(new_key)
-                pending_enrolls.pop(nid, None)
-                return None, new_key
-            return "enroll_invalid", None
-        # 아무 기록도 없는 새 이름: 기존 이름·방장과 뼈대가 같으면 거절, 너무 많으면 방장 코드로
-        bone = skeleton(nickname)
-        if not bone or bone == skeleton(ADMIN_NICKNAME) or bone in {skeleton(n) for n in member_names()}:
-            return "nickname", None
-        if len(stored_keys) >= MAX_SELF_CLAIMS:
-            return "enroll_required", None
-        if await asyncio.to_thread(db_claim_identity, nid, identity_hash(new_key)):
-            stored_keys[nid] = identity_hash(new_key)
-            return None, new_key
-        return "identity", None
-    except Exception as exc:
-        print("신원 저장 실패(로그인 거절):", type(exc).__name__)
-        return "storage", None
+        given.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return await password_ok_async(given, expected, ticket)
 
-# 로그인 실패 제한(무차별 대입 늦추기). 둘 다 메모리에만 있고, 맞는 암호인지 알려 주기 전에 판정합니다.
-# - 출처별: 같은 출처가 5분에 10번 틀리면 그 출처만 5분 쉼. 출처는 프록시가 붙인 X-Forwarded-For 의 마지막 값,
-#   없으면 접속 주소입니다. X-Forwarded-For 가 없으면 모든 외부 접속이 한 출처로 보이므로 출처별 제한을 쓰지 않습니다.
-# - 전역 상한: 모든 출처를 합쳐 1분에 300번 넘게 틀리면 1분 쉼(위조 출처로 피하는 대입의 상한).
-# 회복: 출처별 제한은 5분, 전역 상한은 1분 뒤 저절로 풀립니다. 운영 쪽 컨테이너 재시작으로도 바로 풀립니다(설정은 유지).
-AUTH_FAIL_SOURCE_WINDOW = 300
-AUTH_FAIL_SOURCE_LIMIT = 10
-AUTH_FAIL_GLOBAL_WINDOW = 60
-AUTH_FAIL_GLOBAL_LIMIT = 300
-AUTH_SOURCES_MAX = 5000
-auth_failures = []           # 전역 실패 시각
-auth_failures_by_source = {}  # 출처 → 실패 시각들
 
-def auth_source(websocket):
-    forwarded = websocket.headers.get("x-forwarded-for", "")
-    last = forwarded.split(",")[-1].strip()[:64] if forwarded else ""
-    return ("fwd:" + last) if last else None
+async def check_member_identity(nickname, packet, mode, ticket):
+    nid = name_id(nickname)
+    if nid in pending_revocations:
+        return "storage"
+    if mode not in ("login", "signup", "legacy", "migrate", "recover"):
+        return "credentials"
+    password = packet.get("password")
+    invitation = None
+    if mode in ("legacy", "migrate") or (mode == "signup" and signup_needs_room_password()):
+        invitation = password if mode == "legacy" else packet.get("room_password")
+        if not await bounded_shared_password(invitation, ROOM_PASSWORD_SERVER, ticket):
+            return "credentials"
+    if mode in MEMBER_WRITES and normalize_password(password) is None:
+        return "password_policy"
+    code_hash = None
+    if mode == "recover":
+        raw = packet.get("enroll_code")
+        if not isinstance(raw, str) or len(raw) > 64:
+            return "credentials"
+        code = normalize_enroll_code(raw)
+        if len(code) != 12:
+            return "credentials"
+        code_hash = identity_hash(code)
+    if mode == "signup" and not signup_name_available(nickname):
+        return "credentials"
+    reason, record = await authenticate_member(
+        durable_collection, nid, mode, password, identity_key=packet.get("identity_key"),
+        code_hash=code_hash, ticket=ticket)
+    if reason:
+        return reason
+    if mode == "legacy":
+        return "setup_required"
+    server_state.setdefault("identity_enroll", {})[nid] = record
+    server_state.setdefault("identity_keys", {})[nid] = LEGACY_KEY_TOMBSTONE
+    return None
 
-def note_auth_failure(source=None):
-    now = time.time()
-    auth_failures.append(now)
-    if source:
-        if source not in auth_failures_by_source and len(auth_failures_by_source) >= AUTH_SOURCES_MAX:
-            auth_failures_by_source.pop(next(iter(auth_failures_by_source)))
-        auth_failures_by_source.setdefault(source, []).append(now)
 
-def auth_throttled(source=None):
-    now = time.time()
-    while auth_failures and auth_failures[0] < now - AUTH_FAIL_GLOBAL_WINDOW:
-        auth_failures.pop(0)
-    if len(auth_failures) >= AUTH_FAIL_GLOBAL_LIMIT:
-        return True
-    if source and source in auth_failures_by_source:
-        recent = [t for t in auth_failures_by_source[source] if t >= now - AUTH_FAIL_SOURCE_WINDOW]
-        if recent:
-            auth_failures_by_source[source] = recent
-        else:
-            auth_failures_by_source.pop(source, None)
-        return len(recent) >= AUTH_FAIL_SOURCE_LIMIT
-    return False
+async def check_login(websocket, nickname, mode, packet, ticket):
+    # No attempt, device or session limits: only the proof itself decides.
+    # Server-wide capacity (member_auth) answers "busy" instead.
+    try:
+        if nickname == ADMIN_NICKNAME:
+            ok = mode in ("admin", "login") and await bounded_shared_password(
+                packet.get("password"), ADMIN_PASSWORD_SERVER, ticket)
+            return None if ok else "credentials"
+        if mode == "signup":
+            await ticket.hold(signup_lock)
+            try:
+                return await check_member_identity(nickname, packet, mode, ticket)
+            finally:
+                signup_lock.release()
+        return await check_member_identity(nickname, packet, mode, ticket)
+    except Busy:
+        return "busy"
 
 SEND_TIMEOUT_SECONDS = 5
 
@@ -393,7 +455,7 @@ def save_data(data):
     try:
         if collection is not None:
             # Patch individual card fields: an unloaded background must remain in MongoDB.
-            fields = {key: value for key, value in data.items() if key not in ("_id", "cards") + IDENTITY_FIELDS}
+            fields = {key: value for key, value in data.items() if key not in ("_id", "cards") + IDENTITY_FIELDS + DURABLE_ONLY_FIELDS}
             for index, card in enumerate(data.get("cards", [])):
                 for key, value in card.items():
                     fields[f"cards.{index}.{key}"] = value
@@ -441,10 +503,13 @@ def require_session(request):
 @app.get("/pomo-config")
 def get_pomo_config(request: Request):
     require_session(request)
-    return {"ok": True, "url": load_pomo_url()}
+    url = load_pomo_url()
+    require_session(request)
+    return {"ok": True, "url": url}
 
 @app.post("/pomo-config")
 async def update_pomo_config(request: Request):
+    require_session(request)
     try:
         payload = await request.json()
     except Exception:
@@ -492,6 +557,7 @@ class ConnectionManager:
         self.active_slots = {}
         self.authed_connections = set()  # 암호 확인을 마친 연결. 방송·개별 갱신은 여기에만 보냄
         self.sessions = {}  # HTTP 조회용 세션 값 → 연결(메모리에만)
+        self.pending_signin = 0  # 로그인 전 연결 자리 수(서버 전체, 첫 대기 전에 예약)
 
     async def connect(self, websocket):
         await websocket.accept()
@@ -517,7 +583,7 @@ class ConnectionManager:
 
     async def broadcast(self, message, exclude=None):
         async def send_to_client(conn):
-            if conn != exclude:
+            if conn != exclude and conn in self.authed_connections:
                 try:
                     await send_limited(conn, message)
                 except Exception:
@@ -541,6 +607,8 @@ class ConnectionManager:
         msg = json.dumps({"type": "user_list", "count": len(self.authed_connections), "users": users_info})
         
         async def send_to_client(conn):
+            if conn not in self.authed_connections:
+                return
             try:
                 await send_limited(conn, msg)
             except Exception:
@@ -649,7 +717,7 @@ async def revoke_connection(conn, notice=None):
             except Exception:
                 pass
         try:
-            await asyncio.wait_for(conn.close(), REVOKE_TIMEOUT_SECONDS)
+            await asyncio.wait_for(conn.close(code=AUTH_CLOSE_CODE), REVOKE_TIMEOUT_SECONDS)
         except Exception:
             pass
 
@@ -657,8 +725,9 @@ async def revoke_connection(conn, notice=None):
     task = asyncio.create_task(finish())
     revoke_tasks.add(task)
     task.add_done_callback(revoke_tasks.discard)
+    return task
 
-pending_revocations = {}  # nid → 닉네임: 열쇠 해제가 아직 DB에 저장되지 않은 이름
+pending_revocations = {}  # nid → (nickname, allowed prior states); None requires a manual retry.
 revocation_task = None
 
 async def add_admin_log(message):
@@ -672,20 +741,24 @@ async def add_admin_log(message):
 async def retry_revocations():
     """재발급 때 DB 저장이 실패한 열쇠 해제를 5초마다 다시 저장합니다(프로세스가 살아 있는 동안).
     저장되기 전에 서버가 다시 켜지면 DB의 옛 열쇠가 되살아나므로, 방장은 '해제 저장됨' 기록을 확인해야 합니다."""
-    while pending_revocations:
+    while any(expected is not None for _, expected in pending_revocations.values()):
         await asyncio.sleep(5)
-        for nid, nick in list(pending_revocations.items()):
+        for nid, operation in list(pending_revocations.items()):
+            nick, expected = operation
             async with identity_lock(nick):
-                if server_state.get("identity_enroll", {}).get(nid, {}).get("h"):
-                    pending_revocations.pop(nid, None)  # 그사이 코드 발급이 저장됨
+                if expected is None or pending_revocations.get(nid) is not operation:
                     continue
                 try:
-                    saved = await asyncio.to_thread(db_issue_enrollment, nid, "", 0)  # 열쇠 지움 + 코드 없는 등록 대기
+                    saved = await asyncio.to_thread(db_issue_enrollment, nid, "", 0, expected)
                 except Exception:
-                    saved = False
-                if saved:
-                    pending_revocations.pop(nid, None)
-                    await add_admin_log(f"🔑 {nick} 열쇠 해제가 DB에 저장됨 — 이제 등록 코드를 다시 만들어 주세요")
+                    continue
+                if not saved:
+                    # A later credential generation must survive a delayed retry.
+                    pending_revocations[nid] = (nick, None)
+                    await add_admin_log(f"🔑 {nid[:8]} 인증 상태가 바뀌어 자동 폐기를 중단했습니다. 본인 확인 후 복구 코드를 다시 발급하세요.")
+                    continue
+                pending_revocations.pop(nid, None)
+                await add_admin_log(f"🔑 {nid[:8]} 이전 인증정보 폐기가 DB에 저장됨. 복구 코드를 다시 발급하세요.")
 
 async def send_admin_log(log_entry):
     packet = json.dumps({"type": "admin_log_update", "log": log_entry})
@@ -772,17 +845,25 @@ async def card_background(index: int, request: Request):
         return {"ok": False}
     # Serialize large reads; chat and screen-sharing handlers remain available.
     async with background_read_lock:
+        require_session(request)
         card = server_state["cards"][index]
         if "card_bg" in card:
-            return {"ok": True, "card_bg": card["card_bg"] if is_safe_card_bg(card["card_bg"]) else None}
-        try:
-            value = await asyncio.to_thread(read_card_background, index)
-            # A concurrent upload takes precedence over the older DB value.
-            value = card.get("card_bg", value)
-            return {"ok": True, "card_bg": value if is_safe_card_bg(value) else None}
-        except Exception as exc:
-            print("Background read deferred:", index, exc)
-            return {"ok": False}
+            value = card["card_bg"]
+        else:
+            try:
+                fetched = await asyncio.to_thread(read_card_background, index)
+            except Exception as exc:
+                require_session(request)
+                print("Background read deferred:", index, type(exc).__name__)
+                return {"ok": False}
+            value = card.get("card_bg", fetched)
+        require_session(request)
+        return {"ok": True, "card_bg": value if is_safe_card_bg(value) else None}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 
 @app.get("/user_count")
@@ -791,7 +872,11 @@ def get_user_count():
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    return r"""
+    # The page's length rule comes from member_auth.MIN_PASSWORD_CHARS.
+    return (PAGE_HTML.replace("__MIN_PASSWORD_CHARS__", str(MIN_PASSWORD_CHARS))
+            .replace("__SIGNUP_ROOM_PASSWORD__", "1" if signup_needs_room_password() else "0"))
+
+PAGE_HTML = r"""
     <!DOCTYPE html>
     <html lang="ko">
     <head>
@@ -817,6 +902,16 @@ def read_root():
             .login-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
             .login-box { background: rgba(30, 30, 40, 0.9); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
             .login-box input { padding: 10px; margin-top: 10px; border-radius: 5px; border: none; width: 220px; text-align: center; }
+            .login-overlay { overflow-y: auto; }
+            .login-box { width: min(320px, 92vw); box-sizing: border-box; max-height: 95vh; overflow: auto; }
+            .login-box select { margin: 12px 0 0 6px; padding: 5px; }
+            #loginHelp, #loginStatus { font-size: 13px; line-height: 1.5; margin: 10px 0; }
+            #loginStatus { color: #ffeaa7; }
+            .login-box .password-visibility, #passwordDialog .password-visibility { display: block; margin: 6px auto; padding: 4px 8px; width: auto; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+            #passwordDialog { width: min(320px, 92vw); margin: auto; border: 0; border-radius: 10px; padding: 20px; }
+            #passwordDialog p { font-size: 13px; line-height: 1.5; margin: 10px 0; }
+            #passwordDialog input, #passwordDialog button { display: block; width: 100%; box-sizing: border-box; padding: 8px; margin: 8px 0; }
+            #loginUserCount { margin: 10px 0 15px; padding: 8px; border: 1px solid rgba(0,184,148,.4); border-radius: 6px; background: rgba(0,184,148,.15); color: #00b894; font-size: 14px; font-weight: bold; }
             .login-box button { padding: 10px 20px; margin-top: 15px; border: none; border-radius: 5px; background: #ff7675; color: white; cursor: pointer; font-weight: bold; width: 100%; }
             .video-background { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; overflow: hidden; pointer-events: none; background: #000; }
             #bgMediaWrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
@@ -982,17 +1077,42 @@ def read_root():
         </script>
         
         <div class="login-overlay" id="loginOverlay">
-            <div class="login-box">
-                <h2>🔒 행운방 입장</h2>
-                <p style="font-size: 13px; color: #aaa; margin-top: 5px; margin-bottom: 10px;">닉네임은 한 번만 적으면 저장 돼!</p>
-                <div id="loginUserCount" style="margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894; background: rgba(0, 184, 148, 0.15); padding: 8px; border-radius: 6px; border: 1px solid rgba(0, 184, 148, 0.4);">🔥 현재 달리고 있는 작가님: 확인 중...</div>
-                <input type="text" id="nickInput" placeholder="내 닉네임 (예: 부엉)" onkeypress="if(event.key==='Enter') login()"><br>
-                <p id="loginStatus" role="status" style="max-width:300px;color:#ffeaa7;margin:8px auto;"></p>
-                <input type="password" id="pwInput" placeholder="비밀번호" onkeypress="if(event.key==='Enter') login()"><br>
-                <button onclick="login()">입장하기</button>
-            </div>
+            <form class="login-box" method="post" onsubmit="event.preventDefault(); login()">
+                <h2>행운방 입장</h2>
+                <div id="loginUserCount">🔥 현재 달리고 있는 작가님: 확인 중...</div>
+                <label for="loginMode">입장 방법</label>
+                <select id="loginMode" onchange="setLoginMode(this.value)">
+                    <option value="login">로그인</option>
+                    <option value="signup">새 회원 가입</option>
+                    <option value="legacy">기존 회원 첫 비밀번호 설정</option>
+                    <option value="migrate" hidden>개인 비밀번호 설정</option>
+                    <option value="recover">방장 코드로 비밀번호 복구</option>
+                </select>
+                <p id="loginHelp"></p>
+                <input id="nickInput" name="username" autocomplete="username" aria-label="닉네임" placeholder="닉네임" required><br>
+                <input id="roomInput" type="password" aria-label="방 암호" placeholder="가입용 방 암호" autocomplete="off" hidden>
+                <input id="recoveryInput" type="password" aria-label="일회용 복구 코드" placeholder="일회용 복구 코드" autocomplete="one-time-code" hidden>
+                <input id="pwInput" type="password" aria-label="비밀번호" placeholder="비밀번호" autocomplete="current-password" required><br>
+                <input id="confirmInput" type="password" aria-label="새 개인 비밀번호 확인" placeholder="새 개인 비밀번호 확인" autocomplete="new-password" hidden>
+                <button id="loginVisibility" type="button" class="password-visibility" aria-pressed="false" onclick="showPasswords('login')">비밀번호 표시</button>
+                <p id="loginStatus" role="status" aria-live="polite"></p>
+                <button id="loginSubmit" type="submit">입장하기</button>
+            </form>
         </div>
-        
+
+        <dialog id="passwordDialog">
+            <form onsubmit="event.preventDefault(); changePassword()">
+                <h3>비밀번호 바꾸기</h3>
+                <p id="changeHelp"></p>
+                <input id="newPassword" type="password" autocomplete="new-password" aria-label="새 개인 비밀번호" placeholder="새 개인 비밀번호" required>
+                <input id="confirmPassword" type="password" autocomplete="new-password" aria-label="새 개인 비밀번호 확인" placeholder="새 개인 비밀번호 확인" required>
+                <button id="changeVisibility" type="button" class="password-visibility" aria-pressed="false" onclick="showPasswords('change')">비밀번호 표시</button>
+                <p id="changeStatus" role="status" aria-live="polite"></p>
+                <button id="changeSubmit" type="submit">바꾸기</button>
+                <button type="button" onclick="document.getElementById('passwordDialog').close()">닫기</button>
+            </form>
+        </dialog>
+
         <div id="noticeModal" class="modal-overlay" onclick="if(event.target===this) closeModal('noticeModal')">
             <div class="modal-box">
                 <button class="close-btn" onclick="closeModal('noticeModal')">❌</button>
@@ -1046,7 +1166,8 @@ def read_root():
                 <button class="close-btn" onclick="closeModal('adminLogModal')">❌</button>
                 <h3 style="margin-bottom: 15px; font-size: 16px; color: #ff7675;">👑 비밀 출입 기록</h3>
                 <div id="adminLogContent" style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 12px; color: #ddd; line-height: 1.6;">기록이 없습니다.</div>
-                <button onclick="issueEnrollmentPrompt()" style="margin-top: 10px; padding: 6px 10px; border: none; border-radius: 5px; background: #636e72; color: white; cursor: pointer; font-size: 12px;">🔑 등록 코드 만들기(열쇠 재발급)</button>
+                <button onclick="issueEnrollmentPrompt()" style="margin-top: 10px; padding: 6px 10px; border: none; border-radius: 5px; background: #636e72; color: white; cursor: pointer; font-size: 12px;">일회용 비밀번호 복구 코드 발급</button>
+                <label style="display: block; margin-top: 10px; font-size: 12px; color: #ddd;"><input id="signupRoomToggle" type="checkbox" onchange="setSignupRoomPassword(this.checked)"> 새 회원 가입 때 방 암호 요구 (끄면 방 주소만으로 가입)</label>
             </div>
         </div>
 
@@ -1143,6 +1264,7 @@ def read_root():
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 4px;">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <h3 style="margin: 0; font-size: 15px; line-height: 20px;">👑 대시보드</h3>
+                            <button id="changePasswordBtn" type="button" onclick="openPasswordDialog()" style="background:#636e72; color:white; border:none; border-radius:3px; padding:3px 6px; font-size:10px; cursor:pointer; font-weight:bold;" hidden>비밀번호 바꾸기</button>
                             <button onclick="toggleDashboard()" style="background:#636e72; color:white; border:none; border-radius:3px; padding:3px 6px; font-size:10px; cursor:pointer; font-weight:bold;" id="dashboardToggle" title="대시보드만 접기">➡️ 접기</button>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 5px;">
@@ -1188,13 +1310,33 @@ def read_root():
         </div>
 
         <script>
-            let sessionPassword = ""; // 로그인 때 입력한 값. 서버가 확인하며 저장소에 남기지 않음
-            let sessionToken = ""; // 로그인 뒤 서버가 준 조회용 값(메모리에만)
-            let pendingEnrollCode = ""; // 방장에게 받은 일회용 등록 코드(메모리에만, 쓰면 지움)
-            function identityKeyFor(nick) { try { return localStorage.getItem('gogogoIdentity:' + nick) || ""; } catch (e) { return ""; } }
-            function saveIdentityKey(nick, key) { try { localStorage.setItem('gogogoIdentity:' + nick, key); } catch (e) {} }
+            let authRequest = null; // 현재 페이지에서 재연결에 사용할 인증 정보
+            let legacyProof = null; // 기존 기기가 확인된 첫 설정 화면에서만 유지
+            let sessionToken = "";
+            let roomOpened = false;
+
+            function identityKeyFor(nick) {
+                try { return localStorage.getItem('gogogoIdentity:' + nick) || localStorage.getItem('gogogoIdentity:' + nick.normalize('NFC')) || ""; }
+                catch (e) { return ""; }
+            }
+            function forgetIdentityKey(nick) {
+                try {
+                    localStorage.removeItem('gogogoIdentity:' + nick);
+                    localStorage.removeItem('gogogoIdentity:' + nick.normalize('NFC'));
+                } catch (e) {}
+            }
             function safeBg(value) { return typeof value === 'string' && value.length <= 3000000 && /^data:image\/(?:png|jpeg|webp|bmp|avif);base64,[A-Za-z0-9+\/]+={0,2}$/.test(value) ? value : ''; }
-            function issueEnrollmentPrompt() { const nick = prompt('등록 코드를 만들 닉네임을 적어줘. (그 이름의 기존 열쇠는 해제되고, 코드를 받은 사람만 다시 등록할 수 있어)'); if (nick && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "issue_enrollment", target_nick: nick.trim() })); } }
+            function setSignupRoomPassword(on) {
+                if (!window.isAdmin || !sessionToken || !ws || ws.readyState !== WebSocket.OPEN) return;
+                ws.send(JSON.stringify({type: "set_signup_room_password", on: !!on}));
+            }
+            function issueEnrollmentPrompt() {
+                const nick = prompt("별도 연락으로 본인을 확인한 회원의 닉네임을 입력하세요.");
+                if (!nick || !nick.trim() || !window.isAdmin || !sessionToken) return;
+                if (confirm(nick.trim() + " 님의 기존 비밀번호와 연결을 해제하고 복구 코드를 발급할까요?")) {
+                    ws.send(JSON.stringify({type: "issue_enrollment", target_nick: nick.trim()}));
+                }
+            }
             const ADMIN_NICKNAME = "부엉";
             window.rawNotice = ""; 
             window.isHideEmpty = false; 
@@ -1242,26 +1384,6 @@ def read_root():
                     restoreBtn.style.display = 'block';
                 }
             }
-
-            async function updateLoginUserCount() {
-                try {
-                    const res = await fetch('/user_count');
-                    const data = await res.json();
-                    const countEl = document.getElementById('loginUserCount');
-                    if(countEl) countEl.innerText = `🔥 현재 달리고 있는 작가님: ${data.count}명`;
-                } catch(e) {
-                    const countEl = document.getElementById('loginUserCount');
-                    if(countEl) countEl.innerText = `🔥 현재 달리고 있는 작가님: ?명`;
-                }
-            }
-            updateLoginUserCount();
-            let countInterval = setInterval(() => {
-                if(document.getElementById('loginOverlay').style.display !== 'none') {
-                    updateLoginUserCount();
-                } else {
-                    clearInterval(countInterval); 
-                }
-            }, 10000);
 
             function openModal(modalId) { 
                 document.getElementById(modalId).style.display = 'flex'; 
@@ -1371,32 +1493,179 @@ def read_root():
                 }
             }
 
-            function checkLogin() { document.getElementById('loginOverlay').style.display = 'flex'; const savedNick = localStorage.getItem('mySavedNickname'); if (savedNick) { document.getElementById('nickInput').value = savedNick; document.getElementById('pwInput').focus(); } }
-            
-            function login() { 
-                const inputPw = document.getElementById('pwInput').value; 
-                const inputNick = document.getElementById('nickInput').value.trim(); 
-                if (!inputNick) { alert("누군지 알 수 있게 닉네임을 적어줘 누나!"); return; } 
-                if (!inputPw) { alert("비밀번호를 적어줘!"); return; }
-                sessionPassword = inputPw; // 맞는지는 서버가 확인함(auth_ok / auth_failed)
-                if (inputNick === ADMIN_NICKNAME) {
-                    window.isAdmin = true; document.getElementById('adminLogBtn').style.display = 'block'; document.getElementById('pomoEditBtn').style.display = 'block'; 
-                } else {
-                    window.isAdmin = false; document.getElementById('pomoEditBtn').style.display = 'none'; 
-                } 
-                window.myNickname = inputNick;
-                window.activeNicknames.add(inputNick);
-                localStorage.setItem('mySavedNickname', inputNick); 
-                document.getElementById('loginOverlay').style.display = 'none'; 
-                initCards(); 
-                connectWebSocket(); 
-                loadLocalBackground(); 
+            const byId = id => document.getElementById(id);
+            const retryNewPassword = "저장 결과를 확인하지 못했습니다. 로그인에서 방금 정한 새 개인 비밀번호로 먼저 입장해 보세요.";
+            const MIN_PASSWORD_CHARS = Number("__MIN_PASSWORD_CHARS__");
+            const passwordRange = MIN_PASSWORD_CHARS + "~128자";
+            const passwordPolicy = "새 개인 비밀번호는 " + passwordRange + "로 입력하세요.";
+            const SIGNUP_ROOM_PASSWORD = "__SIGNUP_ROOM_PASSWORD__" === "1";
+            function showPasswords(group, visible) {
+                const button = byId(group + "Visibility");
+                if (visible === undefined) visible = button.ariaPressed !== "true";
+                button.ariaPressed = String(visible);
+                button.textContent = visible ? "비밀번호 숨기기" : "비밀번호 표시";
+                const fields = group === "login" ? ["pwInput", "confirmInput", "roomInput", "recoveryInput"] : ["newPassword", "confirmPassword"];
+                for (const id of fields) byId(id).type = visible ? "text" : "password";
             }
-            
+            const loginHelp = {
+                login: "기기와 관계없이 닉네임과 비밀번호로 입장하세요.",
+                signup: SIGNUP_ROOM_PASSWORD ? "가입용 방 암호와 새 개인 비밀번호(" + passwordRange + ")를 입력하세요."
+                                             : "쓰실 닉네임과 새 개인 비밀번호(" + passwordRange + ")를 정하면 바로 가입됩니다.",
+                legacy: "예전에 입장했던 브라우저에서 닉네임과 기존 방 암호를 입력하세요.",
+                migrate: "확인된 닉네임에 사용할 개인 비밀번호를 " + passwordRange + "로 정해 주세요.",
+                recover: "본인 확인 후 방장에게 받은 일회용 코드와 새 개인 비밀번호(" + passwordRange + ")를 입력하세요."
+            };
+
+            function setLoginMode(mode) {
+                if (mode !== "migrate") legacyProof = null;
+                showPasswords("login", false);
+                byId("loginMode").value = mode;
+                byId("loginHelp").textContent = loginHelp[mode];
+                byId("nickInput").readOnly = mode === "migrate";
+                const setting = ["signup", "migrate", "recover"].includes(mode);
+                byId("pwInput").value = "";
+                byId("pwInput").placeholder = mode === "legacy" ? "기존 방 암호" : setting ? "새 개인 비밀번호" : "비밀번호";
+                byId("pwInput").autocomplete = setting ? "new-password" : "current-password";
+                for (const [id, visible] of [["roomInput", mode === "signup" && SIGNUP_ROOM_PASSWORD], ["recoveryInput", mode === "recover"], ["confirmInput", setting]]) {
+                    const input = byId(id);
+                    input.value = "";
+                    input.required = visible;
+                    input.hidden = !visible;
+                }
+                byId("loginStatus").textContent = "";
+                byId("loginSubmit").textContent = {login: "입장하기", signup: "가입하고 입장하기", legacy: "기존 기기 확인", migrate: "설정하고 입장하기", recover: "복구하고 입장하기"}[mode];
+            }
+
+            async function updateLoginUserCount() {
+                let count = "?";
+                try {
+                    const response = await fetch("/user_count", {cache: "no-store"});
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (Number.isSafeInteger(data.count) && data.count >= 0) count = data.count;
+                    }
+                } catch (e) {}
+                byId("loginUserCount").textContent = "🔥 현재 달리고 있는 작가님: " + count + "명";
+            }
+
+            function checkLogin() {
+                setLoginMode("login");
+                byId("loginOverlay").style.display = "flex";
+                updateLoginUserCount();
+                const countInterval = setInterval(() => {
+                    if (byId("loginOverlay").style.display === "none") clearInterval(countInterval);
+                    else updateLoginUserCount();
+                }, 10000);
+                try { byId("nickInput").value = localStorage.getItem("mySavedNickname") || ""; } catch (e) {}
+                byId(byId("nickInput").value ? "pwInput" : "nickInput").focus();
+            }
+
+            function newPasswordError(password, confirm) {
+                const chars = Array.from(password);
+                if (chars.length < MIN_PASSWORD_CHARS || chars.length > 128 || /[\uD800-\uDFFF]/u.test(password)) return passwordPolicy;
+                return password === confirm.normalize("NFC") ? "" : "새 개인 비밀번호가 서로 다릅니다.";
+            }
+
+            function login() {
+                if (byId("loginSubmit").disabled) return;
+                const nickname = byId("nickInput").value.trim();
+                const password = byId("pwInput").value;
+                let mode = byId("loginMode").value;
+                if (!nickname || !password) return loginNotice("닉네임과 비밀번호를 입력하세요.");
+                if (nickname.normalize("NFC") === ADMIN_NICKNAME) {
+                    if (mode !== "login") return loginNotice("방장은 로그인에서 방장 비밀번호로 입장하세요.");
+                    mode = "admin";
+                }
+                const request = {auth_mode: mode, nickname, password};
+                if (["signup", "migrate", "recover"].includes(mode)) {
+                    request.password = password.normalize("NFC");
+                    const error = newPasswordError(request.password, byId("confirmInput").value);
+                    if (error) return loginNotice(error);
+                }
+                if (mode === "legacy") {
+                    request.identity_key = identityKeyFor(nickname);
+                    if (!request.identity_key) return loginNotice("이 브라우저에 이 닉네임의 기존 열쇠가 없습니다. 예전 브라우저를 사용하거나 방장에게 복구 코드를 요청하세요.");
+                }
+                if (mode === "migrate") {
+                    if (!legacyProof || legacyProof.nickname !== nickname) return loginNotice("기존 기기를 다시 확인해 주세요.");
+                    request.identity_key = legacyProof.identity_key;
+                    request.room_password = legacyProof.password;
+                }
+                if (mode === "signup" && SIGNUP_ROOM_PASSWORD) request.room_password = byId("roomInput").value;
+                if (mode === "recover") request.enroll_code = byId("recoveryInput").value.trim();
+                authRequest = request;
+                byId("loginMode").disabled = true;
+                byId("loginSubmit").disabled = true;
+                showPasswords("login", false);
+                for (const id of ["pwInput", "confirmInput", "roomInput", "recoveryInput"]) byId(id).value = "";
+                loginNotice("확인하고 있습니다…");
+                connectWebSocket();
+            }
+
             function kickUser(nickname) { if(confirm(`${nickname} 님을 방에서 강제로 쫓아낼까?`)) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "kick", target_nick: nickname })); } } }
 
             let ws = null; let pingInterval = null;
-            let loginWaitTimer = null; let reconnectTimer = null;
+            let reconnectTimer = null;
+            let loginWaitTimer = null;
+            function stopSocket() {
+                clearTimeout(reconnectTimer);
+                clearTimeout(loginWaitTimer);
+                clearInterval(pingInterval);
+                if (ws) {
+                    ws.onclose = ws.onmessage = ws.onopen = null;
+                    ws.close();
+                    ws = null;
+                }
+                sessionToken = "";
+            }
+
+            function failedLogin(message) {
+                stopSocket();
+                authRequest = null;
+                byId("loginSubmit").disabled = byId("loginMode").disabled = false;
+                if (roomOpened) {
+                    alert(message);
+                    window.location.reload();
+                    return;
+                }
+                loginNotice(message);
+                byId("pwInput").focus();
+            }
+
+            let changingPassword = false;
+            let pendingNewPassword = null;
+            function openPasswordDialog() {
+                byId("changeHelp").textContent = "새 비밀번호(" + passwordRange + ")만 넣으면 바뀝니다. 지금 비밀번호는 몰라도 됩니다. 다른 기기는 연결을 그대로 두고, 다음에 입장할 때 새 비밀번호를 씁니다.";
+                byId("changeStatus").textContent = "";
+                byId("passwordDialog").showModal();
+            }
+            function changePassword() {
+                if (!sessionToken || !ws || ws.readyState !== WebSocket.OPEN || changingPassword) return;
+                const password = byId("newPassword").value.normalize("NFC");
+                const error = newPasswordError(password, byId("confirmPassword").value);
+                if (error) { byId("changeStatus").textContent = error; return; }
+                changingPassword = true;
+                pendingNewPassword = password;
+                byId("changeSubmit").disabled = true;
+                showPasswords("change", false);
+                ws.send(JSON.stringify({type: "change_password", new_password: password}));
+                byId("newPassword").value = byId("confirmPassword").value = "";
+                byId("changeStatus").textContent = "저장하고 있습니다…";
+            }
+
+            function endSession(message) {
+                stopSocket();
+                legacyProof = authRequest = null;
+                alert(message);
+                window.location.reload();
+            }
+            function lostLoginResponse(message) {
+                if (["signup", "migrate", "recover"].includes(authRequest?.auth_mode)) {
+                    setLoginMode("login");
+                    message = retryNewPassword;
+                }
+                failedLogin(message);
+            }
             function loginNotice(message) {
                 document.getElementById('loginOverlay').style.display='flex';
                 document.getElementById('loginStatus').textContent=message;
@@ -1629,8 +1898,7 @@ def read_root():
             
             function forceRecoverWebRTC() { 
                 if (ws && ws.readyState === WebSocket.OPEN) { 
-                    const ownedArr = Array.from(myOwnedSlots);
-                    ws.send(JSON.stringify({ type: "set_nickname", nickname: window.myNickname, owned: ownedArr, password: sessionPassword, identity_key: identityKeyFor(window.myNickname), enroll_code: pendingEnrollCode }));
+                    if (!sessionToken) return;
                     ws.send(JSON.stringify({ type: "request_existing_shares" })); 
                     for (let idx in expectedShares) { 
                         const sharerId = expectedShares[idx]; 
@@ -1781,7 +2049,7 @@ def read_root():
             }
 
             setInterval(() => {
-                if (!ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
+                if (!sessionToken || !ws || ws.readyState !== WebSocket.OPEN || !ws.clientId) return;
                 for (let idx in expectedShares) {
                     const sharerId = expectedShares[idx]; if (sharerId === ws.clientId) continue; 
                     const pcKey = `${idx}_${sharerId}`; const pc = peerConnections[pcKey]; let isConnectionDead = false;
@@ -1793,56 +2061,119 @@ def read_root():
             function extractYoutubeId(url) { if (!url) return null; url = url.trim(); if (url.length === 11) return url; const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/; const match = url.match(regExp); return (match && match[2].length === 11) ? match[2] : null; }
 
             function connectWebSocket() {
-                const loc = window.location; let wsProtocol = loc.protocol === "https:" ? "wss://" : "ws://"; const wsUrl = wsProtocol + loc.host + "/ws";
+                if (!authRequest) return;
+                stopSocket();
+                const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
                 try {
-                    ws = new WebSocket(wsUrl);
+                    ws = new WebSocket(protocol + window.location.host + "/ws");
+                    const socket = ws;
+                    loginWaitTimer = setTimeout(() => {
+                        if (ws === socket && !sessionToken) lostLoginResponse("서버 응답을 확인할 수 없습니다. 잠시 뒤 다시 로그인해 주세요.");
+                    }, 30000);
                     ws.onopen = function() {
-                        const statusEl = document.getElementById('connStatus'); statusEl.innerText = "연결됨"; statusEl.className = "status-indicator status-online";
-                        const myNick = window.myNickname || "익명"; const ownedArr = Array.from(myOwnedSlots);
-                        ws.send(JSON.stringify({ type: "set_nickname", nickname: myNick, owned: ownedArr, password: sessionPassword, identity_key: identityKeyFor(myNick), enroll_code: pendingEnrollCode })); autoStampToday();
-                        if (recordAutoSaveNeedsSync) flushRecordAutoSave();
-                        
-                        for (let idx in myStreams) {
-                            if (myStreams[idx]) {
-                                ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) }));
-                            }
-                        }
-                        ws.send(JSON.stringify({ type: "request_existing_shares" }));
-                        for (let idx in expectedShares) {
-                            const sharerId = expectedShares[idx];
-                            if (sharerId && sharerId !== ws.clientId) {
-                                ws.send(JSON.stringify({ type: "request_offer", index: parseInt(idx), target: sharerId }));
-                            }
-                        }
-
-                        if (pingInterval) clearInterval(pingInterval); pingInterval = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "ping" })); } }, 5000); 
+                        if (ws !== socket || !authRequest) return;
+                        socket.send(JSON.stringify({type: "set_nickname", ...authRequest, owned: Array.from(myOwnedSlots)}));
                     };
                     ws.onmessage = async function(event) {
                         try {
                             const data = JSON.parse(event.data);
+                            if (ws !== socket) return;
+                            if (data.type === "welcome") { socket.clientId = data.clientId; return; }
+                            if (data.type === "pong") return;
+                            if (data.type === "auth_failed") {
+                                if (data.reason === "storage" || data.reason === "conflict") {
+                                    lostLoginResponse("서버에서 계정 상태를 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.");
+                                    return;
+                                }
+                                if (data.reason === "setup_required" && authRequest?.auth_mode === "legacy") {
+                                    legacyProof = authRequest;
+                                    failedLogin("");
+                                    setLoginMode("migrate");
+                                    byId("nickInput").value = legacyProof.nickname;
+                                    byId("pwInput").focus();
+                                    return;
+                                }
+                                const reasons = {
+                                    kicked: "방장이 일시적으로 입장을 제한했습니다. 나중에 다시 시도하세요.",
+                                    nickname: "사용할 수 없는 닉네임입니다.",
+                                    busy: "접속이 잠시 몰려 처리하지 못했습니다. 몇 초 뒤 같은 버튼을 다시 눌러 주세요.",
+                                    password_policy: passwordPolicy
+                                };
+                                failedLogin(reasons[data.reason] || ({
+                                    login: "닉네임 또는 비밀번호가 맞지 않습니다.",
+                                    admin: "닉네임 또는 비밀번호가 맞지 않습니다.",
+                                    legacy: "기존 방 암호와 브라우저를 확인하세요. 기존 기기가 없으면 방장에게 복구 코드를 요청하세요.",
+                                    migrate: "기존 기기를 다시 확인해 주세요.",
+                                    signup: (SIGNUP_ROOM_PASSWORD ? "가입용 방 암호와 닉네임을 확인하세요. " : "이미 있거나 비슷한 닉네임입니다. 다른 닉네임을 쓰세요. ") + "기존 회원은 로그인 또는 기존 회원 첫 설정을 선택하세요.",
+                                    recover: "닉네임과 복구 코드를 확인하세요. 만료되었거나 이미 사용한 경우 새 코드를 요청하세요."
+                                }[authRequest?.auth_mode] || "입장 정보를 확인하세요."));
+                                return;
+                            }
+                            if (data.type === "auth_ok" && authRequest && data.session) {
+                                clearTimeout(loginWaitTimer);
+                                const {nickname, password, auth_mode} = authRequest;
+                                if (auth_mode === "migrate" || auth_mode === "recover") forgetIdentityKey(nickname);
+                                legacyProof = null;
+                                window.myNickname = nickname.normalize("NFC");
+                                window.isAdmin = !!data.is_admin;
+                                authRequest = {auth_mode: window.isAdmin ? "admin" : "login", nickname: window.myNickname, password};
+                                sessionToken = data.session;
+                                try { localStorage.setItem("mySavedNickname", window.myNickname); } catch (e) {}
+                                byId("loginSubmit").disabled = byId("loginMode").disabled = false;
+                                byId("loginOverlay").style.display = "none";
+                                byId("adminLogBtn").style.display = byId("pomoEditBtn").style.display = window.isAdmin ? "block" : "none";
+                                byId("changePasswordBtn").hidden = window.isAdmin;
+                                byId("signupRoomToggle").checked = SIGNUP_ROOM_PASSWORD;
+                                byId("connStatus").textContent = "연결됨";
+                                byId("connStatus").className = "status-indicator status-online";
+                                if (!roomOpened) {
+                                    roomOpened = true;
+                                    initCards();
+                                    loadLocalBackground();
+                                }
+                                loadPomoSheetUrl();
+                                pingInterval = setInterval(() => {
+                                    if (ws === socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type: "ping"}));
+                                }, 5000);
+                                return;
+                            }
+                            if (!sessionToken) return;
+                            if (data.type === "password_changed") {
+                                changingPassword = false;
+                                byId("changeSubmit").disabled = false;
+                                if (data.ok) {
+                                    // Reconnects of this tab use the new password from now on.
+                                    if (authRequest && pendingNewPassword) authRequest.password = pendingNewPassword;
+                                    byId("changeStatus").textContent = "바꿨습니다. 다음부터 새 비밀번호로 입장하세요.";
+                                } else {
+                                    byId("changeStatus").textContent = ({
+                                        password_policy: passwordPolicy,
+                                        busy: "접속이 잠시 몰려 처리하지 못했습니다. 몇 초 뒤 다시 눌러 주세요.",
+                                        storage: "저장 결과를 확인하지 못했습니다. 다음 입장 때 새 비밀번호로 먼저 해 보고, 안 되면 이전 비밀번호를 쓰세요.",
+                                        stale: "다른 기기에서 비밀번호가 이미 바뀌었습니다. 이 기기에서 바꾸려면 새 비밀번호로 다시 입장해 주세요."
+                                    })[data.reason] || "지금은 바꿀 수 없습니다. 방장 복구 코드가 발급된 경우 그 코드로 복구하세요.";
+                                }
+                                pendingNewPassword = null;
+                                return;
+                            }
+                            if (data.type === "signup_room_password") {
+                                byId("signupRoomToggle").checked = !!data.on;
+                                if (!data.ok && data.reason === "storage") alert("설정을 저장하지 못했습니다. 지금 상태: " + (data.on ? "방 암호 요구" : "방 주소만으로 가입") + ". 잠시 뒤 다시 눌러 주세요.");
+                                else if (!data.ok) alert("서버에 방 암호가 설정되어 있지 않아 켤 수 없습니다. 짱구애비에게 문의하세요.");
+                                return;
+                            }
+                            if (data.type === "enrollment_issued") {
+                                alert(data.ok ? data.target_nick + " 님의 일회용 복구 코드\n" + data.code + "\n24시간 안에 사용하세요. 본인에게만 전달하세요." : "복구 코드 발급을 완료하지 못했습니다. 방장 기록을 확인한 뒤 다시 시도하세요.");
+                                return;
+                            }
+                            if (data.type === "identity_revoked") {
+                                forgetIdentityKey(window.myNickname);
+                                endSession("계정 인증 정보가 변경되었습니다. 방장에게 복구 절차를 확인해 주세요.");
+                                return;
+                            }
+                            if (data.type === "kicked") { endSession("방장이 입장을 일시적으로 제한했습니다."); return; }
                             if (data.type === "private_tracker_state") { window.trackersData=data.trackers; loadMyLocalTrackerData(); refreshBadges(); refreshQuickDoneRows(); return; }
                             if (data.type === "chat_history") { renderChatHistory(data.messages); return; }
-                            if (data.type === "pong") { return; }
-                            if (data.type === "auth_ok") { window.isAdmin = !!data.is_admin; if (data.session) sessionToken = data.session; if (data.identity_key) saveIdentityKey(window.myNickname, data.identity_key); pendingEnrollCode = ""; loadPomoSheetUrl(); return; }
-                            if (data.type === "auth_failed") {
-                                if (pingInterval) clearInterval(pingInterval); ws.onclose = null; ws.close();
-                                if (data.reason === "enroll_required" || data.reason === "enroll_invalid") {
-                                    const code = prompt(data.reason === "enroll_invalid" ? "등록 코드가 맞지 않거나 기한(24시간)이 지났어. 방장에게 새 코드를 받아 적어줘." : "이 닉네임은 이미 기록이 있거나 방장이 등록 코드를 만든 이름이라, 방장에게 받은 등록 코드가 필요해. 코드를 적어줘.");
-                                    if (code && code.trim()) { pendingEnrollCode = code.trim(); connectWebSocket(); return; }
-                                }
-                                sessionPassword = ""; sessionToken = ""; pendingEnrollCode = "";
-                                const reasons = { identity: "이 닉네임은 다른 기기(브라우저)에 등록된 이름이야. 그 기기로 들어오거나 방장에게 등록 코드를 받아줘!", kicked: "방장이 내보낸 이름이라 잠시 뒤에 다시 들어와줘.", nickname: "쓸 수 없는 닉네임이야(다른 작가님과 너무 비슷하거나, 글자·숫자 말고 다른 기호가 있어). 다른 이름으로 들어와줘.", storage: "서버가 등록을 저장하지 못했어. 잠시 뒤에 다시 들어와줘.", busy: "지금은 로그인 시도가 너무 많아. 1분 뒤에 다시 해줘.", enroll_required: "등록 코드가 있어야 들어올 수 있어.", enroll_invalid: "등록 코드가 있어야 들어올 수 있어." };
-                                alert(reasons[data.reason] || "비밀번호가 틀렸어! 다시 확인해봐."); window.location.reload(); return;
-                            }
-                            if (data.type === "enrollment_issued") { alert(data.ok ? `${data.target_nick} 등록 코드: ${data.code}\n24시간 안에 한 번만 쓸 수 있어. 본인에게만 따로 전해줘.` : data.retrying ? `${data.target_nick} 열쇠는 지금 막았지만 서버 저장이 안 됐어. 서버가 자동으로 다시 저장하고 있어.\n출입 기록에 '해제 저장됨'이 뜨면 등록 코드를 다시 만들어줘.` : "등록 코드를 만들지 못했어(이름을 확인하거나 잠시 뒤 다시)."); return; }
-                            if (data.type === "identity_revoked") { try { localStorage.removeItem('gogogoIdentity:' + window.myNickname); } catch (e) {} alert("방장이 이 이름의 열쇠를 해제했어. 등록 코드를 받아 다시 들어와줘."); window.location.reload(); return; }
-                            else if (data.type === "kicked") { alert("방장에 의해 방에서 쫓겨났어!"); localStorage.removeItem('mySavedNickname'); window.location.reload(); }
-                            else if (data.type === "duplicate_kicked") {
-                                alert("다른 기기(또는 창)에서 동일한 닉네임이 접속되어 이전 창은 얌전하게 종료할게 누나!");
-                                if (pingInterval) clearInterval(pingInterval);
-                                ws.onclose = null;
-                                ws.close();
-                            }
                             else if (data.type === "chat_cleared") { document.getElementById('chatHistory').innerHTML = ""; }
                             else if (data.type === "user_list") {
                                 document.getElementById('userCount').innerText = data.count + "명";
@@ -1890,6 +2221,12 @@ def read_root():
                                 if (state.chat_history) { renderChatHistory(state.chat_history); }
                                 loadMyLocalTrackerData(); refreshBadges(); refreshQuickDoneRows(); loadSavedBackgrounds();
                                 applyEmptySlotVisibility();
+                                autoStampToday();
+                                if (recordAutoSaveNeedsSync) flushRecordAutoSave();
+                                for (const idx in myStreams) {
+                                    if (myStreams[idx]) socket.send(JSON.stringify({type: "start_share", index: Number(idx)}));
+                                }
+                                socket.send(JSON.stringify({type: "request_existing_shares"}));
                             }
                             else if (data.type === "tracker_update") { 
                                 if (!window.trackersData) window.trackersData = {};
@@ -1923,13 +2260,23 @@ def read_root():
                             else if (data.type === "answer" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp)); } 
                             else if (data.type === "ice" && data.target === ws.clientId) { const pcKey = `${data.index}_${data.sender}`; const pc = peerConnections[pcKey]; if (pc && pc.remoteDescription && pc.remoteDescription.type) { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e)); } else { if (!candidateBuffers[pcKey]) candidateBuffers[pcKey] = []; if (candidateBuffers[pcKey].length < 50) candidateBuffers[pcKey].push(data.candidate); } } 
                             else if (data.type === "stop_share") { const index = data.index; delete expectedShares[index]; for (let key in peerConnections) { if (key.startsWith(`${index}_`)) { try { peerConnections[key].getSenders().forEach(sender => peerConnections[key].removeTrack(sender)); peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; } } renderBox(index); const btnScreen = document.getElementById(`share-btn-screen-${index}`); const btnCam = document.getElementById(`share-btn-cam-${index}`); if(btnScreen) { btnScreen.innerText = "화공"; btnScreen.style.background = "#ff7675"; btnScreen.style.display = "inline-block"; } if(btnCam) { btnCam.innerText = "캠"; btnCam.style.background = "#0984e3"; btnCam.style.display = "inline-block"; } const soundBtn = document.getElementById(`sound-toggle-btn-${index}`); if (soundBtn) { soundBtn.style.display = "none"; } }
-                            else if (data.type === "welcome") { ws.clientId = data.clientId; setTimeout(() => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "request_existing_shares" })); for (let idx in myStreams) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx) })); } } }, 800); }
                             else if (data.type === "request_existing_shares") { for (let idx in myStreams) { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: "start_share", index: parseInt(idx), target: data.sender })); } } }
                         } catch(e) { console.error("데이터 처리 에러:", e); }
                     };
                     
-                    ws.onclose = function() { 
-                        if (pingInterval) clearInterval(pingInterval); 
+                    ws.onclose = function(event) {
+                        if (ws !== socket) return;
+                        clearTimeout(loginWaitTimer);
+                        clearInterval(pingInterval);
+                        sessionToken = "";
+                        if (event.code === 4001) {
+                            lostLoginResponse("이 연결의 인증이 종료되었습니다. 다시 로그인해 주세요.");
+                            return;
+                        }
+                        if (!roomOpened || ![1001, 1006, 1012].includes(event.code)) {
+                            lostLoginResponse("서버 연결이 종료되었습니다. 다시 로그인해 주세요.");
+                            return;
+                        }
                         const statusEl = document.getElementById('connStatus'); 
                         if (statusEl) { 
                             statusEl.innerText = "서버 재연결 중..."; 
@@ -1937,9 +2284,9 @@ def read_root():
                         } 
                         for (let key in peerConnections) { try { peerConnections[key].close(); } catch(e) {} delete peerConnections[key]; }
                         for (let k in expectedShares) delete expectedShares[k];
-                        setTimeout(connectWebSocket, 3000); 
+                        reconnectTimer = setTimeout(connectWebSocket, 3000);
                     };
-                } catch(e) { setTimeout(connectWebSocket, 2000); }
+                } catch(e) { failedLogin("서버에 연결할 수 없습니다. 잠시 뒤 다시 시도하세요."); }
             }
 
             async function createOfferForViewer(index, viewerId) {
@@ -2499,6 +2846,7 @@ def read_root():
             }
             let observedDay=dayKey();
             setInterval(() => {
+                if (!sessionToken) return;
                 restoreTimer(); refreshBadges();
                 if(observedDay!==dayKey()) {
                     observedDay=dayKey(); window.goalAchieved=false;
@@ -2509,7 +2857,7 @@ def read_root():
                     if(ws && ws.readyState===WebSocket.OPEN) { timerAction('sync'); autoStampToday(); }
                 }
             },1000);
-            document.addEventListener('visibilitychange', () => { if(!document.hidden) restoreTimer(); });
+            document.addEventListener('visibilitychange', () => { if(sessionToken && !document.hidden) restoreTimer(); });
             function monthlyDoneFor(name, targetMonth) {
                 const month=(window.trackersData[name]?.calendar || {})[targetMonth] || {};
                 return Object.values(month).reduce((sum,r)=>sum+Math.max(0,Number(r.done)||0),0);
@@ -2616,20 +2964,60 @@ def read_root():
     </html>
     """
 
+async def refuse_busy_connection(websocket):
+    """Tell an over-cap connection to retry, then close it, within a fixed time."""
+    async def refuse():
+        await websocket.accept()
+        await websocket.send_text(json.dumps({"type": "auth_failed", "reason": "busy"}))
+        await websocket.close(code=1013)
+    try:
+        await asyncio.wait_for(refuse(), PENDING_REFUSE_SECONDS)
+    except Exception:
+        pass
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    # Server protection: the pending-sign-in slot is checked and taken with no await
+    # in between, so simultaneous handshakes cannot all pass the check. It is given
+    # back exactly once: on sign-in, or on any way out (close, error, cancel).
+    conn_manager = manager
+    if conn_manager.pending_signin >= MAX_PENDING_SIGNIN:
+        await refuse_busy_connection(websocket)
+        return
+    conn_manager.pending_signin += 1
+    pending_slot = True
+
+    def release_pending_slot():
+        nonlocal pending_slot
+        if pending_slot:
+            pending_slot = False
+            conn_manager.pending_signin -= 1
+
+    try:
+        await manager.connect(websocket)
+    except BaseException:
+        release_pending_slot()
+        raise
     client_id = str(id(websocket))
     authed = False
     is_admin = False
+    auth_digest = None  # verifier generation this connection signed in with
     session_token = None
     recent_messages = []
+    deadline = time.monotonic() + AUTH_HANDSHAKE_TIMEOUT
 
     try:
         await websocket.send_text(json.dumps({"type": "welcome", "clientId": client_id}))
 
         while True:
-            data = await websocket.receive_text()
+            if authed:
+                data = await websocket.receive_text()
+            else:
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), deadline - time.monotonic())
+                except asyncio.TimeoutError:
+                    await websocket.close(code=AUTH_CLOSE_CODE)
+                    break
             now_mono = time.monotonic()
             recent_messages.append(now_mono)
             while recent_messages and now_mono - recent_messages[0] > 2:
@@ -2648,45 +3036,37 @@ async def websocket_endpoint(websocket: WebSocket):
             if p_type == "set_nickname":
                 nickname = normalize_nickname(packet.get("nickname"))
                 wants_admin = nickname == ADMIN_NICKNAME
-                expected = ADMIN_PASSWORD_SERVER if wants_admin else ROOM_PASSWORD_SERVER
-                # 방 암호는 모두가 같으므로 멤버는 이름 열쇠로 구분합니다.
-                # - 열쇠가 있는 이름: 맞는 열쇠만
-                # - 기록이 있거나 방장이 등록 코드를 만든 이름: 방장이 준 일회용 등록 코드만
-                # - 아무 기록도 없는 새 이름: 처음 온 사람이 등록
-                # 등록은 DB 저장 확인 뒤에만 승인하고, 그 전에는 어떤 방 정보도 보내지 않습니다.
-                stored_keys = server_state.setdefault("identity_keys", {})
-                pending_enrolls = server_state.setdefault("identity_enroll", {})
+                mode = packet.get("auth_mode", "login")
                 fail_reason = None
-                issued_key = None
                 if not nickname:
                     fail_reason = "nickname"
-                elif auth_throttled(auth_source(websocket)):
-                    fail_reason = "busy"  # 암호 맞고 틀림을 알려 주기 전에 멈춤(무차별 대입 중 판정 숨김)
-                elif not await password_ok_async(packet.get("password"), expected):
-                    fail_reason = "password"
-                elif authed and nickname != manager.active_users.get(websocket):
-                    fail_reason = "nickname"  # 인증된 연결은 이름을 바꿀 수 없음
+                elif authed and (websocket not in manager.authed_connections or
+                                 nickname != manager.active_users.get(websocket)):
+                    fail_reason = "credentials"
                 elif time.time() < kicked_until.get(nickname, 0):
                     fail_reason = "kicked"
-                to_close = []
                 if not fail_reason:
-                    # 같은 이름의 등록·재발급·승인은 하나씩. 승인과 이름 연결을 잠금 안에서 끝내서,
-                    # 그 뒤의 강퇴·재발급·중복 접속 처리가 이 연결을 반드시 찾게 합니다.
-                    async with identity_lock(nickname):
-                        if not wants_admin:
-                            fail_reason, issued_key = await check_member_identity(nickname, packet)
+                    async with auth_admission(identity_lock(nickname)) as ticket:
+                        if ticket is None:
+                            fail_reason = "busy"
+                        elif authed and websocket not in manager.authed_connections:
+                            fail_reason = "credentials"
+                        else:
+                            fail_reason = await check_login(websocket, nickname, mode, packet, ticket)
                         if not fail_reason and time.time() < kicked_until.get(nickname, 0):
-                            fail_reason = "kicked"  # DB를 기다리는 사이 강퇴된 경우
+                            fail_reason = "kicked"
                         if not fail_reason:
                             previous_name = manager.active_users.get(websocket, "연결중...")
                             is_first_identity = previous_name == "연결중..."
                             was_already_present = any(name == nickname and existing_ws != websocket for existing_ws, name in manager.active_users.items())
-                            to_close = [existing_ws for existing_ws, name in list(manager.active_users.items()) if name == nickname and existing_ws != websocket]
+                            # Phones and computers may stay signed in at the same time.
                             manager.active_users[websocket] = nickname
                             manager.authed_connections.add(websocket)
+                            release_pending_slot()
                             first_auth = not authed
                             authed = True
                             is_admin = wants_admin
+                            auth_digest = None if is_admin else member_digest(nickname)
                             if is_admin:
                                 admin_sockets.add(websocket)
                             else:
@@ -2695,17 +3075,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                 session_token = secrets.token_urlsafe(24)
                                 manager.sessions[session_token] = websocket
                 if fail_reason:
-                    if fail_reason in ("password", "identity", "enroll_invalid"):
-                        note_auth_failure(auth_source(websocket))
+                    if fail_reason == "credentials":
                         await asyncio.sleep(1)
-                    await websocket.send_text(json.dumps({"type": "auth_failed", "reason": fail_reason}))
-                    await revoke_connection(websocket)
+                    closing = await revoke_connection(websocket, {"type": "auth_failed", "reason": fail_reason})
+                    await closing
                     break
-                for old_ws in to_close:
-                    await revoke_connection(old_ws, {"type": "duplicate_kicked"})
                 auth_packet = {"type": "auth_ok", "is_admin": is_admin, "session": session_token}
-                if issued_key:
-                    auth_packet["identity_key"] = issued_key
                 await websocket.send_text(json.dumps(auth_packet))
                 if websocket not in manager.authed_connections:
                     break  # 보내는 사이 강퇴·재발급됨
@@ -2716,9 +3091,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 resumed_during_grace = pending_leave is not None and not pending_leave.done()
                 if pending_leave is not None:
                     pending_leave.cancel()
-                if issued_key and not wants_admin and packet.get("enroll_code"):
-                    await post_presence_chat(f"🔑 «{nickname}» 작가님이 방장 등록 코드로 이름 열쇠를 받았습니다.")
+                if websocket not in manager.authed_connections:
+                    break
                 await set_tracker_timer_running(nickname, True)
+                if websocket not in manager.authed_connections:
+                    break
                 await websocket.send_text(json.dumps({"type":"private_tracker_state", "trackers": state_for(nickname)["trackers"]}))
                 await manager.broadcast_user_list()
                 if client_id not in manager.active_slots:
@@ -2868,6 +3245,61 @@ async def websocket_endpoint(websocket: WebSocket):
                         await revoke_connection(ws_conn, {"type": "kicked"})  # 인증·방장 권한·세션을 먼저 거두고 닫음
                 continue
 
+            if p_type == "change_password":
+                # A member changes their own password from a signed-in connection.
+                # No current password is asked: this is also the forgotten-password path.
+                # Other devices stay connected (no session limits).
+                if is_admin:
+                    continue
+                async with auth_admission(identity_lock(nickname)) as ticket:
+                    if websocket not in manager.authed_connections:
+                        continue
+                    nid = name_id(nickname)
+                    if ticket is None:
+                        reason, record = "busy", None
+                    elif nid in pending_revocations:
+                        reason, record = "storage", None
+                    else:
+                        # Only the password generation this connection signed in
+                        # (or last changed) with may change it.
+                        reason, record = await authenticate_member(
+                            durable_collection, nid, "change", packet.get("new_password"),
+                            expected_digest=auth_digest, ticket=ticket)
+                    if reason is None:
+                        server_state.setdefault("identity_enroll", {})[nid] = record
+                        auth_digest = record["pw"]["digest"]
+                await websocket.send_text(json.dumps({"type": "password_changed", "ok": reason is None, "reason": reason}))
+                continue
+
+            if p_type == "set_signup_room_password":
+                # Admin switch: require the room password for new signups (one click).
+                if not is_admin or websocket not in admin_sockets:
+                    continue
+                wanted = packet.get("on") is True
+                ok = not wanted or bool(ROOM_PASSWORD_SERVER)
+                reason = None if ok else "no_room_password"
+                if ok:
+                    # One change at a time: save, then apply. Requiring the room password
+                    # takes effect at once and stays on even if the save fails; opening
+                    # signup waits for the save. The admin sees success only after the DB
+                    # confirmed the write, and only this path writes the field.
+                    async with signup_setting_lock:
+                        if wanted:
+                            server_state["signup_room_password"] = True
+                        try:
+                            await asyncio.to_thread(db_set_signup_room_password, wanted)
+                        except Exception as exc:
+                            print("가입 방 암호 설정 저장 실패:", exc)
+                            ok, reason = False, "storage"
+                        else:
+                            server_state["signup_room_password"] = wanted
+                    if ok:
+                        await add_admin_log("🚪 새 회원 가입: " + ("방 암호 요구" if wanted else "방 주소만으로 가입"))
+                await websocket.send_text(json.dumps({"type": "signup_room_password", "ok": ok,
+                                                      "reason": reason,
+                                                      "on": signup_needs_room_password()}))
+                continue
+
             if p_type == "issue_enrollment":
                 # 방장: 이 이름의 열쇠를 지우고(잃어버린·빼앗긴 기기 포함) 24시간 일회용 등록 코드를 만듭니다.
                 if not is_admin:
@@ -2878,31 +3310,46 @@ async def websocket_endpoint(websocket: WebSocket):
                     nid = name_id(target_nick)
                     async with identity_lock(target_nick):
                         # 메모리 열쇠부터 지우고 등록 대기로 표시합니다. DB 저장이 실패해도 이 이름은 닫힌 채로 남습니다.
-                        server_state.setdefault("identity_keys", {}).pop(nid, None)
-                        server_state.setdefault("identity_enroll", {})[nid] = {"h": "", "exp": 0}
-                        for ws_conn, name in list(manager.active_users.items()):
-                            if name == target_nick:
-                                await revoke_connection(ws_conn, {"type": "identity_revoked"})
+                        if websocket not in admin_sockets:
+                            continue
+                        keys = server_state.setdefault("identity_keys", {})
+                        records = server_state.setdefault("identity_enroll", {})
+                        cached = identity_snapshot(nid, keys, records)
+                        tombstone = {"h": "", "exp": 0}
+                        prior = pending_revocations.get(nid, (None, []))[1] or []
+                        expected = list(prior)
                         code = new_enroll_code()
                         expires = time.time() + ENROLL_TTL_SECONDS
+                        digest = identity_hash(code)
+                        for candidate in (cached, {f"identity_enroll.{nid}.h": digest},
+                                          {f"identity_enroll.{nid}": tombstone}):
+                            if candidate not in expected:
+                                expected.append(candidate)
+                        # Block the name before yielding. The retry also covers task cancellation.
+                        pending_revocations[nid] = (target_nick, expected)
+                        global revocation_task
+                        if revocation_task is None or revocation_task.done():
+                            revocation_task = asyncio.create_task(retry_revocations())
+                        keys[nid] = LEGACY_KEY_TOMBSTONE
+                        records[nid] = tombstone
+                        for conn, name in list(manager.active_users.items()):
+                            if name == target_nick:
+                                await revoke_connection(conn, {"type": "identity_revoked"})
                         try:
-                            if await asyncio.to_thread(db_issue_enrollment, nid, identity_hash(code), expires):
-                                server_state["identity_enroll"][nid] = {"h": identity_hash(code), "exp": expires}
-                                reply.update(ok=True, code=code, expires=expires)
+                            current = await asyncio.to_thread(read_identity_snapshot, nid)
+                            if current not in expected:
+                                expected.append(current)
+                            saved = await asyncio.to_thread(db_issue_enrollment, nid, digest, expires, [current])
+                            if saved:
+                                records[nid] = {"h": digest, "exp": expires}
                                 pending_revocations.pop(nid, None)
-                        except Exception as exc:
-                            print("등록 코드 저장 실패:", type(exc).__name__)
+                                reply.update(ok=True, code=code, expires=expires)
+                        except Exception:
+                            saved = False
                         if not reply["ok"]:
-                            # 메모리에서는 이미 막혔지만 DB에는 옛 열쇠가 남아 있습니다 → 저장될 때까지 다시 시도
-                            pending_revocations[nid] = target_nick
                             reply["retrying"] = True
-                            global revocation_task
-                            if revocation_task is None or revocation_task.done():
-                                revocation_task = asyncio.create_task(retry_revocations())
-                    await add_admin_log(f"🔑 {target_nick} 이름 열쇠 해제·등록 코드 발급" if reply["ok"] else
-                                        f"🔑 {target_nick} 열쇠는 지금 막았지만 DB 저장 실패 — 자동 재시도 중. '해제 저장됨' 기록 전에는 서버가 다시 켜지면 옛 열쇠가 살아날 수 있음")
-                    if reply["ok"]:
-                        await post_presence_chat(f"🔑 «{target_nick}» 작가님의 이름 열쇠를 방장이 다시 발급했습니다.")
+                    await add_admin_log(f"🔑 {nid[:8]} 이전 인증정보 폐기 및 일회용 복구 코드 발급" if reply["ok"] else
+                                        f"🔑 {nid[:8]} 인증정보 폐기의 DB 확인 실패. 재시도 결과를 확인하세요. 확인 전 재시작하면 이전 인증정보가 유효할 수 있습니다.")
                 await websocket.send_text(json.dumps(reply))
                 continue
 
@@ -3058,6 +3505,7 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
 
     finally:
+        release_pending_slot()
         client_id = str(id(websocket))
         admin_sockets.discard(websocket)
         nickname = manager.active_users.get(websocket, "")
