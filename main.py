@@ -2273,7 +2273,9 @@ PAGE_HTML = r"""
                             lostLoginResponse("이 연결의 인증이 종료되었습니다. 다시 로그인해 주세요.");
                             return;
                         }
-                        if (!roomOpened || ![1001, 1006, 1012].includes(event.code)) {
+                        // 방에 들어온 뒤의 끊김은 종료 코드와 관계없이 다시 접속합니다(예전 판과 같음).
+                        // 모바일·프록시·서버 keepalive는 1000·1005·1011 등으로도 닫습니다. 인증 회수는 4001(위)만입니다.
+                        if (!roomOpened) {
                             lostLoginResponse("서버 연결이 종료되었습니다. 다시 로그인해 주세요.");
                             return;
                         }

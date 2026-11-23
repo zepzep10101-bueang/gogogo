@@ -294,6 +294,20 @@ test("network loss retries a previously authenticated login once; a rejected ret
     assert.equal(p.run("authRequest"), null);
 });
 
+test("after entering the room, any close code except 4001 reconnects with the same login", async () => {
+    for (const code of [1000, 1001, 1005, 1006, 1011, 1012, 1013]) {
+        const p = page();
+        const socket = p.submit("login", "writer", password);
+        await socket.receive({type: "auth_ok", is_admin: false, session: "test-token"});
+        socket.drop(code);
+        p.runReconnectTimers();
+        assert.equal(p.sockets.length, 2, `code ${code}`);
+        const next = p.sockets[1];
+        next.open();
+        assert.deepEqual(next.sent, socket.sent, `code ${code}`);
+    }
+});
+
 test("a signed-in member changes the password without the current one; reconnects use the new one", async () => {
     const p = page();
     const socket = p.submit("login", "writer", password);
